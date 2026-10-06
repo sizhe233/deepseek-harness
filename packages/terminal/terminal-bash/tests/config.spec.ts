@@ -45,6 +45,7 @@ describe('terminal-bash dialect resolution', () => {
     expect(resolved.shellDialect).toBe('pwsh')
     expect(resolved.shellPath.length).toBeGreaterThan(0)
     expect(resolved.shellArgs).toEqual(['-NoLogo', '-NoProfile'])
+    expect(resolved.pwshBootstrap).toBe('argv')
   })
 
   it('lets an explicit shell specification win over the dialect defaults', () => {
@@ -53,6 +54,7 @@ describe('terminal-bash dialect resolution', () => {
     })
     expect(resolved.shellPath).toBe('/custom/pwsh')
     expect(resolved.shellArgs).toEqual(['-NoProfile'])
+    expect(resolved.pwshBootstrap).toBe('stdin')
   })
 
   it('treats empty shell values as unset so Schemastery materialization cannot drop the dialect defaults', () => {
@@ -64,6 +66,12 @@ describe('terminal-bash dialect resolution', () => {
     })
     expect(resolved.shellPath).toBe('/bin/bash')
     expect(resolved.shellArgs).toEqual(['--noprofile', '--norc', '-i'])
+  })
+
+  it('uses argv bootstrap when explicit empty pwsh arguments select the dialect defaults', () => {
+    const resolved = resolveConfig({ shellDialect: 'pwsh', shellArgs: [] })
+    expect(resolved.shellArgs).toEqual(['-NoLogo', '-NoProfile'])
+    expect(resolved.pwshBootstrap).toBe('argv')
   })
 
   it('validates the effective shell path, not only the raw one', () => {

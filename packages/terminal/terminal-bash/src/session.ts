@@ -228,14 +228,19 @@ export class LocalPtySession implements TerminalBackendSession {
   }
 
   /**
-   * Capture startup output through the same readiness contract as later sends.
+   * Capture bounded startup output; pwsh requires its installed prompt acknowledgement.
    * @param signal - optional cancellation while the shell reaches its first prompt.
+   * @param setupCommand - optional command submitted once for an explicit pwsh argv.
    * @returns Resolves after startup readiness; rejects on exit or readiness timeout.
    */
-  async initialize(signal?: AbortSignal): Promise<void> {
+  async initialize(signal?: AbortSignal, setupCommand?: string): Promise<void> {
     this.initializing = true
     try {
-      const operation = this.startSend({ text: '', submit: false, ...signal !== undefined ? { signal } : {} })
+      const operation = this.startSend({
+        text: setupCommand ?? '',
+        submit: setupCommand !== undefined,
+        ...signal !== undefined ? { signal } : {},
+      })
       const result = await operation.done
       if (result.waitReason === 'session_exit') throw new Error('PTY shell exited during startup')
       if (result.waitReason === 'timeout') throw new Error('PTY shell did not reach readiness before startup timeout')
@@ -494,6 +499,9 @@ export class LocalPtySession implements TerminalBackendSession {
         this.settleActive('stdin_read')
         return
       }
+      // pwsh can read stdin during host startup before running its command.
+      // Only the installed prompt proves its function and encoding ran.
+      if (this.initializing && this.config.shellDialect === 'pwsh') return
       const elapsed = Date.now() - operation.startedAt
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined

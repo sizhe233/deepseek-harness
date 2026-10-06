@@ -48,6 +48,8 @@ export type ResolvedConfig = Omit<Required<Config>, 'shellDialect' | 'shellPath'
   shellDialect: ShellDialect
   shellPath: string
   shellArgs: string[]
+  /** Default pwsh argv carries setup; explicit arguments retain stdin setup. */
+  pwshBootstrap: 'argv' | 'stdin'
 }
 
 /** Bash dialect default executable. */
@@ -71,6 +73,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   return {
     ...(config as Required<Config>),
     shellDialect,
+    pwshBootstrap: config.shellArgs !== undefined && config.shellArgs.length > 0 ? 'stdin' : 'argv',
     shellPath: config.shellPath !== undefined && config.shellPath.length > 0
       ? config.shellPath
       : (shellDialect === 'pwsh' ? resolvePwshPath() : DEFAULT_BASH_SHELL),

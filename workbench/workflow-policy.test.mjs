@@ -34,6 +34,10 @@ const regressionPaths = [
   'packages/subprocess/subprocess-local/tests/linux-scope.spec.ts',
   'packages/subprocess/subprocess-local/tests/native-containment.spec.ts',
   'packages/shell/pwsh-local/tests/executor.spec.ts',
+  'packages/terminal/terminal-bash/tests/local.spec.ts',
+  'packages/terminal/terminal-bash/tests/index.spec.ts',
+  'packages/terminal/terminal-bash/tests/session.spec.ts',
+  'packages/terminal/terminal-bash/tests/config.spec.ts',
 ]
 function assertEarlyRegressions(steps) {
   const early = steps.findIndex(step => step.name === 'Check migration regressions before the full build')
@@ -42,7 +46,7 @@ function assertEarlyRegressions(steps) {
   const command = steps[early].run.split(/\s+/)
   for (const path of regressionPaths) assert.ok(command.includes(path), `missing regression: ${path}`)
 }
-test('candidate CI checks PDF rendering and Linux lifecycle regressions before the full build', () => {
+test('candidate CI checks migration regressions before the full build', () => {
   const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
   assertEarlyRegressions(workflow.jobs['build-and-test'].steps)
 })
