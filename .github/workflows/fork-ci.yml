@@ -36,6 +36,7 @@ jobs:
           scripts/ci-workflow.spec.ts
           scripts/ci-compatible-selfhosted.spec.ts
           scripts/tests/ci-master-platforms.spec.ts
+          packages/boot/app-boot/tests/hmr-config.spec.ts
           packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts
           packages/subprocess/subprocess-local/tests/local.spec.ts
           packages/subprocess/subprocess-local/tests/linux-scope.spec.ts

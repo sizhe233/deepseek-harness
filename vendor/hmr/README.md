@@ -13,6 +13,8 @@ ancestor, then restore any missing suffix. Callbacks and diagnostics retain the
 requested absolute filename, while the native backend receives one filesystem
 spelling even when Windows supplied an 8.3 alias.
 
+Exact config registrations use polling on macOS and native watching elsewhere unless `usePolling` is requested. Their polling interval is 50 ms. Registration awaits Chokidar's initial scan; when polling is enabled, Node's asynchronous initial polling baseline can still miss an immediate change. The registration disposer closes its watcher and drains refreshes already delivered to HMR.
+
 ## Requirements
 
 - `@cordisjs/plugin-loader`

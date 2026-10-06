@@ -148,10 +148,10 @@ class Hmr extends Service {
       depth: depth + 1,
       ignored: undefined,
       ignoreInitial: false,
-      // Exact config registrations are few and critical. Polling this isolated
-      // parent prevents macOS FSEvents from dropping rapid create/change/unlink
-      // sequences while retaining the main module watcher's native semantics.
-      usePolling: true,
+      // macOS needs polling for rapid config replacement. Elsewhere retain
+      // native readiness unless polling is requested: Chokidar's ready event
+      // does not wait for Node's asynchronous initial polling baseline.
+      usePolling: process.platform === 'darwin' || this.config.usePolling === true,
       interval: 50,
     })
     const registration = { watcher }

@@ -28,7 +28,7 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
 
 ## Local modifications
 
-Local workbench compatibility restores `hmr/src/index.ts` exact configuration watches with `depth + 1`, polling enabled and a 50 ms interval. This preserves file creation and rapid atomic replacement on macOS without changing the ordinary module watcher. The runtime patch records the original and replacement hashes; upstream versions and license files remain unchanged.
+Local workbench compatibility keeps `hmr/src/index.ts` exact configuration watches at `depth + 1` with a 50 ms polling interval. Polling is forced on macOS to preserve rapid config replacement; other platforms use native watching unless the caller requests polling. Chokidar readiness does not acknowledge Node’s asynchronous initial polling baseline, so forcing polling on Linux can lose immediate post-registration changes. The ordinary module watcher is unchanged. See the [exact-watch readiness decision](../.agents/notes/implemented/bug-fix/2026-10-06-exact-config-watcher-readiness.md). The runtime patch records the original and replacement hashes; upstream versions and license files remain unchanged.
 
 Keep this log exhaustive — every divergence from upstream must be listed.
 

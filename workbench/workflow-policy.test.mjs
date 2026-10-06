@@ -28,6 +28,7 @@ test('candidate CI is read-only and never runs in pull_request_target context', 
 })
 
 const regressionPaths = [
+  'packages/boot/app-boot/tests/hmr-config.spec.ts',
   'packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts',
   'packages/subprocess/subprocess-local/tests/local.spec.ts',
   'packages/subprocess/subprocess-local/tests/linux-scope.spec.ts',
