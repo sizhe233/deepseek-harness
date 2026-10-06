@@ -34,7 +34,8 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run build:native-system
+      - name: Build and prove Linux filesystem confinement
+        run: bash workbench/prepare-linux-sandbox.sh
       - name: Require Linux native containment availability
         run: systemd-run --user --scope --quiet --collect --expand-environment=no -- /usr/bin/true
       - name: Check migration regressions before the full build
@@ -122,6 +123,8 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build and prove Linux filesystem confinement
+        run: bash workbench/prepare-linux-sandbox.sh
       - name: Require upstream source coverage and its complete uninstrumented tail
         run: pnpm run check:ci:coverage
       - uses: actions/upload-artifact@v4
@@ -152,6 +155,8 @@ jobs:
           node-version: '22.19.0'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build and prove Linux filesystem confinement
+        run: bash workbench/prepare-linux-sandbox.sh
       - name: Check the minimum supported Node runtime
         run: pnpm run check:node-compat
 

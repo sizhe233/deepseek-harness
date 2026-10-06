@@ -400,7 +400,23 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     if (holdOutput) {
       // Readiness can precede command entry; the barrier independently holds
       // both outputs until after the send has stopped collecting bytes.
-      await expect.poll(() => existsSync(enteredFile), { timeout: 8_000 }).toBe(true)
+      try {
+        await expect.poll(() => existsSync(enteredFile), { timeout: 8_000 }).toBe(true)
+      } catch (error) {
+        throw new Error(`PowerShell did not enter the output barrier: ${JSON.stringify({
+          platform: process.platform,
+          arch: process.arch,
+          node: process.version,
+          pid,
+          running: processIsRunning(pid),
+          command,
+          enteredFile,
+          waitReason: result.waitReason,
+          sessionStatus: result.sessionStatus,
+          viewport: result.viewport.slice(-4_096),
+          scrollback: read().slice(-8_192),
+        })}`, { cause: error })
+      }
       for (const token of expected) {
         expect(result.viewport).not.toContain(token)
         expect(read()).not.toContain(token)

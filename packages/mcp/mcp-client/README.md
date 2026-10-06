@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Add `dsh-mcp-client` when the model should call tools from an external MCP server as if they were native. Give each server a unique name and transport. The official SDK selects the 2026-07-28 protocol when available and falls back to supported legacy revisions. Choose stdio for a local program and Streamable HTTP for a service; stdio negotiation starts a temporary probe process before the serving process.
 
+Programmatic callers that require a server connection use `BridgeConfig` to parse the same transport fields and defaults. `Config` additionally accepts the legacy `mode: configuration` row used by Profile migration; `BridgeConfig` rejects that control-plane row.
+
 ### Minimal configuration
 
 Add one entry per server; nothing else is required. After the harness starts, the server's tools appear in the model's tool list.

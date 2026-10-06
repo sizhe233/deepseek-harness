@@ -48,7 +48,7 @@ vi.mock('@modelcontextprotocol/client/stdio', () => ({
 
 // vi.mock is hoisted above static imports, so the module under test sees the
 // mocked SDK even through a static import.
-import { apply, name, inject, Config as ConfigSchema } from '@deepseek-ai/dsh-mcp-client/src/index.ts'
+import { apply, name, inject, BridgeConfig, Config as ConfigSchema } from '@deepseek-ai/dsh-mcp-client/src/index.ts'
 
 // ---- Helpers ----
 
@@ -108,6 +108,17 @@ describe('mcp-client plugin module exports', () => {
       serverName: 'x'.repeat(33),
       command: 'echo',
     } as never)).toThrow()
+  })
+
+  it('BridgeConfig validates both transports with the same defaults as the flat Loader schema', () => {
+    const stdio = { transport: 'stdio', serverName: 'bridge-stdio', command: 'echo' } satisfies Parameters<typeof BridgeConfig>[0]
+    const http = { transport: 'streamable-http', serverName: 'bridge-http', url: 'https://example.test/mcp' } satisfies Parameters<typeof BridgeConfig>[0]
+    const resolvedStdio: Config = BridgeConfig(stdio)
+    const resolvedHttp: Config = BridgeConfig(http)
+    expect(resolvedStdio).toEqual(ConfigSchema(stdio))
+    expect(resolvedHttp).toEqual(ConfigSchema(http))
+    expect(ConfigSchema.list?.map(branch => branch.type)).toEqual(['object', 'object', 'object'])
+    expect(BridgeConfig['~standard'].validate({ mode: 'configuration' })).toHaveProperty('issues')
   })
 
   it('Config schema preserves the legacy control row for explicit migration handling', () => {

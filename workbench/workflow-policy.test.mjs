@@ -184,3 +184,29 @@ test('candidate bytes are available for parallel private acceptance while every 
   assert.ok(steps.some(step => step.run === 'pnpm test --maxWorkers=4'))
   assert.equal(steps[browser]['continue-on-error'], undefined)
 })
+
+
+test('minimum Node acceptance builds its native sandbox before source worker execution', () => {
+  const source = readFileSync(new URL('../.github/workflows/fork-ci.yml', import.meta.url), 'utf8')
+  const job = source.split('  node-22-compatibility:')[1].split('  native-platforms:')[0]
+  const native = job.indexOf('bash workbench/prepare-linux-sandbox.sh')
+  assert.ok(native > job.indexOf('pnpm install --frozen-lockfile'))
+  assert.ok(native < job.indexOf('pnpm run check:node-compat'))
+})
+
+
+test('Linux build and coverage require a real enforcing sandbox without security-setting changes', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  for (const name of ['linux-build-and-test', 'source-coverage', 'node-22-compatibility']) {
+    const steps = workflow.jobs[name].steps
+    const sandbox = steps.findIndex(step => step.run === 'bash workbench/prepare-linux-sandbox.sh')
+    assert.ok(sandbox > steps.findIndex(step => step.run === 'pnpm install --frozen-lockfile'))
+    assert.equal(steps[sandbox].if, undefined)
+    assert.equal(steps[sandbox]['continue-on-error'], undefined)
+  }
+  const script = readFileSync(new URL('./prepare-linux-sandbox.sh', import.meta.url), 'utf8')
+  assert.match(script, /set -euo pipefail/)
+  assert.match(script, /pnpm --dir native\/system run build:native/)
+  assert.match(script, /NALR_REQUIRE_LANDLOCK=1 pnpm --dir native\/system run test:launcher/)
+  assert.doesNotMatch(script, /sysctl|danger-full-access|unshare|host-addon-only/)
+})

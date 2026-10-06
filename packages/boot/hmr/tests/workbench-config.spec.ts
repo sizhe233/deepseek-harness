@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -8,7 +8,7 @@ import Hmr from '@deepseek-ai/dsh-hmr'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { watch, type FSWatcher } from 'chokidar'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 
 vi.mock('chokidar', async (importOriginal) => {
   const native = await importOriginal<typeof import('chokidar')>()
@@ -77,7 +77,8 @@ describe('HMR exact config paths', () => {
     // This acceptance owns alias-to-cache identity. Other cases below exercise
     // native events; polling keeps Windows fs.watch queue pressure out of it.
     const ctx = await bootHmr(alias, ['.'], true)
-    const filename = join(await realpath(target), 'module.ts')
+    // Match Node's ESM/cache spelling; fs.promises.realpath expands Windows 8.3 aliases differently.
+    const filename = join(realpathSync(target), 'module.ts')
     const expected = pathToFileURL(filename).href
     const cacheHas = vi.spyOn(ctx.loader.internal!.loadCache, 'has').mockReturnValue(false)
     const observed: string[] = []
@@ -146,20 +147,42 @@ describe('HMR exact config paths', () => {
     }
   })
 
-  it('observes creation when the config parent did not exist at registration', { timeout: 20_000 }, async () => {
+  it.each([false, true])('observes creation when the config parent did not exist at registration (polling: %s)', { timeout: 20_000 }, async (usePolling) => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-hmr-config-'))
     hmrRoots.push(root)
     const dir = join(root, 'later')
     const filename = join(dir, 'plugins.yml')
-    const ctx = await bootHmr(root)
+    const ctx = await bootHmr(root, [], usePolling)
     const observed: string[] = []
     try {
       await ctx.hmr.registerConfig(filename, () => {
         observed.push(readFileSync(filename, 'utf8'))
       })
-      mkdirSync(dir)
-      writeFileSync(filename, 'created')
-      await eventually(() => observed.includes('created'), 'HMR did not observe config creation under a new parent')
+      const watcher = latestWatcher()
+      const initial = statSync(root)
+      const events: { event: string; path: string }[] = []
+      const record = (event: string, path: string) => {
+        events.push({ event, path })
+        if (events.length > 20) events.shift()
+      }
+      watcher.on('all', record)
+      const evidence = {
+        platform: process.platform, polling: watcher.options.usePolling,
+        watched: watcher.getWatched(), observed, events,
+        initial: { mtime: initial.mtimeMs, ctime: initial.ctimeMs, size: initial.size },
+        current: { mtime: initial.mtimeMs, ctime: initial.ctimeMs, size: initial.size },
+      }
+      onTestFailed(() => { console.error('Missing-parent watcher evidence', JSON.stringify(evidence)) })
+      try {
+        mkdirSync(dir)
+        writeFileSync(filename, 'created')
+        await eventually(() => observed.includes('created'), 'HMR did not observe config creation under a new parent')
+      } finally {
+        const current = statSync(root)
+        evidence.current = { mtime: current.mtimeMs, ctime: current.ctimeMs, size: current.size }
+        evidence.watched = watcher.getWatched()
+        watcher.off('all', record)
+      }
     } finally {
       await ctx.fiber.dispose()
     }
