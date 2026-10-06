@@ -137,5 +137,12 @@
   "compiledOnlySeams": [
     "runtimeRestartAdmission",
     "visionImageRelay"
+  ],
+  "upstreamBackports": [
+    {
+      "commit": "b79a227cec941405c9b368524446145298e9d48d",
+      "reason": "Preserve Linux cancellation before bootstrap consumes the launch request; exposed by hosted Linux CI",
+      "documentationAdaptation": "Chinese package README applied to existing translated layout; pair hashes re-recorded"
+    }
   ]
 }
