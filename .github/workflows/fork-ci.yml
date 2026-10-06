@@ -1,7 +1,7 @@
 name: Fork CI
 on:
   push:
-    branches: [workbench, 'codex/**']
+    branches: [workbench]
   pull_request:
     branches: [workbench]
   workflow_dispatch:
