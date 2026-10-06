@@ -1,4 +1,4 @@
-/* Plugins section: compact tabs plus the configurable plugin card list. */
+/* Plugins section: feature-owned tabs and the MCP editor. */
 
 .section {
   display: flex;
@@ -11,7 +11,7 @@
 .heading {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .intro {
@@ -118,4 +118,17 @@
   color: var(--dsw-alias-label-primary);
   font: inherit;
   cursor: pointer;
+}
+
+.mcpTab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loading {
+  display: flex;
+  min-height: 120px;
+  align-items: center;
+  justify-content: center;
 }

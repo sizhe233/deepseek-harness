@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This public fork preserves official Git ancestry. `workbench` is the maintained branch; `upstream` points to deepseek-ai/deepseek-harness. The accepted import base is dsh-v0.1.5-rc.1 (183f08e9c6dde7e36cd2318eaee70b0da08fb35e). Import provenance and changed files are recorded in compatibility.json. New upstream revisions are candidates, not automatic production upgrades.
+This public fork preserves official Git ancestry. `workbench` is the maintained branch; `upstream` points to deepseek-ai/deepseek-harness. The initial import base is dsh-v0.1.5-rc.1. Exact import revisions and changed files are recorded in [compatibility.json](compatibility.json); the current candidate review is in [upstream-compatibility.json](upstream-compatibility.json). New upstream revisions are candidates, not automatic production upgrades.
 
 ## Agent rules
 
@@ -14,7 +14,7 @@ The post-build seam step is a temporary source-controlled bridge for two legacy 
 
 ## CI and sync
 
-Fork CI uses GitHub-hosted Ubuntu, builds the full project, checks types and runs unit tests. It also tests and applies the two legacy seams. The upstream enterprise workflows are retained as references but disabled in this fork; they cannot be assumed runnable on personal-account runners. No job publishes npm or deploys a production host.
+Fork CI builds the full project on GitHub-hosted Ubuntu 24.04, checks Host and Client types, lint, package hygiene and documentation, runs unit tests, enforces the upstream coverage checks, and replays recorded Session/SDK snapshots, built CLI/process expectations, and settings and plan browser acceptance with the workspace-pinned Chromium. Native watcher, subprocess, terminal and V5 persistence checks run separately on macOS 15 and Windows 2025; Linux, macOS and Windows also require a dedicated real PowerShell PTY check that fails when `pwsh` is unavailable; the required result rejects any unsuccessful platform job. CI checks out the exact candidate head, uses the trusted base revision for archived-note validation, and names artifacts for that candidate. It tests and applies the two optional runtime bridges and packages Host and Web files with exact hashes plus the [verified native dependency record](native-dependencies.json); packaging refuses changed or missing verified native source/runtime files. These jobs define required evidence, not a claim that a particular candidate has passed. Upstream enterprise workflows retain their event conditions behind an official-repository guard and cannot be assumed runnable on personal-account runners. No job publishes npm or deploys a production host.
 
 Upstream sync runs daily at 02:23 UTC (10:23 Asia/Shanghai) and on manual dispatch. A trusted script queries official master, creates a uniquely named candidate branch and asks the GitHub merge API to merge that exact upstream SHA. Clean merges produce a draft PR and explicitly dispatch Fork CI. Conflicts produce a deduplicated agent task Issue; no force reset or conflict-marker commit is published. Existing candidates are not overwritten. The job executes no candidate code with its write token.
 
@@ -22,6 +22,7 @@ An external agent executor is not yet configured. The Issue/PR is the handoff co
 
 GITHUB_TOKEN-triggered PR checks may need approval under GitHub policy. Explicit workflow_dispatch supplies test feedback but does not substitute for required PR checks. Confirm checks on the current PR revision before merging.
 
+<a id="acceptance-and-release"></a>
 ## Acceptance and release
 
 A passing host CI is not full plugin compatibility. The private plugin repository must test the same candidate commit and preserve its pinned dependency baseline until a reviewed compatibility PR updates it. Verify Host/Client loading, UI entries, Sessions, attachments and each version-sensitive patch. Record missing evidence explicitly. A fresh build of this fork is a candidate and is not claimed byte-identical to the installed runtime.

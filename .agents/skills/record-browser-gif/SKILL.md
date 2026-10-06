@@ -7,7 +7,7 @@ description: Record browser or Web UI interaction demos as optimized GIFs using 
 
 Produce a short, truthful UI demonstration as a local GIF, and — only when the task includes attaching it to a pull request — publish it through the attach workflow at the end of this skill. The available browser-control workflow remains preferred. Use [Playwright Videos](https://playwright.dev/docs/videos) when that workflow supports continuous capture at higher frame rates; use the bundled encoder for trimming, playback speed, final hold, dimensions, and size.
 
-The [evidence-chain decision](../../notes/implemented/process/2026-08-08-browser-gif-evidence-chain.md) owns why one storyboard comes from one isolated run and why publication revalidates both the artifact and the demonstrated pull-request head.
+The [archived evidence-chain decision](../../notes/archived/process/2026-08-08-browser-gif-evidence-chain.md) records why one storyboard comes from one isolated run and why publication revalidates both the artifact and the demonstrated pull-request head.
 
 ## Every GUI pull request includes a GIF
 
@@ -33,9 +33,9 @@ A GIF for a specific pull request demonstrates that pull request's tree, so stag
 
 ## Record the flow
 
-Follow the available browser-control workflow's setup, interaction, and cleanup instructions. When it exposes `recordVideo`, enable video on the same controlled context to capture more intermediate frames. Otherwise use [screenshot capture](#screenshot-capture) within that workflow; video availability does not determine which browser-control workflow to use. Existing user browser state remains an explicit provenance exception.
+Follow the available browser-control workflow's setup, interaction, and cleanup instructions. When it exposes `recordVideo`, enable video on the same controlled context to capture more intermediate frames. Otherwise use [screenshot capture](#screenshot-capture) within that workflow; video availability does not determine which browser-control workflow to use. Existing user browser state remains an explicit isolation exception.
 
-Only when browser control is unavailable, use the repository-declared Playwright dependency in an isolated headless browser and state that fallback in the provenance. In this repository it resolves from `apps/web/package.json`; do not install another driver or open the user's browser.
+Only when browser control is unavailable, use the repository-declared Playwright dependency in an isolated headless browser and state that fallback in the capture notes. In this repository it resolves from `apps/web/package.json`; do not install another driver or open the user's browser.
 
 Before recording, identify the origin, built or development server, transport, and any mode overrides. When a production default opens a native surface that automation cannot drive, select an official browser-operable production backend through normal application configuration and disclose the override.
 

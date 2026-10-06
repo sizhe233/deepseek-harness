@@ -8,6 +8,7 @@
  * itself is not a dependency of this package; the source below is the
  * decision-table contract at the `InputTriggerSource` boundary.
  */
+import './control-row-dom.ts'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -23,11 +24,12 @@ import type {
 import {
   bindSnapshotSelector, conversationSnapshot, makeTranslate, sessionSnapshot, SlotTestRuntime,
 } from '@deepseek-ai/dsh-client-test-runtime'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
+import { $replaceDetectSpanWithText } from '../src/client/input/editor/span-map.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -58,6 +60,7 @@ function commandSource(
 ) {
   const resolve = (name: string): FakeCommand | undefined => commands.find(c => c.name === name)
   const leadingClaim = (desc: FakeCommand): CommandClaim => ({
+    name: desc.name,
     token: `/${desc.name} `,
     ...(desc.input !== undefined ? { hint: desc.input.hint } : {}),
     ...(desc.input?.attachments === true ? { attachments: true } : {}),
@@ -121,6 +124,9 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
   const ctx = runtime.ctx
   const sessionId = 'scenario-s1' as SessionId
   await runtime.sessions.add({ id: sessionId, summary: { cwd: '/w/a' } })
+  const reference = runtime.sessions.retain(sessionId)
+  await reference.ready
+  onTestFinished(() => { reference.release() })
   await ctx.plugin(InputTriggerService).await()
   const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
   register?.(inputTriggers)
@@ -130,6 +136,10 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
   const serialize = vi.fn((ids: readonly DraftAttachmentId[]) => Promise.resolve(ids.map(() => PNG)))
   const release = vi.fn()
   const shell = new SessionInputShell({ actx, inputTriggers: () => controller, defaultSink: sink, commandAttachments: { serialize, release, unsupportedNotice: (token: string) => `${token.trim()} attachments-unsupported` } })
+  actx.effect(() => {
+    shell.refreshLexiconSubscription()
+    return () => { shell.dispose() }
+  }, 'test input shell')
   // The hub's listener wiring, verbatim.
   actx.on('slash/input-begin-command', req => shell.beginCommand(req.claim, req.span) ? true : undefined)
   actx.on('slash/input-insert-reference', req => shell.insertReference(req.reference, req.span) ? true : undefined)
@@ -143,14 +153,15 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
     useSession: bindSnapshotSelector(sessionStore),
     useSessions: bindSnapshotSelector(createSnapshotStore({
       ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      projectionsBySession: {}, currentAddress: undefined,
     })),
-    useSessionPendingInteraction: bindSnapshotSelector(
-      createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
+    useSessionStatus: bindSnapshotSelector(
+      createSnapshotStore<SessionStatusSnapshot>(new Map()),
     ),
+    useSessionRetainInfo: () => undefined,
     useResource,
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
-      items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
     })),
     useProjection: (() => undefined),
@@ -184,7 +195,7 @@ async function scopedBench(register?: (inputTriggers: InputTriggerService) => vo
     useMenuLauncher: bindSnapshotSelector(controller.launcher),
     renderSlot: (() => null) as InputBarProps['renderSlot'],
     stop: vi.fn(),
-    command: () => Promise.resolve(true),
+    useStopShortcut: bindSnapshotSelector(createSnapshotStore<readonly string[]>([])),
     t: makeTranslate(zh, commonZh),
     variant: 'composer',
   }
@@ -219,7 +230,7 @@ describe('scenario A: menu-pick /goal, type args, enter submits', () => {
     expect(b.shell.snapshot.phase).toBe('claimed')
     expect(b.shell.snapshot.draft).toBe('/goal ')
     act(() => { b.shell.editor.update(() => {}, { discrete: true }) }) // flush the queued decoration refresh
-    expect(b.view.container.querySelector('[data-lexical-text][style*="warn-label"]')?.textContent).toBe('/goal ')
+    expect(b.view.container.querySelector('[data-lexical-text][style*="business-primary"]')?.textContent).toBe('/goal ')
     // The zh dictionary owns a hint.goal entry, which overrides the machine's raw hint (production behavior).
     expect(b.textarea.style.getPropertyValue('--dsh-composer-hint')).toBe(JSON.stringify('输入目标，智能体将持续执行'))
     // Continue typing args; hint drops; claim holds.
@@ -305,6 +316,34 @@ describe('scenario: images ride an accepting command through the real pipeline',
 })
 
 describe('scenario H: backspace breaks the token', () => {
+  it.each(['goal', '目标', 'plan', '计划', 'feedback', '反馈'])('keeps /%s claimed when its arguments and separator are deleted', async (name) => {
+    const { source } = commandSource([{ name, description: name, input: { hint: '目标内容' } }],
+      () => Promise.resolve({ kind: 'success' }))
+    const b = await scopedBench((triggers) => { triggers.registerSource(source) })
+    b.type(`/${name}`)
+    fireEvent.keyDown(b.textarea, { key: ' ', keyCode: 32 })
+    expect(b.shell.snapshot.phase).toBe('claimed')
+    b.type(`/${name} 这是目标`)
+    for (let i = 0; i < 5; i++) {
+      act(() => {
+        b.shell.editor.update(() => {
+          const end = b.shell.snapshot.draft.length
+          $replaceDetectSpanWithText({ start: end - 1, end }, '')
+        }, { discrete: true })
+      })
+    }
+    expect(b.shell.snapshot.draft).toBe(`/${name}`)
+    expect(b.shell.snapshot.phase).toBe('claimed')
+    expect(b.view.container.querySelector('[data-lexical-text][style*="business-primary"]')?.textContent).toBe(`/${name}`)
+    b.type(`/${name} `)
+    await act(async () => {})
+    expect(b.shell.snapshot.phase).toBe('claimed')
+    expect(b.shell.snapshot.draft).toBe(`/${name} `)
+    expect(b.view.container.querySelector('[data-lexical-text][style*="business-primary"]')?.textContent).toBe(`/${name} `)
+    b.type(`/${name}x`)
+    expect(b.shell.snapshot.phase).toBe('plain')
+  })
+
   it('claim releases automatically; the enter after that goes through adjudication again', async () => {
     const b = await bench()
     b.type('/goal')
@@ -315,12 +354,12 @@ describe('scenario H: backspace breaks the token', () => {
     // Backspace into the token: watch break → plain, visuals gone.
     b.type('/goa ')
     expect(b.shell.snapshot.phase).toBe('plain')
-    expect(b.view.container.querySelector('[data-lexical-text][style*="warn-label"]')).toBeNull()
+    expect(b.view.container.querySelector('[data-lexical-text][style*="business-primary"]')).toBeNull()
   })
 })
 
-describe('scenario: reference decoration lights up when the lexicon settles', () => {
-  it('a typed /name token gains the text-ref mark without further input once the roll goes hot', async () => {
+describe('scenario: reference decoration follows the current lexicon', () => {
+  it('decorates only the current text when its catalog arrives and clears decoration for an empty catalog', async () => {
     let roll: readonly string[] | undefined
     let notify: (() => void) | undefined
     const b = await scopedBench((inputTriggers) => {
@@ -335,17 +374,32 @@ describe('scenario: reference decoration lights up when the lexicon settles', ()
         },
       } as never)
     })
-    // Typed before the catalog settled: a plain token, no decoration.
-    b.type('/deploy now')
+    b.type('/older now')
     expect(b.view.container.querySelector('[data-composer-text-ref]')).toBeNull()
-    // The catalog settles (ui-skill's settle path fires the same notification).
+    b.type('/deploy now')
+    const draft = b.shell.draftSnapshot
+    expect(b.view.container.querySelector('[data-composer-text-ref]')).toBeNull()
     act(() => {
-      roll = ['deploy']
+      roll = ['older']
       notify?.()
     })
-    act(() => { b.shell.editor.update(() => {}, { discrete: true }) }) // flush the queued re-scan
-    const mark = b.view.container.querySelector('[data-composer-text-ref]')
-    expect(mark?.textContent).toBe('/deploy')
+    expect(b.controller.lexicon.getSnapshot().get('/')).toEqual(['older'])
+    expect(b.view.container.querySelector('[data-composer-text-ref]')).toBeNull()
+    act(() => {
+      roll = ['older', 'deploy']
+      notify?.()
+    })
+    await vi.waitFor(() => {
+      expect(b.view.container.querySelector('[data-composer-text-ref]')?.textContent).toBe('/deploy')
+    })
+    expect(b.shell.draftSnapshot).toBe(draft)
+    act(() => {
+      roll = []
+      notify?.()
+    })
+    await vi.waitFor(() => { expect(b.view.container.querySelector('[data-composer-text-ref]')).toBeNull() })
+    expect(b.shell.draftSnapshot).toBe(draft)
+    expect(b.shell.snapshot.draft).toBe('/deploy now')
   })
 })
 

@@ -85,7 +85,7 @@ export class McpInventoryController {
   }
 
   /**
-   * Build the narrow face consumed by the configurable tab.
+   * Build the narrow face consumed by the MCP tab.
    * @returns store and actions for the MCP cards.
    */
   inject(): McpInventoryFace {

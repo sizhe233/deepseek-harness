@@ -102,6 +102,8 @@ export interface SessionFormatCodec {
 /** Stateful physical-row decoder used by streaming persistence restores. */
 export interface SessionFormatArtifactDecoder {
   readonly header: SessionFormatHeader
+  /** Refuse owned structural violations without consuming decoder state, including after an outer parser error. */
+  admitRow?(rowValue: unknown): void
   /** Inherited cut known before body decoding; current formats may derive it at EOF. */
   readonly headerInheritedEventCount?: number
   /** Decode one physical row and synchronously emit its events or compact run. */
@@ -223,6 +225,8 @@ export interface SessionFormatCatalog {
 export interface SessionFormatRestore {
   /** Current logical header available before body decoding. */
   readonly header: SessionFormatHeader
+  /** Apply source-codec structural admission without emitting or advancing any event. */
+  admitRow?(rowValue: unknown): void
   /** Decode one physical row in file order. */
   decodeRow(rowValue: unknown): void
   /** Finish every decoder and migration stage and return the current artifact. */

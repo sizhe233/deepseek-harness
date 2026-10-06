@@ -150,5 +150,9 @@
       "codeAdaptation": "Require launcher exit before starting the task-count query; a delayed-query regression rejects stale empty observations",
       "documentationAdaptation": "Bilingual package README and native-containment note updated in their existing layout; pair hashes re-recorded"
     }
-  ]
+  ],
+  "upstreamWorkflowBase": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "retainedWorkflowBases": {
+    "e2b-e2e.yml": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e"
+  }
 }

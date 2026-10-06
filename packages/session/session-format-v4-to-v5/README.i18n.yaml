@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/session/session-format-v4-to-v5/README.md
+/:
+  en: 9b3475022f293654
+  zh: ca7557a11c364361
+/deepseek-ai-dsh-session-format-v4-to-v5:
+  en: 5c911c36fc777867
+  zh: 523c41bb93008361
+/deepseek-ai-dsh-session-format-v4-to-v5/summary:
+  en: fd62b01e3756565f
+  zh: e81b4aad1937f7df
+/deepseek-ai-dsh-session-format-v4-to-v5/table-of-contents:
+  en: e31c068d6369e7d7
+  zh: b4f3bd328e885e7b
+/deepseek-ai-dsh-session-format-v4-to-v5/use-this-package:
+  en: 9a25ac00b5b12c6f
+  zh: aa59d92ba4f57eb1
+/deepseek-ai-dsh-session-format-v4-to-v5/v4-to-v5-specification:
+  en: 1e629a85dff358ec
+  zh: bdb7f1f04c3b2c3c
+/deepseek-ai-dsh-session-format-v4-to-v5/native-v5-admission:
+  en: d81b6dcb9fb3a8bb
+  zh: 129a020c9e522afc
+/deepseek-ai-dsh-session-format-v4-to-v5/understand-the-implementation:
+  en: fbf467393c8ca56e
+  zh: d36d20b2cff97dae
+/deepseek-ai-dsh-session-format-v4-to-v5/further-exploration:
+  en: 3b2d32950a7756eb
+  zh: f86686e429a2ebf5
+/deepseek-ai-dsh-session-format-v4-to-v5/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-session-format-v4-to-v5/model-experience/checkpoint-replay:
+  en: c5bff31f3ac5dd76
+  zh: 5f5b1062bc317ad9
+/deepseek-ai-dsh-session-format-v4-to-v5/model-experience/checkpoint-replay/what-the-model-sees:
+  en: cd4d193b54895fc0
+  zh: 1acede236488ce44
+/deepseek-ai-dsh-session-format-v4-to-v5/model-experience/checkpoint-replay/token-effect:
+  en: 3f769f1686a504fe
+  zh: 0bc27c24d078fa54
+/deepseek-ai-dsh-session-format-v4-to-v5/model-experience/checkpoint-replay/kv-cache-effect:
+  en: 44666a320aafac84
+  zh: 190d51f0fe5c1772
+/deepseek-ai-dsh-session-format-v4-to-v5/known-limitations-and-deferred-work:
+  en: 50cd27f194e1868f
+  zh: 1af49dfc91acc251
+/deepseek-ai-dsh-session-format-v4-to-v5/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

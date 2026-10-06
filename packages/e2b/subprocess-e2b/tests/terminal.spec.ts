@@ -1,3 +1,4 @@
+import { sdkCommandHandle } from './command-handle.ts'
 import { Buffer } from 'node:buffer'
 import { once } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
@@ -25,20 +26,25 @@ interface CommandOptions {
   envs?: Record<string, string>
 }
 
-class FakeTerminalCommandHandle {
+class FakeTerminalCommandHandle implements Pick<CommandHandle, keyof CommandHandle> {
   pid = 123
+  stdout = ''
+  stderr = ''
+  exitCode: number | undefined
+  error: string | undefined
+
   disconnects = 0
   sdkKills = 0
   disconnectError: unknown
   sdkKillError: unknown
   waitError: unknown
   settleOnSdkKill = true
-  private readonly result = Promise.withResolvers<CommandResult>()
+  private readonly fakeResult = Promise.withResolvers<CommandResult>()
   private settled = false
 
   wait(): Promise<CommandResult> {
     if (this.waitError !== undefined) throw this.waitError
-    return this.result.promise
+    return this.fakeResult.promise
   }
 
   async disconnect(): Promise<void> {
@@ -60,23 +66,34 @@ class FakeTerminalCommandHandle {
   succeed(exitCode = 0): void {
     if (this.settled) return
     this.settled = true
-    this.result.resolve({ exitCode, stdout: '', stderr: '' })
+    this.exitCode = exitCode
+    this.fakeResult.resolve({ exitCode, stdout: '', stderr: '' })
   }
 
   fail(exitCode: number): void {
     if (this.settled) return
     this.settled = true
-    this.result.reject(commandError(exitCode))
+    this.exitCode = exitCode
+    this.error = `exit ${exitCode}`
+    this.fakeResult.reject(commandError(exitCode))
   }
 
   crash(error: unknown): void {
     if (this.settled) return
     this.settled = true
-    this.result.reject(error)
+    this.fakeResult.reject(error)
+  }
+
+  async sendStdin(): Promise<void> {
+    throw new Error('PTY stdin must use sandbox.pty.sendInput')
+  }
+
+  async closeStdin(): Promise<void> {
+    throw new Error('PTY stdin cannot be closed through the command handle')
   }
 
   asHandle(): CommandHandle {
-    return this as unknown as CommandHandle
+    return sdkCommandHandle(this)
   }
 }
 
@@ -88,6 +105,7 @@ class FakeTerminalSandbox {
   readonly removed: string[] = []
   readonly directories: string[] = []
   readonly writes = new Map<string, string>()
+  readonly resizes: Array<{ pid: number; cols: number; rows: number }> = []
   createOptions: Parameters<Sandbox['pty']['create']>[0] | undefined
   ambient = 'KEEP=visible\0UNICODE=你好\0NPM_TOKEN=secret\0DSH_STALE=old\0BROKEN\0=bad\0'
   sessionId = '123\n'
@@ -196,6 +214,10 @@ class FakeTerminalSandbox {
       },
     },
     pty: {
+      resize: async (pid: number, size: { cols: number; rows: number }, options?: { signal?: AbortSignal }): Promise<void> => {
+        options?.signal?.throwIfAborted()
+        this.resizes.push({ pid, ...size })
+      },
       create: async (options: Parameters<Sandbox['pty']['create']>[0]): Promise<CommandHandle> => {
         this.createOptions = options
         if (this.createError !== undefined) throw this.createError
@@ -223,7 +245,7 @@ class FakeTerminalSandbox {
         }
       },
     },
-  } as unknown as Sandbox
+  } as Sandbox
 }
 
 function runtime(fake: FakeTerminalSandbox): E2BRuntime {
@@ -231,7 +253,7 @@ function runtime(fake: FakeTerminalSandbox): E2BRuntime {
     cwd: '/workspace',
     runtimeRoot: '/workspace/.dsh-e2b',
     getSandbox: async () => fake.sandbox,
-  } as unknown as E2BRuntime
+  } as E2BRuntime
 }
 
 function spec(overrides: Partial<SubprocessTerminalSpawnSpec> = {}): SubprocessTerminalSpawnSpec {
@@ -240,6 +262,7 @@ function spec(overrides: Partial<SubprocessTerminalSpawnSpec> = {}): SubprocessT
     cwd: '/workspace',
     rows: 24,
     cols: 80,
+    terminalType: 'dumb',
     graceMs: 5,
     env: { TERM: 'dumb', DSH_SESSION_ID: 'owner', TOKEN_EXPLICIT: 'kept' },
     ...overrides,
@@ -533,6 +556,30 @@ describe('E2B terminal allocation', () => {
 })
 
 describe('E2B terminal lifecycle', () => {
+  it('resizes through the provider and never infers idle from an unobserved shell prompt', async () => {
+    const fake = new FakeTerminalSandbox()
+    const terminal = await testSpawn(runtime(fake), spec({ terminalType: 'xterm-256color' }), '/runtime/activity')
+    try {
+      await terminal.resize(120, 48)
+      expect(fake.resizes).toEqual([{ pid: terminal.pid, cols: 120, rows: 48 }])
+      const busy = await terminal.inspectActivity()
+      expect(busy.state).toBe('busy')
+      await expect(terminal.inspectActivity()).resolves.toEqual(busy)
+      fake.foreground = `${terminal.pid}\n`
+      const unsupportedPrompt = await terminal.inspectActivity()
+      expect(unsupportedPrompt.state).toBe('unknown')
+      expect(unsupportedPrompt.revision).toBeGreaterThan(busy.revision)
+      const environment = [...fake.writes].find(([path]) => path.endsWith('/environment'))?.[1]
+      expect(environment).toContain('TERM=xterm-256color\0')
+      fake.handle.succeed()
+      await expect(terminal.done).resolves.toEqual({ exitCode: 0, signal: null })
+      await expect(terminal.resize(80, 24)).rejects.toThrow('terminal process has exited')
+      expect(fake.resizes).toHaveLength(1)
+    } finally { await terminal.terminate() }
+    await expect(terminal.resize(80, 24)).rejects.toThrow('terminal is terminating')
+    await expect(terminal.inspectActivity()).rejects.toThrow('terminal is terminating')
+  })
+
   it('aborts and joins in-flight terminal operations before cleanup', async () => {
     const fake = new FakeTerminalSandbox()
     const terminal = await testSpawn(runtime(fake), spec(), '/runtime/in-flight-operations')

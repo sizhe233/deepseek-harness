@@ -11,6 +11,7 @@
 import { isAbsolute, join } from 'node:path'
 import {
   SESSION_FORMAT_VERSION,
+  KNOWN_SESSION_EVENT_TYPES,
   SessionLogOffset,
 } from '@deepseek-ai/dsh-session'
 import type {
@@ -23,7 +24,8 @@ import { parseSessionFormatLogFilename, sessionFormatLogFilename, SessionFormatU
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatRecovery, SessionFormatRestore } from '@deepseek-ai/dsh-session-format'
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
-import { assertV3RowAdmission } from '@deepseek-ai/dsh-session-format-v2-to-v3'
+import { assertReleasedV4Relationships } from '@deepseek-ai/dsh-session-format-v3-to-v4'
+import { assertV5RowAdmission } from '@deepseek-ai/dsh-session-format-v4-to-v5'
 import {
   SessionFormatUnsupportedError,
   sessionFormatVersionRefusal,
@@ -464,6 +466,7 @@ export class SessionLogScanner {
   finish(): SessionLogScan {
     this.finished = true
     const artifact = this.restore.finish()
+    assertReleasedV4Relationships(artifact, KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION)
     return {
       meta: this.meta,
       inheritedEventCount: SessionLogOffset(artifact.inheritedEventCount),
@@ -488,7 +491,7 @@ export class SessionLogScanner {
     // This scanner accepts only current-generation files. Owned structural refusal must
     // precede its recoverable-tail suppression, independently of the strict decoder state.
     try {
-      assertV3RowAdmission(decoded)
+      assertV5RowAdmission(decoded, KNOWN_SESSION_EVENT_TYPES)
     } catch (error: unknown) {
       if (error instanceof SessionFormatUnsupportedMigrationError) throw new SessionFormatUnsupportedError(error.message)
       throw error
@@ -502,7 +505,7 @@ export class SessionLogScanner {
     try {
       this.restore.decodeRow(decoded)
     } catch (error: unknown) {
-      // Unsupported V3 rows have already been refused before recovery.
+      // Unsupported current-format rows have already been refused before recovery.
       /* v8 ignore next -- every production Session format decoder rejects with Error. */
       const detail = error instanceof Error ? error.message : String(error)
       const issue = new Error(`corrupt session log: invalid committed event at line ${this.eventLine}: ${detail}`, {

@@ -1,0 +1,3109 @@
+{
+  "schemaVersion": 1,
+  "acceptedImportBase": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+  "forkBase": "bff537083d9b0c1df3f987fde0de64bbc57fcb09",
+  "targetUpstream": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "state": "in-progress; not accepted or deployed",
+  "localPatchInventory": [
+    {
+      "path": ".agents/notes/implemented/architecture/2026-08-27-outbound-proxy-policy.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-08-27-outbound-proxy-policy.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-08-27-outbound-proxy-policy.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-08-28-subprocess-native-containment.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Retain upstream frozen historical bytes; current cancellation behavior and fixture rationale live in the maintained subprocess README and compatibility note.",
+      "disposition": "archived-by-upstream",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        ".agents/notes/archived/architecture/2026-08-28-subprocess-native-containment.i18n.yaml"
+      ]
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-08-28-subprocess-native-containment.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Retain upstream frozen historical bytes; current cancellation behavior and fixture rationale live in the maintained subprocess README and compatibility note.",
+      "disposition": "archived-by-upstream",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        ".agents/notes/archived/architecture/2026-08-28-subprocess-native-containment.md"
+      ]
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-08-28-subprocess-native-containment.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Retain upstream frozen historical bytes; current cancellation behavior and fixture rationale live in the maintained subprocess README and compatibility note.",
+      "disposition": "archived-by-upstream",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        ".agents/notes/archived/architecture/2026-08-28-subprocess-native-containment.zh.md"
+      ]
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-09-11-workbench-runtime-compatibility.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-09-11-workbench-runtime-compatibility.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/architecture/2026-09-11-workbench-runtime-compatibility.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-06-exact-config-watcher-readiness.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-06-exact-config-watcher-readiness.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/bug-fix/2026-10-06-exact-config-watcher-readiness.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".agents/skills/dsh-pre-push-checks/SKILL.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/build-exe-for-python-sdk.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/build-preview-cloudflare.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/ci-master.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/docs-pages.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/e2b-e2e.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/e2e.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/expected-filenames.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/fork-ci.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/issue-lifecycle.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/issue-policy.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/node-addon-system-release.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/node-addon-system.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/pi-ai-provider-e2e.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/python-release.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/release-publish.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/release-vendor-publish.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/release-vendor.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/sandbox.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/upstream-sync.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/weighted-approval-review-event.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".github/workflows/weighted-approval.yml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": ".gitignore",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "AGENTS.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "apps/web/tests/plan-control-row.e2e.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "apps/web/tests/settings-chrome.e2e.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/config-catalog.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/config-catalog.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/config-catalog.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/event-producer-consumer.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/event-producer-consumer.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/event-producer-consumer.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/subsystems/extensions.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/subsystems/extensions.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/subsystems/extensions.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/subsystems/llm-streaming.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/subsystems/llm-streaming.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/subsystems/llm-streaming.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/tool-catalog.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/tool-catalog.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/tool-catalog.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/user/guide/network-proxy.i18n.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/user/guide/network-proxy.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "docs/user/guide/network-proxy.zh.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/api/remotes/package.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/api/remotes/src/client/index.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/api/remotes/tsconfig.client.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/api/remotes/tsconfig.host.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/boot/app-boot/tests/hmr-config.spec.ts",
+      "area": "exact-config-watching",
+      "review": "Exact-path watching moved from vendored HMR to dsh-hmr. Depth, macOS polling, owning-context disposal, serialized callbacks, and failure notifications remain.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/boot/hmr/tests/workbench-config.spec.ts",
+        "packages/boot/hmr/tests/watch-config.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        "packages/boot/hmr/tests/workbench-config.spec.ts"
+      ]
+    },
+    {
+      "path": "packages/bundle/web-app/cordis.patch.yml",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/bundle/web-app/package.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/connection/src/rpc-host.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/connection/tests/node-half.host.spec.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-chat/src/client/apply.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-general/README.i18n.yaml",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-general/README.md",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-general/README.zh.md",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-general/package.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-general/src/client/SettingsRoot.module.css",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-general/src/client/SettingsRoot.tsx",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/README.i18n.yaml",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/README.md",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/README.zh.md",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/package.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/ConfigurablePluginsTab.tsx",
+      "area": "host-client-and-settings",
+      "review": "The upstream inventory/configuration pages own general plugin editing; the fork MCP editor remains a dedicated tab. No private consumer imports the removed implementation files. Browser replay is still pending.",
+      "disposition": "superseded-by-upstream-pages",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        "packages/client/ui-settings-plugin-inventory",
+        "packages/client/ui-settings",
+        "packages/client/ui-settings-plugins/src/client/McpSettingsTab.tsx"
+      ]
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/McpCards.tsx",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/PluginCard.module.css",
+      "area": "host-client-and-settings",
+      "review": "The upstream inventory/configuration pages own general plugin editing; the fork MCP editor remains a dedicated tab. No private consumer imports the removed implementation files. Browser replay is still pending.",
+      "disposition": "superseded-by-upstream-pages",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        "packages/client/ui-settings-plugin-inventory",
+        "packages/client/ui-settings",
+        "packages/client/ui-settings-plugins/src/client/McpSettingsTab.tsx"
+      ]
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/PluginsSettingsSection.module.css",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/index.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/locales.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/mcp-inventory-controller.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/src/client/tab-store.ts",
+      "area": "host-client-and-settings",
+      "review": "The upstream inventory/configuration pages own general plugin editing; the fork MCP editor remains a dedicated tab. No private consumer imports the removed implementation files. Browser replay is still pending.",
+      "disposition": "superseded-by-upstream-pages",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        "packages/client/ui-settings-plugin-inventory",
+        "packages/client/ui-settings",
+        "packages/client/ui-settings-plugins/src/client/McpSettingsTab.tsx"
+      ]
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/tests/apply.client.spec.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-settings-plugins/tests/section.client.spec.tsx",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-sidebar-documentpreview/README.i18n.yaml",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-sidebar-documentpreview/README.md",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-sidebar-documentpreview/README.zh.md",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/client/ui-sidebar-documentpreview/package.json",
+      "area": "host-client-and-settings",
+      "review": "Retain owning-context RPC registration, optional chat preview, responsive settings and MCP tab. General plugin configuration now uses upstream feature-owned pages.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/client/connection/tests/node-half.host.spec.ts",
+        "packages/client/ui-chat/tests/apply-inject.client.spec.tsx",
+        "packages/client/ui-settings-plugins/tests/mcp-inventory-controller.client.spec.ts",
+        "apps/web/tests/settings-chrome.e2e.ts",
+        "apps/web/tests/plan-control-row.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/compaction/compaction-basic/src/region.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/compaction/compaction-basic/src/summarizer.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/compaction/compaction-basic/tests/compaction-basic.spec.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/composition.e2e.ts",
+      "area": "e2b-remote-execution",
+      "review": "Restore the removed opt-in E2B family with filesystem, subprocess, PTY, and LSP paths. Separate new control channels fail before allocation; live provider checks remain pending.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/e2b/e2b/tests/e2b.spec.ts",
+        "packages/e2b/subprocess-e2b/tests/subprocess.spec.ts",
+        "packages/e2b/subprocess-e2b/tests/terminal.spec.ts",
+        "packages/e2b/e2b/tests/composition.e2e.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/experimental/webworker-runtime/tests/compile/transform-corpus-check.ts",
+      "area": "built-import-classification",
+      "review": "Retain the reviewed exact CSS import exceptions and reject unrelated stylesheets/extensions.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts",
+      "area": "built-import-classification",
+      "review": "Retain the reviewed exact CSS import exceptions and reject unrelated stylesheets/extensions.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/cordis-host-runner/README.i18n.yaml",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/cordis-host-runner/README.md",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/cordis-host-runner/README.zh.md",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/cordis-host-runner/src/index.ts",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/cordis-host-runner/src/inspect-registry.ts",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/extensions/tool-cordis/src/index.ts",
+      "area": "client-inspect-routing",
+      "review": "Retain session-addressed inspection, child sessions without an Agent lookup, configurable timeout, and current upstream validation/disposal diagnostics.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts",
+        "packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs-search/README.i18n.yaml",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs-search/README.md",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs-search/README.zh.md",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs-search/src/glob.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs-search/src/grep.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs-search/tests/tools.spec.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs/src/sandbox.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/fs/tool-fs/tests/tools.spec.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/host/plugin-inventory/README.i18n.yaml",
+      "area": "mcp-configuration",
+      "review": "Hide only the internal MCP configuration control row from plugin inventory; retain ordinary plugin rows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/host/plugin-inventory/tests/inventory.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/host/plugin-inventory/README.md",
+      "area": "mcp-configuration",
+      "review": "Hide only the internal MCP configuration control row from plugin inventory; retain ordinary plugin rows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/host/plugin-inventory/tests/inventory.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/host/plugin-inventory/README.zh.md",
+      "area": "mcp-configuration",
+      "review": "Hide only the internal MCP configuration control row from plugin inventory; retain ordinary plugin rows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/host/plugin-inventory/tests/inventory.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/host/plugin-inventory/src/index.ts",
+      "area": "mcp-configuration",
+      "review": "Hide only the internal MCP configuration control row from plugin inventory; retain ordinary plugin rows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/host/plugin-inventory/tests/inventory.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/host/plugin-inventory/tests/inventory.spec.ts",
+      "area": "mcp-configuration",
+      "review": "Hide only the internal MCP configuration control row from plugin inventory; retain ordinary plugin rows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/host/plugin-inventory/tests/inventory.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-deepseek/src/serialize.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/src/adapter.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/src/config.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/src/context.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/src/replay.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/src/stream.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/tests/context.spec.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm-pi-ai/tests/mock-server.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm/src/index.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/llm/llm/src/types.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/README.i18n.yaml",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/README.md",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/README.zh.md",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/package.json",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/src/configuration.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/src/connection.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/src/index.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/src/reconnect-policy.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/src/transport.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/src/types.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/tests/configuration.spec.ts",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/mcp/mcp-client/tsconfig.json",
+      "area": "mcp-configuration",
+      "review": "Retain MCP editing/reconnect behavior through Config-derived forms and profile writes, including secret redaction, revisions, rollback, and bounded legacy control migration.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/mcp/mcp-client/tests/configuration.spec.ts",
+        "packages/mcp/mcp-client/tests/load-path.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/sandbox/sandbox/src/escalation.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/sandbox/sandbox/tests/escalation.spec.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/session/session-format-v0-to-v1/src/migration.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/session/session-format-v0-to-v1/src/payload-validation.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/session/session-format-v0-to-v1/src/validation.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/session/session-format-v0-to-v1/tests/migration.spec.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/session/session-format-v2-to-v3/src/payload.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts",
+      "area": "llm-and-released-session-compatibility",
+      "review": "Opaque compaction and compaction_summary replay, prepared adapter generations, fallback and Session admission are adapted to modern messages. A real V5 successor is required and remains under validation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/llm/llm-pi-ai/tests/adapter.spec.ts",
+        "packages/llm/llm-pi-ai/tests/convert.spec.ts",
+        "packages/llm/llm-pi-ai/tests/context.spec.ts",
+        "packages/session/session-format-v2-to-v3/tests/content-admission.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/shell/tool-bash/src/index.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/shell/tool-bash/tests/tools.spec.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/shell/tool-pwsh/src/index.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/shell/tool-pwsh/tests/tools.spec.ts",
+      "area": "sandbox-and-file-tools",
+      "review": "Retain exact-empty optional search fields and already-covered permission no-ops; actual widening still requires justification and approval.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/sandbox/sandbox/tests/escalation.spec.ts",
+        "packages/fs/tool-fs-search/tests/tools.spec.ts",
+        "packages/fs/tool-fs/tests/tools.spec.ts",
+        "packages/shell/tool-bash/tests/tools.spec.ts",
+        "packages/shell/tool-pwsh/tests/tools.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/README.i18n.yaml",
+      "area": "skill-filesystem-lifecycle",
+      "review": "Retain macOS polling defaults and invalidate/rearm watches after root deletion and recreation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/skill/skill-filesystem/tests/skill-filesystem-watcher.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/README.md",
+      "area": "skill-filesystem-lifecycle",
+      "review": "Retain macOS polling defaults and invalidate/rearm watches after root deletion and recreation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/skill/skill-filesystem/tests/skill-filesystem-watcher.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/README.zh.md",
+      "area": "skill-filesystem-lifecycle",
+      "review": "Retain macOS polling defaults and invalidate/rearm watches after root deletion and recreation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/skill/skill-filesystem/tests/skill-filesystem-watcher.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/src/index.ts",
+      "area": "skill-filesystem-lifecycle",
+      "review": "Retain macOS polling defaults and invalidate/rearm watches after root deletion and recreation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/skill/skill-filesystem/tests/skill-filesystem-watcher.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/tests/skill-filesystem-watcher.spec.ts",
+      "area": "skill-filesystem-lifecycle",
+      "review": "Retain macOS polling defaults and invalidate/rearm watches after root deletion and recreation.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/skill/skill-filesystem/tests/skill-filesystem-watcher.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/README.i18n.yaml",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/README.md",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/README.zh.md",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/src/linux-scope.ts",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/tests/fixtures/hold-linux-bootstrap.ts",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/tests/local.spec.ts",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/subprocess/subprocess-local/tests/native-containment.spec.ts",
+      "area": "linux-cancellation",
+      "review": "Preserve native containment, cancellation-before-bootstrap, direct-process settlement, and post-establishment process-count observations.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/subprocess/subprocess-local/tests/linux-scope.spec.ts",
+        "packages/subprocess/subprocess-local/tests/local.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/README.i18n.yaml",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/README.md",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/README.zh.md",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/src/config.ts",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/src/index.ts",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/src/session.ts",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/tests/config.spec.ts",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/tests/index.spec.ts",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/terminal/terminal-bash/tests/session.spec.ts",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/util/http-proxy/README.i18n.yaml",
+      "area": "outbound-proxy-policy",
+      "review": "Retain explicit connection deadlines, direct/proxy restoration, inherited environment restoration, and disposal ownership.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/util/http-proxy/tests/install.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/util/http-proxy/README.md",
+      "area": "outbound-proxy-policy",
+      "review": "Retain explicit connection deadlines, direct/proxy restoration, inherited environment restoration, and disposal ownership.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/util/http-proxy/tests/install.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/util/http-proxy/README.zh.md",
+      "area": "outbound-proxy-policy",
+      "review": "Retain explicit connection deadlines, direct/proxy restoration, inherited environment restoration, and disposal ownership.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/util/http-proxy/tests/install.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/util/http-proxy/src/install.ts",
+      "area": "outbound-proxy-policy",
+      "review": "Retain explicit connection deadlines, direct/proxy restoration, inherited environment restoration, and disposal ownership.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/util/http-proxy/tests/install.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "packages/util/http-proxy/tests/install.spec.ts",
+      "area": "outbound-proxy-policy",
+      "review": "Retain explicit connection deadlines, direct/proxy restoration, inherited environment restoration, and disposal ownership.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/util/http-proxy/tests/install.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "patches/pi-ai-0.85.1-statusless-error.patch",
+      "area": "documentation-build-and-dependencies",
+      "review": "Reapply the statusless-error behavior to the new pinned SDK version; old dependency version is no longer installed.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        "patches/@earendil-works__pi-ai@0.87.1.patch"
+      ]
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "scripts/ci-compatible-selfhosted.spec.ts",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "scripts/ci-workflow.spec.ts",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "scripts/gen-cordis-catalog.ts",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "scripts/tests/ci-master-platforms.spec.ts",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "scripts/type-equiv.manifest.json",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/session/bash-startup-timeout/session.v3.jsonl",
+      "area": "linux-cancellation",
+      "review": "Use the exact upstream recorded output: the current shipped tool promotes a foreground timeout to a background job by default. Explicit promoteOnTimeout:false still kills on deadline, and the retained native cancellation tests cover cancellation before bootstrap. This replaces the obsolete fixture expectation, not the cancellation implementation.",
+      "disposition": "superseded-by-upstream-default-behavior",
+      "checks": [
+        "snapshots/session/headless.snapshot.ts",
+        "packages/shell/tool-bash/tests/background.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/session/bash-startup-timeout/snapshot.yml",
+      "area": "linux-cancellation",
+      "review": "Use the exact upstream recorded output: the current shipped tool promotes a foreground timeout to a background job by default. Explicit promoteOnTimeout:false still kills on deadline, and the retained native cancellation tests cover cancellation before bootstrap. This replaces the obsolete fixture expectation, not the cancellation implementation.",
+      "disposition": "superseded-by-upstream-default-behavior",
+      "checks": [
+        "snapshots/session/headless.snapshot.ts",
+        "packages/shell/tool-bash/tests/background.spec.ts",
+        "packages/subprocess/subprocess-local/tests/native-containment.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/session/cordis-inspect-jsdoc/system-prompt.expected.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/session/cordis-inspect-jsdoc/tool-schemas.expected.json",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/session/persistent-pwsh-tool-turn/cordis.snapshot.yml",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/session/persistent-pwsh-tool-turn/cordis.yml",
+      "area": "powershell-startup",
+      "review": "Retain custom argv/stdin bootstrap and acknowledged controlled prompt. PR4 scrollback/barrier assertions survive, with filesystem-root assertions valid on Windows.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/terminal/terminal-bash/tests/config.spec.ts",
+        "packages/terminal/terminal-bash/tests/index.spec.ts",
+        "packages/terminal/terminal-bash/tests/session.spec.ts",
+        "packages/terminal/terminal-bash/tests/local.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "snapshots/web/cordis-tool-round/tool-schemas.expected.json",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "vendor/README.md",
+      "area": "documentation-build-and-dependencies",
+      "review": "Preserve active behavior documentation, adapt current generated catalogs and paired prose, and keep released schemas/frozen historical notes immutable.",
+      "disposition": "adapted",
+      "checks": [
+        "doc-sync",
+        "lint:contracts-ready",
+        "build",
+        "typecheck"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "vendor/hmr/README.md",
+      "area": "exact-config-watching",
+      "review": "Exact-path watching moved from vendored HMR to dsh-hmr. Depth, macOS polling, owning-context disposal, serialized callbacks, and failure notifications remain.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/boot/hmr/tests/workbench-config.spec.ts",
+        "packages/boot/hmr/tests/watch-config.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "vendor/hmr/src/index.ts",
+      "area": "exact-config-watching",
+      "review": "Exact-path watching moved from vendored HMR to dsh-hmr. Depth, macOS polling, owning-context disposal, serialized callbacks, and failure notifications remain.",
+      "disposition": "adapted",
+      "checks": [
+        "packages/boot/hmr/tests/workbench-config.spec.ts",
+        "packages/boot/hmr/tests/watch-config.spec.ts"
+      ],
+      "acceptance": "pending final integrated checks",
+      "replacementPaths": [
+        "packages/boot/hmr/src/index.ts",
+        "packages/boot/hmr/src/watch-config.ts"
+      ]
+    },
+    {
+      "path": "workbench/README.i18n.yaml",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/README.md",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/README.zh.md",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/apply-runtime-seams.mjs",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/compatibility.json",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/package-candidate.mjs",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/runtime-seams.json",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/runtime-seams.test.mjs",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/upstream-sync.mjs",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/upstream-sync.test.mjs",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    },
+    {
+      "path": "workbench/workflow-policy.test.mjs",
+      "area": "fork-ci-and-candidate-packaging",
+      "review": "Preserve exact inherited job conditions under official-repository guards. Add required native/browser/static checks and immutable package identities without publishing or deployment.",
+      "disposition": "adapted",
+      "checks": [
+        "workbench/workflow-policy.test.mjs",
+        "workbench/runtime-seams.test.mjs",
+        "workbench/runtime-seam-behavior.test.mjs",
+        "workbench/package-candidate.test.mjs"
+      ],
+      "acceptance": "pending final integrated checks"
+    }
+  ],
+  "validation": {
+    "focusedEvidence": [
+      {
+        "area": "llm-and-released-session-compatibility",
+        "result": "763 unique focused tests passed; owned source typecheck and type-aware lint passed"
+      },
+      {
+        "area": "linux-cancellation-and-exact-config-watching",
+        "result": "124 focused tests passed"
+      },
+      {
+        "area": "e2b-and-file-tools",
+        "result": "265 focused tests passed before three new provider tests; 155 subsequent E2B/workflow tests passed"
+      },
+      {
+        "area": "client-inspect-and-escalation",
+        "result": "212 tests passed; MCP old SettingsProvider failure remains under repair"
+      },
+      {
+        "area": "retained-client-fs-skill-proxy",
+        "result": "248 of 250 tests passed; two fork job-condition expectations were repaired and the workflow spec passed subsequently"
+      },
+      {
+        "area": "workflow-policy",
+        "result": "10 node tests passed, including exact inherited guards and negative controls"
+      },
+      {
+        "area": "native-powershell-pty",
+        "result": "Four real Linux PowerShell cases passed with isolated Home/cache; seven Bash cases excluded by the focused test-name filter. macOS/Windows pending."
+      },
+      {
+        "area": "machine-acceptance-reference-policy",
+        "result": "Eleven policy tests passed, including abbreviated, malformed, unrelated-field, nested-duplicate, and organization-URL negative controls."
+      },
+      {
+        "area": "host-client-web-build",
+        "result": "Final V5 seven-stage native/Host declarations/Host bundles/desktop/Client declarations/Client bundles/Web build passed through supported direct Node-loader equivalents;355 Client artifacts. Exact standard build remains required in CI."
+      },
+      {
+        "area": "settings-profile-compatibility",
+        "result": "230 tests across15 MCP/Settings UI files passed with100% statements,branches,functions,lines for every selected source file. Activation,reset,failed-disable and rollback failures covered. Actual browser replay remains pending."
+      },
+      {
+        "area": "e2b-subprocess-pty",
+        "result": "All164 E2B tests passed with100% statements,branches,functions,lines across all three restored source packages. Live provider acceptance remains pending."
+      },
+      {
+        "area": "v5-generation-and-replay",
+        "result": "503 focused migration tests passed with100% new V4-to-V5 source coverage;754 JSONL tests passed with1 existing skip;27 migration CLI process tests passed. V3/V4 source retention,read-only behavior,reopen,hard admission after corrupt prefixes,and no downgrade/fallback covered."
+      },
+      {
+        "area": "fork-artifact-checks",
+        "result": "Final V5 built runtime bridge behavior/shape/hash,package identities,native entry hashes,and workflow policy checks passed. Clean final candidate packaging still pending."
+      }
+    ],
+    "notRun": [
+      "full Fork CI and standard build on exact candidate commit",
+      "reviewed strict settings browser replay",
+      "clean candidate packaging and same-commit artifact verification",
+      "same-candidate private plugin aggregate, Host/Client/UI, dynamic presets and V3\u2192V4\u2192V5 reopen/rollback",
+      "native macOS and Windows compatibility",
+      "live E2B and real provider probes"
+    ],
+    "productionApproved": false
+  },
+  "includedMaintenanceRepair": {
+    "pullRequest": 4,
+    "commit": "bff537083d9b0c1df3f987fde0de64bbc57fcb09",
+    "scope": "UTF-8 fixture evidence; no product changes"
+  },
+  "upstreamRemovalsRetained": [
+    {
+      "path": "packages/e2b/README.i18n.yaml",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/README.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/README.zh.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/README.i18n.yaml",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/README.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/README.zh.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/package.json",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/src/api-url.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/src/index.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/composition.e2e.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/e2b.spec.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/egress.spec.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/fixtures/composition/bin.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/fixtures/composition/cordis.yml",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tests/fixtures/composition/fixture-lsp.mjs",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/e2b/tsconfig.json",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/README.i18n.yaml",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/README.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/README.zh.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/package.json",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/src/index.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/tests/filesystem.spec.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/fs-e2b/tsconfig.json",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/README.i18n.yaml",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/README.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/README.zh.md",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/package.json",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/src/environment.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/src/index.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/src/output.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/src/process.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/src/remote.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/src/terminal.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/tests/subprocess.spec.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/tests/terminal.spec.ts",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    },
+    {
+      "path": "packages/e2b/subprocess-e2b/tsconfig.json",
+      "area": "e2b-remote-execution",
+      "disposition": "restored-and-adapted",
+      "acceptance": "unit behavior passed; final build and live provider acceptance pending"
+    }
+  ]
+}

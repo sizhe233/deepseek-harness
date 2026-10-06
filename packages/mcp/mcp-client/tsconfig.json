@@ -36,6 +36,12 @@
       "path": "../../util/http-proxy"
     },
     {
+      "path": "../mcp-resources"
+    },
+    {
+      "path": "../../core/system-prompt"
+    },
+    {
       "path": "../../../vendor/loader"
     },
     {
@@ -43,6 +49,12 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../../boot/config-editor"
     }
   ]
 }

@@ -26,7 +26,6 @@
  * @module dsh-llm-pi-ai/adapter
  */
 
-import { createModels, getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type {
   Api,
   AuthContext,
@@ -39,6 +38,7 @@ import type {
   ThinkingLevel,
 } from '@earendil-works/pi-ai'
 import { convertResponsesMessages, convertResponsesTools } from '@earendil-works/pi-ai/api/openai-responses-shared'
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import {
   attributionHeaders,
   contentHasImage,
@@ -64,6 +64,7 @@ import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attac
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { compactionItemOf, injectCompactionItem, toPiContext } from './context.ts'
+import { createModels, getSupportedThinkingLevels } from './models.ts'
 import { toStreamChunks } from './stream.ts'
 
 const RESPONSES_APIS = new Set<Api>([
@@ -163,7 +164,8 @@ function parsedCompactResponse(value: unknown): ParsedCompactResponse {
 
 function parseCompactResponseText(raw: string): ParsedCompactResponse {
   try {
-    return parsedCompactResponse(JSON.parse(raw) as unknown)
+    const value: unknown = JSON.parse(raw)
+    return parsedCompactResponse(value)
   } catch {
     let item: LlmCompactionResult['item'] | undefined
     let usage: LlmCompactionResult['usage'] | undefined
@@ -176,7 +178,7 @@ function parseCompactResponseText(raw: string): ParsedCompactResponse {
         .join('\n')
       if (data.length === 0 || data === '[DONE]') continue
       try {
-        const value = JSON.parse(data) as unknown
+        const value: unknown = JSON.parse(data)
         const parsed = parsedCompactResponse(value)
         item ??= parsed.item
         usage ??= parsed.usage
@@ -466,6 +468,7 @@ export class PiAiAdapter extends LlmAdapter {
     return Promise.resolve({
       model: this.modelInfo(snapshot, provider, model),
       stream: options => this.streamWithSnapshot(options, snapshot),
+      compact: options => this.compactWithSnapshot(options, snapshot),
     })
   }
 
@@ -478,9 +481,12 @@ export class PiAiAdapter extends LlmAdapter {
    * @param options - selected GPT route and history span to compact.
    * @returns the opaque compaction item, or `undefined` for unsupported routes.
    */
-  override async compact(options: LlmCompactOptions): Promise<LlmCompactionResult | undefined> {
+  override compact(options: LlmCompactOptions): Promise<LlmCompactionResult | undefined> {
+    return this.compactWithSnapshot(options, this.current())
+  }
+
+  private async compactWithSnapshot(options: LlmCompactOptions, snapshot: PiAiSnapshot): Promise<LlmCompactionResult | undefined> {
     if (!isGptModel(options.model)) return undefined
-    const snapshot = this.current()
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
     if (!RESPONSES_APIS.has(model.api)) return undefined
@@ -521,13 +527,17 @@ export class PiAiAdapter extends LlmAdapter {
           maxBytes: profile.requestImageMaxBytes,
         },
       }, undefined, replayPolicy)
-    const input = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
+    const input = convertResponsesMessages(model, normalizeContext(context), OPENAI_TOOL_CALL_PROVIDERS, {
       includeSystemPrompt: false,
     })
+    const compactionItem = compactionItemOf(compactOptions.messages)
+    const replayedInput = compactionItem === undefined
+      ? input
+      : (injectCompactionItem({ input }, compactionItem) as { input: unknown[] }).input
     const body: Record<string, unknown> = {
       model: options.model,
-      input,
-      ...options.system === undefined ? {} : { instructions: options.system },
+      input: replayedInput,
+      ...context.systemPrompt === undefined ? {} : { instructions: context.systemPrompt },
       ...context.tools === undefined || context.tools.length === 0 ? {} : {
         tools: convertResponsesTools(context.tools),
       },
@@ -573,12 +583,12 @@ export class PiAiAdapter extends LlmAdapter {
       }
     }
     try {
-      if (!Array.isArray(input)) {
+      if (!Array.isArray(replayedInput)) {
         throw new LlmError('OpenAI Responses compaction requires an input array', 'INVALID_COMPACTION_INPUT')
       }
       const nativeBody: Record<string, unknown> = {
         ...body,
-        input: [...input, { type: 'compaction_trigger' }],
+        input: [...replayedInput, { type: 'compaction_trigger' }],
         stream: true,
         store: true,
         reasoning: { effort: 'max', context: 'all_turns' },

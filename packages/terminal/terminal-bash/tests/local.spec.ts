@@ -1,7 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -29,7 +29,7 @@ afterEach(async () => {
 class PassthroughSandbox extends SandboxProvider {
   calls: { argv: readonly string[]; policy: SandboxPolicy }[] = []
 
-  confine(argv: readonly string[], policy: SandboxPolicy): ConfinedArgv {
+  async confine(argv: readonly string[], policy: SandboxPolicy): Promise<ConfinedArgv> {
     this.calls.push({ argv, policy })
     return { argv: [...argv], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }
   }
@@ -79,7 +79,7 @@ async function harness(
     maxReadBytes: 16_384,
   })
   const agent = stubAgent(ctx, `agent-${mode}`)
-  ctx.agents.register(agent)
+  await ctx.agents.register(agent)
   return { ctx, root, agent, fiber, sandbox: ctx.sandbox as PassthroughSandbox }
 }
 
@@ -208,7 +208,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     const created = await ctx.terminals.spawn(agent, { type: 'shell' })
     expect(sandbox.calls).toEqual([{
       argv: ['/bin/bash', '--noprofile', '--norc', '-i'],
-      policy: { mode: 'workspace-write', workspaceRoot: realpathSync.native(root), sessionId: 'agent-workspace-write' },
+      policy: { mode: 'workspace-write', workspaceRoot: root, sessionId: 'agent-workspace-write' },
     }])
     await fiber.dispose()
     expect(ctx.terminals.listBackends()).toEqual([])
@@ -233,9 +233,10 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     const child = /CHILD=(\d+)/.exec(output)?.[1]
     expect(child).toBeDefined()
     const pid = Number(child)
-    expect(() => process.kill(pid, 0)).not.toThrow()
+    expect(processIsRunning(pid)).toBe(true)
     await ctx.terminals.kill(agent, created.sessionId)
-    expect(() => process.kill(pid, 0)).toThrow()
+    // Linux can retain a stopped descendant as a zombie until its parent reaps it.
+    expect(processIsRunning(pid)).toBe(false)
   }, 10_000)
 
   it('quiesces a disowned same-session descendant after the shell exits naturally', async () => {
@@ -330,19 +331,22 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
         timeoutMs: 8_000,
       }, 'pwsh')
       const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-      expect(created.motd).toContain('dsh> ')
+      // stdin_read can precede delivery of the printable prompt to the PTY reader.
+      await expect.poll(() => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text,
+        { timeout: 8_000 }).toContain('dsh> ')
 
       const releaseFile = join(root, 'release-command')
+      const targetDirectory = parse(root).root
       // Hold the command across the silence settlement without relying on host load.
       const barrier = holdCommand
         ? `while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
         : ''
       const first = ctx.terminals.startSend(agent, created.sessionId, {
-        text: barrier + '$env:KEEP = "ok"; Set-Location /',
+        text: barrier + `$env:KEEP = "ok"; Set-Location -LiteralPath '${targetDirectory.replaceAll("'", "''")}'`,
         submit: true,
       })
       expect(['stdin_read', 'inferred_idle']).toContain((await first.done).waitReason)
-      const expected = 'keep=ok cwd=/ secret=END'
+      const expected = `keep=ok cwd=${targetDirectory} secret=END`
       const command = "Write-Output ('keep={0} cwd={1} secret={2}END' -f $env:KEEP, (Get-Location).Path, $env:DSH_TEST_SECRET)"
       expect(command).not.toContain(expected)
       const second = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })

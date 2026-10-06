@@ -180,6 +180,10 @@ class CurrentSessionFormatRestore implements SessionFormatRestore {
     this.header = decoder.header
   }
 
+  admitRow(rowValue: unknown): void {
+    this.decoder.admitRow?.(rowValue)
+  }
+
   decodeRow(rowValue: unknown): void {
     this.decoder.decodeRow(rowValue, this.collector)
   }
@@ -214,6 +218,10 @@ class MigratingSessionFormatRestore implements
     private readonly currentVersion: number,
   ) {
     this.header = migration.header
+  }
+
+  admitRow(rowValue: unknown): void {
+    this.decoder.admitRow?.(rowValue)
   }
 
   decodeRow(rowValue: unknown): void {

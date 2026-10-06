@@ -7,20 +7,25 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  DSH_ARCHIVE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'origin/workbench' }}
 concurrency:
   group: fork-ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  build-and-test:
+  linux-build-and-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       DSH_TELEMETRY_DISABLED: '1'
       DSH_SNAPSHOT: replay
+      DSH_GATE_CONCURRENCY: '1'
       NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@v4
@@ -30,13 +35,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:native-system
+      - name: Require Linux native containment availability
+        run: systemd-run --user --scope --quiet --collect --expand-environment=no -- /usr/bin/true
       - name: Check migration regressions before the full build
         run: >-
           pnpm exec vitest run
           scripts/ci-workflow.spec.ts
           scripts/ci-compatible-selfhosted.spec.ts
           scripts/tests/ci-master-platforms.spec.ts
-          packages/boot/app-boot/tests/hmr-config.spec.ts
+          packages/boot/hmr/tests/workbench-config.spec.ts
           packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts
           packages/subprocess/subprocess-local/tests/local.spec.ts
           packages/subprocess/subprocess-local/tests/linux-scope.spec.ts
@@ -47,9 +54,10 @@ jobs:
           packages/terminal/terminal-bash/tests/session.spec.ts
           packages/terminal/terminal-bash/tests/config.spec.ts
           --maxWorkers=4
+      - name: Require real PowerShell PTY acceptance
+        run: pnpm exec vitest run --config workbench/vitest.native-pwsh.config.ts
       - run: pnpm run build
       - run: pnpm run typecheck
-      - run: pnpm test --maxWorkers=4
       - run: node --test workbench/*.test.mjs
       - run: node workbench/apply-runtime-seams.mjs
       - name: Package candidate host and web artifacts
@@ -57,6 +65,147 @@ jobs:
           node workbench/package-candidate.mjs
       - uses: actions/upload-artifact@v4
         with:
-          name: host-candidate-${{ github.sha }}
+          name: host-candidate-${{ env.CANDIDATE_SHA }}
           path: workbench-artifacts/
           retention-days: 14
+      - run: pnpm run lint:contracts-ready
+      - run: pnpm run doc-sync
+      - run: pnpm run hygiene
+      - run: pnpm test --maxWorkers=4
+      - name: Install the workspace-pinned browser
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
+      - name: Replay recorded Session and SDK scenarios
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT_MAX_WORKERS: '1'
+          DSH_SNAPSHOT_MAX_CONCURRENCY: '2'
+        run: pnpm run test:snapshot
+      - name: Check built CLI and process expectations
+        env:
+          DSH_EXAMPLE_MODE: lib
+        run: pnpm run test:expected
+      - name: Replay settings and plan browser acceptance
+        run: >-
+          pnpm run test:web:built
+          apps/web/tests/settings-chrome.e2e.ts
+          apps/web/tests/plan-control-row.e2e.ts
+          --maxWorkers=1 --no-file-parallelism
+      - name: Preserve browser failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-${{ env.CANDIDATE_SHA }}
+          path: .artifacts/web-e2e-*
+          if-no-files-found: ignore
+          retention-days: 14
+
+  source-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_SNAPSHOT: replay
+      DSH_GATE_CONCURRENCY: '1'
+      DSH_COVERAGE_MAX_WORKERS: '2'
+      DSH_COVERAGE_PARTITIONS: '2'
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Require upstream source coverage and its complete uninstrumented tail
+        run: pnpm run check:ci:coverage
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: coverage-${{ env.CANDIDATE_SHA }}
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  node-22-compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_SNAPSHOT: replay
+      DSH_GATE_CONCURRENCY: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check the minimum supported Node runtime
+        run: pnpm run check:node-compat
+
+  native-platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_SNAPSHOT: replay
+      DSH_GATE_CONCURRENCY: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:native-system
+      - name: Check native watcher and terminal compatibility
+        run: >-
+          pnpm exec vitest run
+          packages/boot/hmr/tests/workbench-config.spec.ts
+          packages/boot/hmr/tests/watch-config.spec.ts
+          packages/subprocess/subprocess-local/tests/local.spec.ts
+          packages/subprocess/subprocess-local/tests/native-containment.spec.ts
+          packages/shell/pwsh-local/tests/executor.spec.ts
+          packages/terminal/terminal-bash/tests/local.spec.ts
+          packages/terminal/terminal-bash/tests/index.spec.ts
+          packages/terminal/terminal-bash/tests/session.spec.ts
+          packages/terminal/terminal-bash/tests/session-buffer.spec.ts
+          packages/session/session-format-v4-to-v5/tests/migration.spec.ts
+          packages/session/session-persistence-jsonl/tests/v5-checkpoints.spec.ts
+          packages/terminal/terminal-bash/tests/config.spec.ts
+          --maxWorkers=1 --no-file-parallelism --testTimeout=90000 --hookTimeout=90000
+      - name: Require real PowerShell PTY acceptance
+        run: pnpm exec vitest run --config workbench/vitest.native-pwsh.config.ts
+
+  build-and-test:
+    needs: [linux-build-and-test, source-coverage, node-22-compatibility, native-platforms]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require all candidate platforms
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: node -e 'const jobs=JSON.parse(process.env.RESULTS); if(Object.values(jobs).some(job=>job.result!=="success")) process.exit(1)'

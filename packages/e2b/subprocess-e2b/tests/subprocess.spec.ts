@@ -1,3 +1,4 @@
+import { sdkCommandHandle } from './command-handle.ts'
 import { once } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
 import {
@@ -30,8 +31,12 @@ interface StartOptions {
   onStderr?: (data: string) => void | Promise<void>
 }
 
-class FakeCommandHandle {
+class FakeCommandHandle implements Pick<CommandHandle, keyof CommandHandle> {
   pid = 4242
+  stdout = ''
+  stderr = ''
+  exitCode: number | undefined
+  error: string | undefined
   readonly sent: Array<string | Uint8Array> = []
   closes = 0
   kills = 0
@@ -39,13 +44,14 @@ class FakeCommandHandle {
   killError: unknown
   killResult = true
   disconnectError: unknown
-  private readonly result = Promise.withResolvers<CommandResult>()
+  private readonly fakeResult = Promise.withResolvers<CommandResult>()
   private settled = false
 
-  constructor(private readonly onKill: () => void = () => {}) {}
+  constructor(private readonly onKill: () => void = () => {}) {
+  }
 
   wait(): Promise<CommandResult> {
-    return this.result.promise
+    return this.fakeResult.promise
   }
 
   async sendStdin(data: string | Uint8Array): Promise<void> {
@@ -68,22 +74,29 @@ class FakeCommandHandle {
     if (this.disconnectError !== undefined) throw this.disconnectError
   }
 
+  asHandle(): CommandHandle {
+    return sdkCommandHandle(this)
+  }
+
   succeed(exitCode = 0): void {
     if (this.settled) return
     this.settled = true
-    this.result.resolve({ exitCode, stdout: '', stderr: '' })
+    this.exitCode = exitCode
+    this.fakeResult.resolve({ exitCode, stdout: '', stderr: '' })
   }
 
   fail(exitCode: number): void {
     if (this.settled) return
     this.settled = true
-    this.result.reject(commandError(exitCode))
+    this.exitCode = exitCode
+    this.error = `exit ${exitCode}`
+    this.fakeResult.reject(commandError(exitCode))
   }
 
   crash(error: unknown): void {
     if (this.settled) return
     this.settled = true
-    this.result.reject(error)
+    this.fakeResult.reject(error)
   }
 }
 
@@ -288,12 +301,12 @@ class FakeSandbox {
           this.startOptions = options as StartOptions
           await this.startGate
           if (this.backgroundError !== undefined) throw this.backgroundError
-          return this.handle as unknown as CommandHandle
+          return this.handle.asHandle()
         }
         return { exitCode: 0, stdout: '', stderr: '' }
       },
     },
-  } as unknown as Sandbox
+  } as Sandbox
 }
 
 function spec(overrides: Partial<SubprocessSpawnSpec> = {}): SubprocessSpawnSpec {
@@ -315,7 +328,7 @@ function runtime(fake: FakeSandbox, getSandbox: () => Promise<Sandbox> = async (
     cwd: '/workspace',
     runtimeRoot: '/workspace/.dsh-e2b',
     getSandbox,
-  } as unknown as E2BRuntime
+  } as E2BRuntime
 }
 
 async function flush(): Promise<void> {
@@ -464,7 +477,7 @@ describe('E2BSubprocessHandle', () => {
     for (const graceMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => service.spawn(spec({ graceMs }))).toThrow('graceMs must be a positive finite number')
       void expect(service.spawnTerminal({
-        argv: ['bash'], cwd: '/w', rows: 24, cols: 80, graceMs,
+        argv: ['bash'], cwd: '/w', rows: 24, cols: 80, terminalType: 'dumb', graceMs,
       })).rejects.toThrow('graceMs must be a positive finite number')
     }
   })
@@ -1137,12 +1150,9 @@ describe('E2BSubprocessHandle', () => {
     fake.beforeProbe = () => { duringProbe.abort(); fake.beforeProbe = undefined }
     await expect(handle.waitForExit(duringProbe.signal)).resolves.toBe(false)
 
-    let racedAbort = false
-    const raceSignal = {
-      get aborted() { return racedAbort },
-      addEventListener: () => { racedAbort = true },
-      removeEventListener: () => {},
-    } as unknown as AbortSignal
+    const raceController = new AbortController()
+    const raceSignal = raceController.signal
+    vi.spyOn(raceSignal, 'addEventListener').mockImplementation(() => { raceController.abort() })
     await expect(handle.waitForExit(raceSignal)).resolves.toBe(false)
     fake.finish()
     await handle.done
@@ -1624,6 +1634,37 @@ describe('E2BSubprocessRuntime', () => {
     return { ctx, fiber }
   }
 
+  it('reads shell selection from the remote environment and honors cancellation', async () => {
+    const fake = new FakeSandbox()
+    fake.ambient += 'SHELL=/bin/zsh\0'
+    const { ctx, fiber } = await service(fake)
+    const subprocess = ctx.subprocess
+    try {
+      await expect(ctx.subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix', defaultShell: '/bin/zsh' })
+      fake.ambient = 'PATH=/usr/bin\0'
+      await expect(subprocess.terminalEnvironment()).resolves.toEqual({ platform: 'posix' })
+      const count = fake.commandsSeen.length
+      await expect(ctx.subprocess.terminalEnvironment(AbortSignal.abort(new Error('cancelled environment'))))
+        .rejects.toThrow('cancelled environment')
+      expect(fake.commandsSeen).toHaveLength(count)
+    } finally { await fiber.dispose() }
+    const commandsBeforeDisposedRead = fake.commandsSeen.length
+    await expect(subprocess.terminalEnvironment()).rejects.toThrow('service is disposing')
+    expect(fake.commandsSeen).toHaveLength(commandsBeforeDisposedRead)
+  })
+
+  it('refuses separate control channels before creating remote work', async () => {
+    const fake = new FakeSandbox()
+    const { ctx, fiber } = await service(fake)
+    try {
+      const request = spec({ stdio: { ...spec().stdio, control: 'pipe' } })
+      expect(() => ctx.subprocess.spawn(request)).toThrow('separate control channels are unsupported')
+      expect(() => new E2BSubprocessHandle(runtime(fake), request, '/runtime/control-refused', 1))
+        .toThrow('separate control channels are unsupported')
+      expect(fake.commandsSeen).toEqual([])
+    } finally { await fiber.dispose() }
+  })
+
   it('registers handles and disposal terminates and joins live remote groups regardless of sandbox policy', async () => {
     const fake = new FakeSandbox()
     fake.trapsTerm = true
@@ -1678,13 +1719,14 @@ describe('E2BSubprocessRuntime', () => {
       terminate: vi.fn(),
       waitForExit: vi.fn(async () => { throw new Error('first cleanup failed') }),
       done: Promise.resolve({ exitCode: 0, signal: null }),
-    } as unknown as E2BSubprocessHandle
+    }
     const second = {
       terminate: vi.fn(),
       waitForExit: vi.fn(async () => { throw new Error('second cleanup failed') }),
       done: Promise.resolve({ exitCode: 0, signal: null }),
-    } as unknown as E2BSubprocessHandle
-    const live = (ctx.subprocess as unknown as { live: Set<E2BSubprocessHandle> }).live
+    }
+    const live: unknown = Reflect.get(ctx.subprocess, 'live')
+    if (!(live instanceof Set)) throw new Error('expected live handle registry')
     live.add(first)
     live.add(second)
 
@@ -1704,7 +1746,7 @@ describe('E2BSubprocessRuntime', () => {
       terminate: vi.fn(),
       waitForExit: vi.fn(async () => { throw new Error('cleanup failed') }),
       done: Promise.resolve({ exitCode: 0, signal: null }),
-    } as unknown as E2BSubprocessHandle
+    }
     let finishCleanup!: () => void
     const cleanup = new Promise<boolean>((resolve) => {
       finishCleanup = () => { resolve(true) }
@@ -1713,8 +1755,9 @@ describe('E2BSubprocessRuntime', () => {
       terminate: vi.fn(),
       waitForExit: vi.fn(() => cleanup),
       done: Promise.resolve({ exitCode: 0, signal: null }),
-    } as unknown as E2BSubprocessHandle
-    const live = (ctx.subprocess as unknown as { live: Set<E2BSubprocessHandle> }).live
+    }
+    const live: unknown = Reflect.get(ctx.subprocess, 'live')
+    if (!(live instanceof Set)) throw new Error('expected live handle registry')
     live.add(failed)
     live.add(draining)
 
@@ -1778,7 +1821,8 @@ describe('E2BSubprocessRuntime', () => {
     const fake = new FakeSandbox()
     const getSandbox = vi.fn(async () => fake.sandbox)
     const { ctx } = await service(fake, runtime(fake, getSandbox))
-    const live = (ctx.subprocess as unknown as { live: Set<E2BSubprocessHandle> }).live
+    const live: unknown = Reflect.get(ctx.subprocess, 'live')
+    if (!(live instanceof Set)) throw new Error('expected live handle registry')
     expect(() => ctx.subprocess.spawn(spec({ argv: [] }))).toThrow(/non-empty program/)
     expect(() => ctx.subprocess.spawn(spec({ signal: AbortSignal.abort('stop') })))
       .toThrow(new Error('aborted before spawn: stop'))

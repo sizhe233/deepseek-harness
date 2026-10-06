@@ -1,5 +1,5 @@
 ---
-description: "持久终端会话的随附 shell 后端：在共享沙箱策略下启动交互式 bash 或 pwsh，带就绪检测与有界逐行输出。"
+description: "持久终端会话的随产品交付的 shell 后端：在共享沙箱策略下启动交互式 bash 或 pwsh，带就绪检测与有界逐行输出。"
 kind: "package-reference"
 ---
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-当工作需要状态持续存在的交互式 shell 或 REPL 时选择此后端：逐步调试 gdb、在 Python 或 Node REPL 中探索，或中断前台命令后回到 shell。对于应当一次调用即开始并结束的有界命令，请选择单次 bash 工具。bash 方言面向 POSIX；pwsh 方言面向 `dsh-pwsh-local` 能解析出 pwsh 可执行文件的 Windows 主机。
+当工作需要状态持续存在的交互式 shell 或 REPL 时选择此后端：在调试器中单步执行、在 Python 或 Node REPL 中探索，或中断前台命令后回到 shell。对于应当一次调用即开始并结束的有界命令，请选择单次 bash 工具。bash 方言面向 POSIX；pwsh 方言面向 `dsh-pwsh-local` 能解析出 pwsh 可执行文件的 Windows 主机。
 
 ### 组合方式
 
@@ -44,7 +44,7 @@ kind: "package-reference"
 - name: '@deepseek-ai/dsh-tool-terminal'
 ```
 
-`danger-full-access` 直接启动 shell。受限模式要求同一执行世界中存在 `ctx.sandbox` 提供方：缺少时，spawn 会在 shell 启动前失败。
+`danger-full-access` 直接启动 shell。受限模式要求同一执行世界中存在 `ctx.sandbox` 提供方：缺少时，spawn 会在 shell 启动前失败。限制准备过程接收打开操作的取消信号；即使提供方稍后返回，取消仍会阻止终端分配。
 
 ### 配置
 
@@ -57,11 +57,11 @@ kind: "package-reference"
 | `timeoutMs` | `30000` | 一次发送等待的绝对上限 |
 | `disposeGraceMs` | `3000` | 清理升级到 `SIGKILL` 前的宽限时间 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-terminal-bash)是每个字段的穷尽式真源，包括就绪计时（`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs`）、终端尺寸（`rows`、`cols`）与 scrollback 上限（`scrollbackLines`、`scrollbackMaxBytes`）。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-terminal-bash)是每个字段的穷尽式真源，包括就绪计时（`pollIntervalMs`、`exactProbeAfterMs`、`idleSilenceMs`、`handoffGraceMs`、`promptTailGraceMs`）、终端尺寸（`rows`、`cols`）与 scrollback 上限（`scrollbackLines`、`scrollbackMaxBytes`）。
 
 ### shell 方言与就绪
 
-两种方言暴露相同的就绪约定，因此消费方与方言无关。当 shell 再次就绪时发送即结算：受控提示符被验证之后、前台进程组被证明在等待 stdin（Linux）之后、输出静默（`inferred_idle`）之后，或到达绝对 `timeoutMs`。`inferred_idle` 或 `timeout` 结果并不证明前台命令已退出。发送的 `viewport` 在结算时停止收集；通过会话读取来观察有界 scrollback 中的后续输出。
+两种方言暴露相同的就绪约定，因此消费方与方言无关。当 shell 再次就绪时发送即结算：受控提示符被验证之后、前台进程组被证明在等待 stdin（Linux）之后、输出静默（`inferred_idle`）之后，或到达绝对 `timeoutMs`。若提示符标记已到达而其可打印尾部尚未到达，send 会在 `idleSilenceMs + handoffGraceMs` 之外继续等待 `promptTailGraceMs`，因为标记与尾部由同一次提示符渲染写出。`inferred_idle` 或 `timeout` 结果并不证明前台命令已退出。发送的 `viewport` 在结算时停止收集；通过会话读取来观察有界 scrollback 中的后续输出。
 
 ### 沙箱与安全运行
 
@@ -84,6 +84,8 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 ### 设计理念
 
 一个后端服务两种方言：bash 与 pwsh 共享同一套会话机制——清理器、有界缓冲区、就绪轮询、取消与关闭——只在 argv、环境与提示符安装方式上不同。bash 通过 `PS1` 加 `PROMPT_COMMAND` 接收私有标记。默认 pwsh argv 通过 `-NoExit -Command` 执行提示符函数与 UTF-8 编码设置，然后才进入行编辑器。显式非空的 `shellArgs` 保持不变，并通过 stdin 接收一次设置。两条路径都只有在验证私有标记与精确的可打印提示符后才发布启动；stdin 等待与回显的设置文本不能发布 shell。一个不保留 scrollback 的 `@xterm/headless` 实例会消费原始 PTY 数据，并通过同一句柄返回终端协议响应；逐行 sanitizer 仍是唯一输出投影。
+
+Scrollback 和尚未读取的发送输出保留独立拥有的字符串，并增量维护字节数与换行符数，因此清理后的切片不会保留已丢弃的控制序列。追加与淘汰文本的摊还耗时与输入文本量成正比；读取时才拼接保留的分片。保留策略维持码点边界，并将末尾换行符之后的空行计入行数。[历史保留策略决策](../../../.agents/notes/archived/bug-fix/2026-09-11-incremental-terminal-retention.md)记录复杂度与测量依据。
 
 ### 源码地图
 
@@ -115,7 +117,7 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 
 当包级约定不够用时阅读以下页面。它们从共享终端模型进入服务、工具与执行世界基底。
 
-- [终端子系统参考](../../../docs/subsystems/terminal.zh.md)——此后端实现的服务器约定与生成的 `ctx.terminals` 接口面。
+- [终端子系统参考](../../../docs/subsystems/terminal.zh.md)——此后端实现的服务约定与生成的 `ctx.terminals` 接口面。
 - [terminal 服务](../terminal/README.zh.md)——后端注册、所有者限制与清理语义。
 - [tool-terminal 工具](../tool-terminal/README.zh.md)——操作会话的面向模型工具。
 - [子进程 seam](../../../docs/subsystems/subprocess.zh.md)——负责 PTY 分配与进程树清理的终端原语。
@@ -165,7 +167,7 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 - **仅逐行输出**——headless xterm 只为终端协议响应维护控制序列状态。返回输出仍按行规范化；不支持全屏备用缓冲区交互。
 - **没有精确档时，就绪是启发式的**——精确 stdin 等待检测取决于已挂载的子进程提供方；无法证明该状态的提供方（macOS、Windows）按提示符标记与静默／超时就绪结算。
 - **自定义 pwsh 启动参数**——自定义 `shellArgs` 保留 stdin 引导，其交付取决于所选主机进入行编辑器。若未确认受控提示符，启动会在 `timeoutMs` 到期时拒绝；将 `shellArgs` 留空可使用启动命令路径。
-- **受限沙箱中的 pwsh 引导**——提示符函数与 UTF-8 钉通过 `[Console]::` 写入，Windows ACL 沙箱的只读模式可能拒绝。若因此无法获得 marker 就绪，启动会在 `timeoutMs` 到期时拒绝，而不会发布不完整的 shell。
+- **受限沙箱中的 pwsh 引导**——提示符函数与 UTF-8 编码设置通过 `[Console]::` 写入，Windows ACL 沙箱的只读模式可能拒绝。若因此无法获得 marker 就绪，启动会在 `timeoutMs` 到期时拒绝，而不会发布不完整的 shell。
 - **清理保证属于提供方**——进程树清理是 `SubprocessTerminalHandle` 的约定，而不是此后端的。
 - **会话不随进程退出存活**——harness 重启会销毁所有会话。
 
@@ -178,5 +180,3 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。readiness、terminal buffer 与 process-tree state 都是按 Session 的私有实现状态，backend 不发布独立 lifecycle stream 或 snapshot。

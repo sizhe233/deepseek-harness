@@ -28,7 +28,7 @@ test('candidate CI is read-only and never runs in pull_request_target context', 
 })
 
 const regressionPaths = [
-  'packages/boot/app-boot/tests/hmr-config.spec.ts',
+  'packages/boot/hmr/tests/workbench-config.spec.ts',
   'packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts',
   'packages/subprocess/subprocess-local/tests/local.spec.ts',
   'packages/subprocess/subprocess-local/tests/linux-scope.spec.ts',
@@ -48,17 +48,17 @@ function assertEarlyRegressions(steps) {
 }
 test('candidate CI checks migration regressions before the full build', () => {
   const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
-  assertEarlyRegressions(workflow.jobs['build-and-test'].steps)
+  assertEarlyRegressions(workflow.jobs['linux-build-and-test'].steps)
 })
 test('early regression check rejects missing suites and late execution', () => {
   const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
   for (const path of regressionPaths) {
-    const steps = structuredClone(workflow.jobs['build-and-test'].steps)
+    const steps = structuredClone(workflow.jobs['linux-build-and-test'].steps)
     const early = steps.find(step => step.name === 'Check migration regressions before the full build')
     early.run = early.run.replace(path, '')
     assert.throws(() => assertEarlyRegressions(steps), /missing regression:/)
   }
-  const steps = structuredClone(workflow.jobs['build-and-test'].steps)
+  const steps = structuredClone(workflow.jobs['linux-build-and-test'].steps)
   const early = steps.findIndex(step => step.name === 'Check migration regressions before the full build')
   steps.push(...steps.splice(early, 1))
   assert.throws(() => assertEarlyRegressions(steps), /must precede the full build/)
@@ -66,9 +66,10 @@ test('early regression check rejects missing suites and late execution', () => {
 
 test('official job conditions retain their original event and disabled-state semantics', async () => {
   const { execFileSync } = await import('node:child_process')
-  const baseline = JSON.parse(readFileSync(new URL('compatibility.json', import.meta.url), 'utf8')).upstreamBase
+  const compatibility = JSON.parse(readFileSync(new URL('compatibility.json', import.meta.url), 'utf8'))
+  const baseline = compatibility.upstreamWorkflowBase ?? compatibility.upstreamBase
   for (const file of readdirSync(directory).filter(f => f.endsWith('.yml') && !own.has(f))) {
-    const before = yaml.load(execFileSync('git', ['show', `${baseline}:.github/workflows/${file}`], { encoding: 'utf8' }))
+    const before = yaml.load(execFileSync('git', ['show', `${compatibility.retainedWorkflowBases?.[file] ?? baseline}:.github/workflows/${file}`], { encoding: 'utf8' }))
     const after = yaml.load(readFileSync(new URL(file, directory), 'utf8'))
     for (const [name, job] of Object.entries(before.jobs)) {
       const original = typeof job.if === 'string' ? job.if.trim().replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '').replaceAll('\n', ' ') : job.if
@@ -76,4 +77,110 @@ test('official job conditions retain their original event and disabled-state sem
       assert.equal(after.jobs[name].if, expected, file + ':' + name)
     }
   }
+})
+
+test('required fork status waits for Linux and native platform acceptance', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  assert.deepEqual(workflow.jobs['build-and-test'].needs, ['linux-build-and-test', 'source-coverage', 'node-22-compatibility', 'native-platforms'])
+  assert.equal(workflow.jobs['build-and-test'].if, '${{ !cancelled() }}')
+  assert.deepEqual(workflow.jobs['native-platforms'].strategy.matrix.os, ['macos-15', 'windows-2025'])
+  assert.equal(workflow.jobs['native-platforms']['continue-on-error'], undefined)
+  assert.equal(workflow.jobs['linux-build-and-test']['continue-on-error'], undefined)
+  assert.equal(workflow.jobs['build-and-test'].steps[0].env.RESULTS, '${{ toJSON(needs) }}')
+  assert.match(workflow.jobs['build-and-test'].steps[0].run, /job.result!=="success"/)
+})
+
+function assertBrowserAcceptance(workflow) {
+  assert.equal(workflow.jobs['linux-build-and-test'].env.DSH_SNAPSHOT, 'replay')
+  const steps = workflow.jobs['linux-build-and-test'].steps
+  assert.ok(steps.some(step => step.run === 'pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium'), 'workspace-pinned Chromium required')
+  const browser = steps.find(step => step.name === 'Replay settings and plan browser acceptance')
+  assert.ok(browser && !browser['continue-on-error'], 'strict browser replay required')
+  for (const path of ['settings-chrome.e2e.ts', 'plan-control-row.e2e.ts']) assert.ok(browser.run.includes(path), `missing browser acceptance: ${path}`)
+  assert.ok(!browser.run.includes('refresh'), 'CI must not rewrite goldens')
+  const artifact = steps.find(step => step.name === 'Preserve browser failure evidence')
+  assert.equal(artifact.if, '${{ failure() }}')
+  for (const script of ['pnpm run typecheck', 'pnpm run lint:contracts-ready', 'pnpm run doc-sync']) assert.ok(steps.some(step => step.run === script), `missing static acceptance: ${script}`)
+}
+test('candidate CI requires pinned strict browser replay and static acceptance', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  assertBrowserAcceptance(workflow)
+  const relaxed = structuredClone(workflow)
+  relaxed.jobs['linux-build-and-test'].env.DSH_SNAPSHOT = 'refresh'
+  assert.throws(() => assertBrowserAcceptance(relaxed))
+  const missing = structuredClone(workflow)
+  missing.jobs['linux-build-and-test'].steps = missing.jobs['linux-build-and-test'].steps.filter(step => step.name !== 'Replay settings and plan browser acceptance')
+  assert.throws(() => assertBrowserAcceptance(missing), /strict browser replay required/)
+})
+
+test('each native runner explicitly requires real PowerShell PTY cases', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  for (const job of ['linux-build-and-test', 'native-platforms']) {
+    const step = workflow.jobs[job].steps.find(step => step.name === 'Require real PowerShell PTY acceptance')
+    assert.equal(step?.run, 'pnpm exec vitest run --config workbench/vitest.native-pwsh.config.ts')
+    assert.equal(step?.['continue-on-error'], undefined)
+  }
+  const config = readFileSync(new URL('vitest.native-pwsh.config.ts', import.meta.url), 'utf8')
+  assert.match(config, /if \(probe.status !== 0\) throw new Error/)
+  assert.ok(config.includes('terminal-bash/tests/local.spec.ts'))
+})
+
+test('coverage, recorded Sessions, SDKs, and built expectations remain blocking', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const coverage = workflow.jobs['source-coverage']
+  assert.equal(coverage['continue-on-error'], undefined)
+  assert.ok(coverage.steps.some(step => step.run === 'pnpm run check:ci:coverage'))
+  const steps = workflow.jobs['linux-build-and-test'].steps
+  for (const command of ['pnpm run hygiene', 'pnpm run test:snapshot', 'pnpm run test:expected']) {
+    const step = steps.find(step => step.run === command)
+    assert.ok(step, `missing consumer acceptance: ${command}`)
+    assert.equal(step['continue-on-error'], undefined)
+  }
+})
+
+test('all candidate jobs check out and name artifacts for the exact PR source commit', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const source = '${{ github.event.pull_request.head.sha || github.sha }}'
+  assert.equal(workflow.env.CANDIDATE_SHA, source)
+  assert.equal(workflow.env.DSH_ARCHIVE_BASE_REF, "${{ github.event.pull_request.base.sha || github.event.before || 'origin/workbench' }}")
+  for (const name of workflow.jobs['build-and-test'].needs) {
+    const checkout = workflow.jobs[name].steps.find(step => step.uses?.startsWith('actions/checkout@'))
+    assert.equal(checkout.with.ref, source)
+    assert.equal(checkout.with['persist-credentials'], false)
+  }
+  const upload = workflow.jobs['linux-build-and-test'].steps.find(step => step.with?.name?.startsWith('host-candidate-'))
+  assert.equal(upload.with.name, 'host-candidate-${{ env.CANDIDATE_SHA }}')
+})
+
+test('native platforms exercise the adjacent Session upgrade and generation retention', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const step = workflow.jobs['native-platforms'].steps.find(step => step.name === 'Check native watcher and terminal compatibility')
+  for (const path of ['packages/session/session-format-v4-to-v5/tests/migration.spec.ts', 'packages/session/session-persistence-jsonl/tests/v5-checkpoints.spec.ts']) assert.ok(step.run.includes(path), `missing native persistence test: ${path}`)
+})
+
+test('the minimum supported Node runtime is a required native compatibility job', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const job = workflow.jobs['node-22-compatibility']
+  assert.equal(job['continue-on-error'], undefined)
+  assert.equal(job.steps.find(step => step.uses?.startsWith('actions/setup-node@')).with['node-version'], '22.19.0')
+  assert.ok(job.steps.some(step => step.run === 'pnpm run check:node-compat'))
+})
+
+test('Linux acceptance cannot silently pass without the native user manager', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const step = workflow.jobs['linux-build-and-test'].steps.find(step => step.name === 'Require Linux native containment availability')
+  assert.equal(step?.run, 'systemd-run --user --scope --quiet --collect --expand-environment=no -- /usr/bin/true')
+  assert.equal(step?.['continue-on-error'], undefined)
+})
+
+test('candidate bytes are available for parallel private acceptance while every final check stays required', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const steps = workflow.jobs['linux-build-and-test'].steps
+  const seams = steps.findIndex(step => step.run === 'node --test workbench/*.test.mjs')
+  const patch = steps.findIndex(step => step.run === 'node workbench/apply-runtime-seams.mjs')
+  const pack = steps.findIndex(step => step.name === 'Package candidate host and web artifacts')
+  const browser = steps.findIndex(step => step.name === 'Replay settings and plan browser acceptance')
+  assert.ok(seams >= 0 && patch > seams && pack > patch && browser > pack)
+  assert.ok(steps.some(step => step.run === 'pnpm test --maxWorkers=4'))
+  assert.equal(steps[browser]['continue-on-error'], undefined)
 })
