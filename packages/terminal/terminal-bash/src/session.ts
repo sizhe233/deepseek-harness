@@ -311,14 +311,15 @@ export class LocalPtySession implements TerminalBackendSession {
    * Capture bounded startup output; pwsh requires its installed prompt acknowledgement.
    * @param signal - optional cancellation while the shell reaches its first prompt.
    * @param setupCommand - optional command submitted once for an explicit pwsh argv.
+   * @param setupEnter - Enter sequence for the execution world's bootstrap input protocol.
    * @returns Resolves after startup readiness; rejects on exit or readiness timeout.
    */
-  async initialize(signal?: AbortSignal, setupCommand?: string): Promise<void> {
+  async initialize(signal?: AbortSignal, setupCommand?: string, setupEnter: '\r' | '\x1bOM' = '\r'): Promise<void> {
     this.initializing = true
     try {
       const operation = this.startSend({
-        text: setupCommand ?? '',
-        submit: setupCommand !== undefined,
+        text: setupCommand === undefined ? '' : `${setupCommand}${setupEnter}`,
+        submit: false,
         ...signal !== undefined ? { signal } : {},
       })
       const result = await operation.done

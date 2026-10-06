@@ -55,6 +55,7 @@ async function harness(
   mode: 'danger-full-access' | 'workspace-write',
   timing: { idleSilenceMs?: number; handoffGraceMs?: number; timeoutMs?: number } = {},
   dialect: 'bash' | 'pwsh' = 'bash',
+  shellArgs?: string[],
 ) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-pty-local-'))
   roots.push(root)
@@ -68,6 +69,7 @@ async function harness(
   await ctx.plugin(LocalSubprocessRuntime)
   const fiber = await ctx.plugin(ptyLocal, {
     shellDialect: dialect,
+    ...shellArgs === undefined ? {} : { shellArgs },
     pollIntervalMs: 10,
     exactProbeAfterMs: 20,
     idleSilenceMs: timing.idleSilenceMs ?? 250,
@@ -321,12 +323,74 @@ const hasPwsh = spawnSync(
 ).status === 0
 
 describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
+  it('acknowledges stdin bootstrap while retaining explicit startup arguments', async () => {
+    const shellArgs = ['-NoLogo', '-NoProfile', '-NoExit']
+    const { ctx, root, agent, sandbox } = await harness('workspace-write', {
+      idleSilenceMs: 300, handoffGraceMs: 300, timeoutMs: 8_000,
+    }, 'pwsh', shellArgs)
+    const created = await ctx.terminals.spawn(agent, { type: 'shell', cwd: root })
+    expect(sandbox.calls[0]?.argv).toEqual([resolvePwshPath(), ...shellArgs])
+    expect(created.motd).toContain('dsh> ')
+    const pid = created.pid ?? 0
+    expect(pid).toBeGreaterThan(0)
+    const command = "Write-Output ('CUSTOM-' + 'STDIN-READY')"
+    expect(command).not.toContain('CUSTOM-STDIN-READY')
+    const sent = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
+    expect(['stdin_read', 'inferred_idle']).toContain((await sent.done).waitReason)
+    await expect.poll(() => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text,
+      { timeout: 8_000 }).toContain('CUSTOM-STDIN-READY')
+    expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
+    expect(ctx.terminals.list(agent)).toEqual([])
+    expect(processIsRunning(pid)).toBe(false)
+  }, 30_000)
+
+  it('finishes a loaded line editor initializer before publishing its prompt', async () => {
+    const { ctx, root } = await harness('danger-full-access', {}, 'pwsh')
+    const releaseFile = join(root, 'release-options-child')
+    const keysFile = join(root, 'received-options-keys')
+    const child = "const fs=require('fs'); const timer=setInterval(()=>{if(fs.existsSync(process.env.DSH_PWSH_RELEASE))clearInterval(timer)},10)"
+    // Model PSReadLine's lazy macOS accessibility probe with an inherited-stdin
+    // child held until the parent has observed the initialization ordering.
+    const module = 'New-Module -Name PSReadLine -ScriptBlock { function Get-PSReadLineOption { '
+      + 'if (-not $script:initialized) { $info = [Diagnostics.ProcessStartInfo]::new(); '
+      + `$info.FileName = '${process.execPath.replaceAll("'", "''")}'; `
+      + `$info.Arguments = '-e "${child.replaceAll("'", "''")}"'; `
+      + `$info.EnvironmentVariables['DSH_PWSH_RELEASE'] = '${releaseFile.replaceAll("'", "''")}'; `
+      + '$info.UseShellExecute = $false; $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true; '
+      + '$child = [Diagnostics.Process]::Start($info); try { [Console]::Write("OPTIONS_HELD"); $child.WaitForExit(); '
+      + 'if ($child.ExitCode -ne 0) { throw "options child failed" } } finally { $child.Dispose() }; '
+      + '$script:initialized = $true } }; Export-ModuleMember -Function Get-PSReadLineOption } | Import-Module; '
+    const command = module + ptyLocal.PWSH_PROMPT_SETUP
+      + '; [Console]::Write((prompt)); $null = PSReadLine\\Get-PSReadLineOption; '
+      + '$keys = @(1..4 | ForEach-Object { [int][Console]::ReadKey($true).KeyChar }); '
+      + `[IO.File]::WriteAllText('${keysFile.replaceAll("'", "''")}', ($keys -join ','))`
+    const terminal = await ctx.subprocess.spawnTerminal({
+      argv: [resolvePwshPath(), '-NoLogo', '-NoProfile', '-Command', command],
+      cwd: root, env: { NO_COLOR: '1' }, rows: 40, cols: 160, terminalType: 'dumb', graceMs: 500,
+    })
+    let output = ''
+    terminal.output.on('data', (chunk: Buffer) => { output = (output + chunk.toString('utf8')).slice(-4_096) })
+    try {
+      await expect.poll(() => output, { timeout: 8_000 }).toContain('OPTIONS_HELD')
+      expect(output).not.toContain('dsh> ')
+      writeFileSync(releaseFile, '')
+      await expect.poll(() => output, { timeout: 8_000 }).toContain('dsh> ')
+      await terminal.write('abc\r')
+      await expect.poll(() => existsSync(keysFile), { timeout: 8_000 }).toBe(true)
+      expect(readFileSync(keysFile, 'utf8')).toBe('97,98,99,13')
+    } finally {
+      await terminal.terminate()
+    }
+  }, 30_000)
+
   it('preserves Enter sent after the prompt before the first console read', async () => {
     const { ctx, root } = await harness('danger-full-access', {}, 'pwsh')
     const releaseFile = join(root, 'release-read')
     const keysFile = join(root, 'received-keys')
+    const modulesFile = join(root, 'loaded-readline-modules')
     const command = ptyLocal.PWSH_PROMPT_SETUP
-      + '; [Console]::Write((prompt)); '
+      + `; [IO.File]::WriteAllText('${modulesFile.replaceAll("'", "''")}', (@(Get-Module PSReadLine).Count.ToString())); `
+      + '[Console]::Write((prompt)); '
       + `while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
       + '$keys = @(1..4 | ForEach-Object { [int][Console]::ReadKey($true).KeyChar }); '
       + `[IO.File]::WriteAllText('${keysFile.replaceAll("'", "''")}', ($keys -join ','))`
@@ -338,6 +402,7 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     terminal.output.on('data', (chunk: Buffer) => { output = (output + chunk.toString('utf8')).slice(-4_096) })
     try {
       await expect.poll(() => output, { timeout: 8_000 }).toContain('dsh> ')
+      expect(readFileSync(modulesFile, 'utf8')).toBe('0')
       await terminal.write('abc\r')
       writeFileSync(releaseFile, '')
       await expect.poll(() => existsSync(keysFile), { timeout: 8_000 }).toBe(true)

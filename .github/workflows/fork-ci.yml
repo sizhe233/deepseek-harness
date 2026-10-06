@@ -72,7 +72,13 @@ jobs:
       - run: pnpm run lint:contracts-ready
       - run: pnpm run doc-sync
       - run: pnpm run hygiene
-      - run: pnpm test --maxWorkers=4
+      - name: Run the complete built unit inventory
+        # Match upstream's shared-runner ci-unit budget. Native child work also
+        # consumes CPUs, so keep two parallel workers on the standard runner.
+        # Explicit case and product deadlines remain authoritative.
+        env:
+          DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+        run: time pnpm test --maxWorkers=2
       - name: Install the workspace-pinned browser
         run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
       - name: Replay recorded Session and SDK scenarios
@@ -189,6 +195,12 @@ jobs:
         timeout-minutes: 2
         run: node workbench/diagnose-native-pwsh.mjs
       - run: pnpm run build:native-system
+      - name: Require macOS default and configured zsh acceptance
+        if: ${{ runner.os == 'macOS' }}
+        timeout-minutes: 3
+        env:
+          DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+        run: pnpm exec vitest run packages/api/terminal-controller/tests/native-macos-shell.spec.ts --maxWorkers=1
       - name: Check native watcher and terminal compatibility
         run: >-
           pnpm exec vitest run

@@ -165,13 +165,22 @@ it('rejects a profile launcher that omits application readiness', async () => {
 
 it('cancels a queued module notification when startup is interrupted', async () => {
   const f = await fixture()
-  const queued = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
   const hmr = f.ctx.hmr
   const run = hmr.runExclusive.bind(hmr)
-  vi.spyOn(hmr, 'runExclusive').mockImplementation((operation) => { queued.resolve(undefined); return run(operation) })
+  const exclusive = vi.spyOn(hmr, 'runExclusive').mockImplementation(operation => run(async () => {
+    entered.resolve(undefined)
+    return operation()
+  }))
+  onTestFinished(() => { exclusive.mockRestore() })
+  const changed = vi.fn()
+  f.ctx.on('hmr/change', changed)
   watchers.at(-1)!.emit('change', 'pending.mjs')
-  await queued.promise
+  // The operation must reach the readiness barrier before disposal; enqueueing
+  // alone races runExclusive's earlier closing check and misses this path.
+  await entered.promise
   await f.ctx.fiber.dispose()
+  expect(changed).not.toHaveBeenCalled()
   expect(f.ctx.get('hmr')).toBeUndefined()
 })
 

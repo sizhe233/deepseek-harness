@@ -89,12 +89,13 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 }
 
 /**
- * Prime console input without consuming a key before publishing the pwsh prompt.
- * Otherwise a POSIX tty can translate submitted CR to LF before the line editor
- * enters raw mode. `[char]27`/`[char]7` build the shared OSC marker in the child.
+ * Initialize an already-loaded line editor before publishing the pwsh prompt;
+ * its lazy macOS accessibility probe can restore canonical input for a child.
+ * Prime console input without consuming a key so queued Enter remains CR.
+ * `[char]27`/`[char]7` build the shared OSC marker in the child.
  */
 export const PWSH_PROMPT_SETUP =
-  "function prompt { $null = [Console]::KeyAvailable; [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
+  "if (Get-Module PSReadLine) { $null = PSReadLine\\Get-PSReadLineOption }; function prompt { $null = [Console]::KeyAvailable; [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
 async function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy, signal?: AbortSignal): Promise<string[]> {
   const argv = [config.shellPath, ...config.shellArgs, ...(config.shellDialect === 'pwsh' && config.pwshBootstrap === 'argv'
@@ -115,6 +116,7 @@ async function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxEx
 async function startupSession(
   session: LocalPtySession,
   config: ResolvedConfig,
+  setupEnter: '\r' | '\x1bOM',
   signal?: AbortSignal,
 ): Promise<void> {
   const races: Promise<void>[] = []
@@ -130,7 +132,7 @@ async function startupSession(
     await Promise.race([
       session.initialize(signal, config.shellDialect === 'pwsh' && config.pwshBootstrap === 'stdin'
         ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
-        : undefined),
+        : undefined, setupEnter),
       ...races,
     ])
   } finally {
@@ -170,6 +172,12 @@ export class BashTerminalBackend implements TerminalBackend {
     spec.signal?.throwIfAborted()
     ensureSandboxModeFence(this.ctx, spec.owner)
     const policy = this.ctx.sandboxPolicy.resolve({ session: spec.owner.session })
+    // POSIX canonical input can convert CR before pwsh's first console read.
+    // SS3 keypad Enter survives that transition; ConPTY requires the ordinary CR.
+    const setupEnter = this.config.shellDialect === 'pwsh' && this.config.pwshBootstrap === 'stdin'
+      && (await this.ctx.subprocess.terminalEnvironment(spec.signal)).platform === 'posix'
+      ? '\x1bOM' : '\r'
+    spec.signal?.throwIfAborted()
     const argv = await spawnArgv(this.ctx, this.config, policy, spec.signal)
     spec.signal?.throwIfAborted()
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
@@ -190,7 +198,7 @@ export class BashTerminalBackend implements TerminalBackend {
       return rejectAfterStartupCleanup(error, () => terminal.terminate())
     }
     try {
-      await startupSession(session, this.config, spec.signal)
+      await startupSession(session, this.config, setupEnter, spec.signal)
       return session
     } catch (error) {
       return rejectAfterStartupCleanup(error, () => session.close('PTY startup failed'))

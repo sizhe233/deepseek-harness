@@ -3,15 +3,16 @@
  * Real tsdown artifact shape: lib/client.js hands off through
  * window.__ModuleLoader__.load, resolves externals through the injected
  * require, returns the exports (apply + inject), and a mounted apply
- * registers the view tab into a real SlotRegistry ring. Skips when dist/ is
+ * registers the view tab into a real SlotRegistry ring after its locale
+ * provider activates. Skips when lib/client.js is
  * not built (`pnpm --filter @deepseek-ai/dsh-client-ui-trajectory bundle`).
  */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 
@@ -73,6 +74,7 @@ describe('tsdown client artifact', () => {
   it.skipIf(code === undefined)('mounted as an object plugin, apply registers the view tab on the real ring', async () => {
     const { exports } = await loadArtifact()
     const ctx = new Context()
+    onTestFinished(async () => { await ctx.fiber.dispose() })
     const slots = new SlotRegistry(ctx)
     ctx.provide('uiSession', { provide: () => () => {} } as never)
     // The conversation entry's role: the ring must be declared before riders land.
@@ -92,9 +94,14 @@ describe('tsdown client artifact', () => {
     ctx.provide('remote', { $on: () => () => {} } as never)
     ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
     const locale = await import('@deepseek-ai/dsh-client-locale/client')
-    ctx.plugin({ inject: [...locale.inject], apply: locale.apply })
+    const localeFiber = ctx.plugin({ inject: [...locale.inject], apply: locale.apply })
     const fiber = ctx.plugin(exports as { apply: (ctx: Context) => void })
+    expect(fiber.state).toBe(FiberState.PENDING)
+    // A pending consumer's await() does not wait for its missing services.
+    await localeFiber.await()
+    expect(localeFiber.state).toBe(FiberState.ACTIVE)
     await fiber.await()
+    expect(fiber.state).toBe(FiberState.ACTIVE)
     expect(slots.entries('conversation.view').map(e => e.options.id)).toEqual(['trajectory'])
     expect(events.entries().length).toBeGreaterThan(0)
     expect(views.entries()).toHaveLength(1)

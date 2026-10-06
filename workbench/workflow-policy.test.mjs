@@ -181,7 +181,11 @@ test('candidate bytes are available for parallel private acceptance while every 
   const pack = steps.findIndex(step => step.name === 'Package candidate host and web artifacts')
   const browser = steps.findIndex(step => step.name === 'Replay settings and plan browser acceptance')
   assert.ok(seams >= 0 && patch > seams && pack > patch && browser > pack)
-  assert.ok(steps.some(step => step.run === 'pnpm test --maxWorkers=4'))
+  const unit = steps.find(step => step.name === 'Run the complete built unit inventory')
+  assert.equal(unit?.run, 'time pnpm test --maxWorkers=2')
+  assert.equal(unit.env.DSH_COVERAGE_TEST_TIMEOUT_MS, '90000')
+  assert.equal(unit.if, undefined)
+  assert.equal(unit['continue-on-error'], undefined)
   assert.equal(steps[browser]['continue-on-error'], undefined)
 })
 
@@ -192,6 +196,19 @@ test('minimum Node acceptance builds its native sandbox before source worker exe
   const native = job.indexOf('bash workbench/prepare-linux-sandbox.sh')
   assert.ok(native > job.indexOf('pnpm install --frozen-lockfile'))
   assert.ok(native < job.indexOf('pnpm run check:node-compat'))
+})
+
+test('macOS requires real default-shell acceptance independently of optional PowerShell', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const steps = workflow.jobs['native-platforms'].steps
+  const native = steps.findIndex(step => step.run === 'pnpm run build:native-system')
+  const shell = steps.findIndex(step => step.name === 'Require macOS default and configured zsh acceptance')
+  const compatibility = steps.findIndex(step => step.name === 'Check native watcher and terminal compatibility')
+  assert.ok(native >= 0 && shell > native && compatibility > shell)
+  assert.equal(steps[shell].if, "${{ runner.os == 'macOS' }}")
+  assert.equal(steps[shell].run, 'pnpm exec vitest run packages/api/terminal-controller/tests/native-macos-shell.spec.ts --maxWorkers=1')
+  assert.equal(steps[shell].env.DSH_COVERAGE_TEST_TIMEOUT_MS, '90000')
+  assert.equal(steps[shell]['continue-on-error'], undefined)
 })
 
 

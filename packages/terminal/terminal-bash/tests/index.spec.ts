@@ -286,7 +286,7 @@ describe('BashTerminalBackend startup rollback', () => {
       },
     })
     expect(spawned?.env?.PTY_TEST_SECRET).toBeUndefined()
-    expect(initialized).toHaveBeenCalledWith(undefined, undefined)
+    expect(initialized).toHaveBeenCalledWith(undefined, undefined, '\r')
     expect((ctx.sandbox as RecordingSandbox).calls).toEqual([{
       argv: ['/bin/bash', '-i'],
       policy: { mode: 'workspace-write', sessionId: 'agent', workspaceRoot: resolve('/workspace') },
@@ -428,6 +428,7 @@ describe('BashTerminalBackend startup rollback', () => {
   ])('waits for the installed pwsh prompt before publishing startup ($pwshBootstrap, stdin wait: $inputWaiting)', async ({ inputWaiting, pwshBootstrap }) => {
     vi.useFakeTimers()
     const ctx = new Context()
+    await ctx.plugin(StubSubprocessRuntime)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const terminal = terminalHandle()
@@ -445,7 +446,7 @@ describe('BashTerminalBackend startup rollback', () => {
     })
     try {
       await vi.advanceTimersByTimeAsync(0)
-      expect(writes).toEqual(pwshBootstrap === 'argv' ? [] : [ENCODING_PREAMBLE + PWSH_PROMPT_SETUP + '\r'])
+      expect(writes).toEqual(pwshBootstrap === 'argv' ? [] : [ENCODING_PREAMBLE + PWSH_PROMPT_SETUP + '\x1bOM'])
       // The host can await stdin before the bootstrap command has executed.
       waiting = inputWaiting
       await vi.advanceTimersByTimeAsync(20)
@@ -466,7 +467,7 @@ describe('BashTerminalBackend startup rollback', () => {
       const session = await spawning
       expect(session.motd).toMatch(/dsh> $/)
       expect(Buffer.byteLength(session.motd)).toBeLessThanOrEqual(config().maxReadBytes)
-      expect(writes).toEqual(pwshBootstrap === 'argv' ? [] : [ENCODING_PREAMBLE + PWSH_PROMPT_SETUP + '\r'])
+      expect(writes).toEqual(pwshBootstrap === 'argv' ? [] : [ENCODING_PREAMBLE + PWSH_PROMPT_SETUP + '\x1bOM'])
       await session.close('test complete')
     } finally {
       await terminal.terminate()
@@ -494,7 +495,7 @@ describe('BashTerminalBackend startup rollback', () => {
     )
     const signal = new AbortController().signal
     expect(await backend.spawn(spec(agent(ctx), signal))).toBe(session)
-    expect(initialized).toHaveBeenCalledExactlyOnceWith(signal, undefined)
+    expect(initialized).toHaveBeenCalledExactlyOnceWith(signal, undefined, '\r')
     expect(spawned?.argv).toEqual(['pwsh', '-NoExit', '-Command', ENCODING_PREAMBLE + PWSH_PROMPT_SETUP])
     expect(spawned?.env).toMatchObject({
       TERM: 'dumb', NO_COLOR: '1', DSH_SHELL: '1', DSH_SESSION_ID: 'agent', DSH_PTY_SESSION_ID: 'pty-1',
@@ -509,8 +510,10 @@ describe('BashTerminalBackend startup rollback', () => {
     { shellArgs: ['-NoProfile'], managed: false },
     { shellArgs: ['-NoExit', '-Command', '$env:KEEP = "custom"'], managed: false },
     { shellArgs: ['-NoExit', '-File', 'custom.ps1'], managed: false },
-  ])('confines the complete pwsh argv and preserves custom startup: $shellArgs', async ({ shellArgs, managed }) => {
+  ].flatMap(entry => (['posix', 'windows'] as const).map(platform => ({ ...entry, platform }))))('confines the complete pwsh argv and preserves custom startup: $shellArgs ($platform)', async ({ shellArgs, managed, platform }) => {
     const ctx = new Context()
+    await ctx.plugin(StubSubprocessRuntime)
+    vi.spyOn(ctx.subprocess, 'terminalEnvironment').mockResolvedValue({ platform })
     await ctx.plugin(RecordingSandbox)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: '/workspace' })
@@ -530,7 +533,34 @@ describe('BashTerminalBackend startup rollback', () => {
       expect((ctx.sandbox as RecordingSandbox).calls[0]?.argv).toEqual(argv)
       expect(spawned?.argv).toEqual(['/sandbox', '--', ...argv])
       expect(initialized).toHaveBeenCalledExactlyOnceWith(undefined,
-        managed ? undefined : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP)
+        managed ? undefined : ENCODING_PREAMBLE + PWSH_PROMPT_SETUP,
+        !managed && platform === 'posix' ? '\x1bOM' : '\r')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('does not allocate a custom pwsh terminal after cancellation during environment discovery', async () => {
+    const ctx = new Context()
+    await ctx.plugin(StubSubprocessRuntime)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
+    const environment = Promise.withResolvers<{ platform: 'posix' }>()
+    const discover = vi.spyOn(ctx.subprocess, 'terminalEnvironment').mockReturnValue(environment.promise)
+    const spawn = vi.fn(async () => terminalHandle())
+    const backend = new BashTerminalBackend(ctx, {
+      ...config(), shellDialect: 'pwsh', shellPath: 'pwsh', pwshBootstrap: 'stdin', shellArgs: ['-NoProfile'],
+    }, spawn)
+    const controller = new AbortController()
+    const reason = new Error('cancel environment discovery')
+    try {
+      const spawning = backend.spawn(spec(agent(ctx), controller.signal))
+      const rejected = expect(spawning).rejects.toBe(reason)
+      expect(discover).toHaveBeenCalledExactlyOnceWith(controller.signal)
+      controller.abort(reason)
+      environment.resolve({ platform: 'posix' })
+      await rejected
+      expect(spawn).not.toHaveBeenCalled()
     } finally {
       await ctx.fiber.dispose()
     }
