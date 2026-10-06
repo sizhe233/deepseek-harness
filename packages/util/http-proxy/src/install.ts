@@ -18,6 +18,37 @@ import {
   type ProxyPolicy,
 } from './policy.ts'
 
+/** The launch-only override for the time spent opening a TCP or TLS connection. */
+const CONNECT_TIMEOUT_ENV = 'DSH_HTTP_CONNECT_TIMEOUT_MS'
+
+/** A slow first connection gets 30 seconds; request and stream deadlines remain separate. */
+const DEFAULT_CONNECT_TIMEOUT_MS = 30_000
+
+/** Node timers reject larger delays, so an override must stay within their supported range. */
+const MAX_CONNECT_TIMEOUT_MS = 2_147_483_647
+
+/**
+ * Resolve the explicit network-connect deadline without conflating it with a request deadline.
+ *
+ * Node's built-in Undici connector otherwise defaults to ten seconds before a TCP or TLS connection
+ * completes. A provider's request timeout begins at a different layer and does not replace that timer.
+ *
+ * @param env - the frozen launch environment.
+ * @returns the positive connection timeout in milliseconds.
+ * @throws when the launch-only override is not a supported positive integer.
+ */
+function resolveConnectTimeout(env: EnvLookup): number {
+  const value = env.get(CONNECT_TIMEOUT_ENV)?.value.trim()
+  if (value === undefined || value === '') return DEFAULT_CONNECT_TIMEOUT_MS
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(`${CONNECT_TIMEOUT_ENV} must be a positive integer number of milliseconds`)
+  }
+  const timeout = Number(value)
+  if (timeout > MAX_CONNECT_TIMEOUT_MS) {
+    throw new Error(`${CONNECT_TIMEOUT_ENV} must not exceed ${String(MAX_CONNECT_TIMEOUT_MS)} milliseconds`)
+  }
+  return timeout
+}
 
 /** The active policy, or `undefined` until one is installed. Process-wide, like the dispatcher it tracks. */
 let active: ProxyPolicy | undefined
@@ -138,14 +169,16 @@ function writeProxyEnv(values: Readonly<Record<string, string | undefined>>): ()
  * the user named for it — the route and the diagnostic would then disagree.
  *
  * @param policy - the policy to route by; it must proxy at least one scheme.
+ * @param connectTimeoutMs - deadline for opening each direct, proxy, or tunneled connection.
  * @returns the dispatcher to install, owning every per-origin agent its factory created.
  */
-async function createPolicyDispatcher(policy: ProxyPolicy): Promise<Dispatcher> {
+async function createPolicyDispatcher(policy: ProxyPolicy, connectTimeoutMs: number): Promise<Dispatcher> {
   const { Agent, Pool, ProxyAgent } = await import('undici')
   return new Agent({
+    connectTimeout: connectTimeoutMs,
     factory(origin, options) {
       // undici declares this parameter as `Object`, discarding the pool options it actually passes.
-      const passed = options as Pool.Options
+      const passed: Pool.Options = { ...options as Pool.Options, connectTimeout: connectTimeoutMs }
       const proxy = proxyForUrl(policy, new URL(origin.toString()))
       if (proxy !== undefined) return new ProxyAgent({ ...passed, uri: proxy })
       // What undici's own default factory builds for these options, which `factory` replaces
@@ -154,6 +187,17 @@ async function createPolicyDispatcher(policy: ProxyPolicy): Promise<Dispatcher> 
       return new Pool(origin, passed)
     },
   })
+}
+
+/**
+ * Build the global dispatcher for traffic the active policy keeps direct.
+ *
+ * @param connectTimeoutMs - deadline for opening each direct TCP or TLS connection.
+ * @returns the direct dispatcher to install and close on disposal.
+ */
+async function createDirectDispatcher(connectTimeoutMs: number): Promise<Dispatcher> {
+  const { Agent } = await import('undici')
+  return new Agent({ connectTimeout: connectTimeoutMs })
 }
 
 /**
@@ -169,55 +213,30 @@ async function createPolicyDispatcher(policy: ProxyPolicy): Promise<Dispatcher> 
  * credentials. A worker that needs the policy has to be handed one explicitly and install it itself.
  *
  * @param policy - the resolved policy to install.
+ * @param connectTimeoutMs - deadline for opening each direct, proxy, or tunneled connection.
  * @returns a disposer restoring the previous dispatcher, policy, and environment, then closing the agent.
  */
-async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<void>> {
+async function installGlobalProxy(policy: ProxyPolicy, connectTimeoutMs: number): Promise<() => Promise<void>> {
   const previousPolicy = active
-  if (policy.source === 'none') {
-    // A direct policy mounted over an installed one must actually stop proxying. Recording the policy
-    // alone would leave the previous agent as the global dispatcher, so a plain `fetch()` would keep
-    // tunnelling while `proxyForUrl()` reported a direct connection — and `mode: 'off'` would be a
-    // silent no-op. With nothing installed there is nothing to displace.
-    if (previousPolicy === undefined) {
-      active = policy
-      return () => {
-        active = previousPolicy
-        return Promise.resolve()
-      }
-    }
-    const previousInstalled = installed
-    // The install underneath published its normalized policy into `process.env`, which is what a
-    // spawned child copies. With no policy active there is no normalization to stand behind, so the
-    // user's own values return for the window and the outer install's come back when it ends. An
-    // install underneath that proxied nothing published nothing, and there is nothing to put back.
-    const restoreEnv = inheritedProxyEnv === undefined ? undefined : writeProxyEnv(inheritedProxyEnv)
-    const undici = await import('undici')
-    const previous = undici.getGlobalDispatcher()
-    const direct = new undici.Agent()
-    undici.setGlobalDispatcher(direct)
-    active = policy
-    installed = undefined
-    return async () => {
-      undici.setGlobalDispatcher(previous)
-      active = previousPolicy
-      installed = previousInstalled
-      restoreEnv?.()
-      await direct.close()
-    }
-  }
-  const restoreEnv = applyPolicyEnv(policy)
   const { getGlobalDispatcher, setGlobalDispatcher } = await import('undici')
   const previousDispatcher = getGlobalDispatcher()
   const previousInstalled = installed
-  const agent = await createPolicyDispatcher(policy)
+  const agent = policy.source === 'env'
+    ? await createPolicyDispatcher(policy, connectTimeoutMs)
+    : await createDirectDispatcher(connectTimeoutMs)
+  // A direct policy mounted over a proxy returns the original user environment for its lifetime.
+  // Without this, a spawned child would keep the outer policy even while this process is direct.
+  const restoreEnv = policy.source === 'env'
+    ? applyPolicyEnv(policy)
+    : inheritedProxyEnv === undefined ? undefined : writeProxyEnv(inheritedProxyEnv)
   setGlobalDispatcher(agent)
   active = policy
-  installed = agent
+  installed = policy.source === 'env' ? agent : undefined
   return async () => {
     setGlobalDispatcher(previousDispatcher)
     active = previousPolicy
     installed = previousInstalled
-    restoreEnv()
+    restoreEnv?.()
     await agent.close()
   }
 }
@@ -297,9 +316,10 @@ export async function installProxyFromEnvironment(
   env: EnvLookup,
   report: (message: string) => void,
 ): Promise<() => Promise<void>> {
+  const connectTimeoutMs = resolveConnectTimeout(env)
   const { policy, diagnostics } = resolveProxyPolicy(env)
   for (const diagnostic of diagnostics) report(diagnostic.message)
-  return await installGlobalProxy(policy)
+  return await installGlobalProxy(policy, connectTimeoutMs)
 }
 
 /**

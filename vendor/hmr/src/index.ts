@@ -139,12 +139,20 @@ class Hmr extends Service {
     if (this.configs.has(watchFilename)) throw new Error(`config path already registered: ${filename}`)
 
     const { root, depth } = target
+    // Chokidar's depth counts descendants below the watched directory. The
+    // exact file itself is one descendant when its parent already exists, so
+    // retain the missing-parent depth and add that file level.
     const watcher = watch(root, {
       ...this.config,
       cwd: undefined,
-      depth,
+      depth: depth + 1,
       ignored: undefined,
       ignoreInitial: false,
+      // Exact config registrations are few and critical. Polling this isolated
+      // parent prevents macOS FSEvents from dropping rapid create/change/unlink
+      // sequences while retaining the main module watcher's native semantics.
+      usePolling: true,
+      interval: 50,
     })
     const registration = { watcher }
     this.configs.set(watchFilename, registration)

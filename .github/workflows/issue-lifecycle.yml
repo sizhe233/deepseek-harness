@@ -35,6 +35,7 @@ concurrency:
 
 jobs:
   lifecycle:
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' }}
     name: Issue lifecycle
     # Runs on every pull_request_review event so the check reports success rather
     # than a gray "skipped" segment. The token-creating and board-mutating steps

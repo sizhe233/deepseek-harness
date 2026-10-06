@@ -64,6 +64,19 @@
   color: var(--dsw-alias-label-primary);
 }
 
+@media (max-width: 640px) {
+  .tabs {
+    gap: 16px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .tab {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+
 .panel {
   min-width: 0;
   padding-top: 2px;
@@ -82,4 +95,27 @@
   margin: 0;
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.mcpNotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.mcpNotice p {
+  margin: 0;
+}
+
+.mcpNotice button {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
 }

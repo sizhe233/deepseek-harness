@@ -967,9 +967,16 @@ describe('sandbox escalation API (write/edit)', () => {
     expect(text(result)).toContain('no agent to route it through')
   })
 
-  it('rejects the escalation argument pairing (one field without the other)', async () => {
-    const { ctx } = await setupConfining()
-    const missing = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'workspace-write' }, escalationAgent())
+  it('allows an already-covered mode without a reason but rejects a real escalation without one', async () => {
+    const { ctx, fs } = await setupConfining()
+    const covered = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'workspace-write' }, escalationAgent())
+    expect(covered.isError).toBe(false)
+    expect(fs.stamped).toEqual([{
+      mode: 'workspace-write',
+      workspaceRoot: resolve('/session-project'),
+      sessionId: SessionId('sess-fs-esc'),
+    }])
+    const missing = await call(ctx, 'write', { file_path: 'b.txt', content: 'x', sandbox_permissions: 'danger-full-access' }, escalationAgent())
     expect(missing.isError).toBe(true)
     expect(text(missing)).toContain('sandbox_permissions requires a justification')
   })

@@ -391,17 +391,19 @@ async function summarizeCompaction(
   signal?: AbortSignal,
 ): Promise<SummarizedCompaction> {
   const summaryResult = await dependencies.summarize(prepared.input, agent, signal)
+  const content = summaryResult.summary.some(block => block.type === 'compaction')
+    ? summaryResult.summary
+    : frameSummary(summaryResult.summary)
   const checkpointMessage = createUserMessage({
-    content: frameSummary(summaryResult.summary),
+    content,
     source: compactCheckpointSource(compactionId, sourceCommandId),
   })
-  // The checkpoint is text-only, so its fixed-heuristic price IS its route
-  // price; comparing it against the span's route price asks the real
-  // question — does the replacement lower the next request's pressure.
-  const framedSummaryTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
-  if (framedSummaryTokenCount >= prepared.shadowedRouteTokenCount) {
+  // Provider-native compaction items are already complete wire inputs. Text
+  // summaries receive checkpoint framing before the same shrink comparison.
+  const replacementTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
+  if (replacementTokenCount >= prepared.shadowedRouteTokenCount) {
     throw new Error(
-      `summary is not smaller than the shadowed content (${framedSummaryTokenCount} estimated framed tokens >= ${prepared.shadowedRouteTokenCount})`,
+      `summary is not smaller than the shadowed content (${replacementTokenCount} estimated replacement tokens >= ${prepared.shadowedRouteTokenCount})`,
     )
   }
   return {

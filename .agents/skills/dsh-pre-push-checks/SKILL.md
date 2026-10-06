@@ -5,7 +5,7 @@ description: Use before pushing, force-pushing, marking ready for review, or cla
 
 # DSH Pre-Push Checks
 
-Use this skill to run relevant local evidence once before a `deepseek-harness` push. The sole ordering exception is `gh stack sync`, which may publish a cascading rebase before the rewritten layers can be validated; validate them immediately afterward and do not merge until the evidence passes. Git hooks are intentionally narrow: pre-commit fixes staged lint, checks staged whitespace, and guards vendored-source metadata; pre-push runs only the incremental repository typecheck. CI owns exhaustive coverage and the platform matrix.
+Use this skill to run relevant local evidence once before a `deepseek-harness` push. The sole ordering exception is `gh stack sync`, which may publish a cascading rebase before the rewritten layers can be validated; validate them immediately afterward and do not merge until the evidence passes. Verify that Git hooks are installed and enabled before relying on them. If they are absent, explicitly run the equivalent relevant checks. Git hooks are intentionally narrow: pre-commit fixes staged lint, checks staged whitespace, and guards vendored-source metadata; pre-push runs only the incremental repository typecheck. CI owns exhaustive coverage and the platform matrix.
 
 ## Inspect the outgoing change
 
@@ -38,7 +38,11 @@ When the outgoing change adds or changes a resource-owning or asynchronous test,
 - **Package manifests, public exports, build configuration, worker/bin entries, or built runtime paths:** run `pnpm run build`, the relevant hygiene checks, and the owning built-artifact smoke.
 - **Real provider or agent behavior:** run the relevant `pnpm run test:e2e` target when credentials are available; never print secrets.
 
-Do not manually repeat a passing check merely because commit or push follows. In particular, do not run typecheck immediately before pushing solely to duplicate the pre-push hook.
+Do not manually repeat a passing check merely because commit or push follows. Do not duplicate a verified active pre-push typecheck hook; when the hook is absent, run typecheck explicitly.
+
+Pass Vitest filters directly after the pnpm script name without a standalone `--`; check the selected test count. For example: `pnpm run test:snapshot snapshots/session/headless.snapshot.ts -t cordis-inspect-jsdoc`.
+
+The optional `gh stack` extension is not required for ordinary Git branches and pull requests. Install and validate it before using the stack-specific procedures below. Fork CI must use runners available to its owner; upstream enterprise runner labels are not assumed available.
 
 ### Focus unit coverage on the affected source
 
@@ -122,6 +126,6 @@ When `gh pr checks` reports "no checks reported" and `/actions/runs?head_sha=<sh
 gh pr view <number> --json mergeable,mergeStateStatus
 ```
 
-GitHub creates no `pull_request` workflow runs while a PR is `CONFLICTING`/`DIRTY`, so the absent signal is the conflict, not infrastructure. Resolving the conflict is the only fix; empty commits, `--allow-empty` pushes, draft/ready toggles, and revert-and-restore bounces all leave `total_count` at zero and add junk history. Confirm the conflicting paths with `git merge-tree --write-tree HEAD origin/<base>` when the branch cannot be merged locally yet.
+When the PR is confirmed `CONFLICTING`/`DIRTY`, GitHub does not run its `pull_request` workflows until the conflict is resolved. Otherwise inspect Actions enablement, event and path filters, token-trigger restrictions, approvals, and available runners; no checks alone does not prove a conflict. For a confirmed conflict, empty commits, `--allow-empty` pushes, draft/ready toggles, and revert-and-restore bounces all leave `total_count` at zero and add junk history. Confirm the conflicting paths with `git merge-tree --write-tree HEAD origin/<base>` when the branch cannot be merged locally yet.
 
 For `gh stack sync`, use the post-sync validation sequence instead of pretending the ordinary order was possible.

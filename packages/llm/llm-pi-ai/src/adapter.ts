@@ -38,6 +38,7 @@ import type {
   SimpleStreamOptions,
   ThinkingLevel,
 } from '@earendil-works/pi-ai'
+import { convertResponsesMessages, convertResponsesTools } from '@earendil-works/pi-ai/api/openai-responses-shared'
 import {
   attributionHeaders,
   contentHasImage,
@@ -48,6 +49,9 @@ import {
 import type {
   GenerateOptions,
   ImageAttachmentAccess,
+  LlmCompactOptions,
+  LlmCompactionResult,
+  LlmJsonValue,
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
@@ -59,8 +63,137 @@ import type {
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
-import { toPiContext } from './context.ts'
+import { compactionItemOf, injectCompactionItem, toPiContext } from './context.ts'
 import { toStreamChunks } from './stream.ts'
+
+const RESPONSES_APIS = new Set<Api>([
+  'openai-responses',
+  'openai-codex-responses',
+  'azure-openai-responses',
+])
+const OPENAI_TOOL_CALL_PROVIDERS = new Set(['openai', 'openai-codex', 'opencode'])
+
+function isGptModel(model: string): boolean {
+  return /^gpt(?:[-_.]|$)/i.test(model)
+}
+
+function isJsonValue(value: unknown): value is LlmJsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  if (typeof value !== 'object') return false
+  return Object.values(value).every(isJsonValue)
+}
+
+function readCompactionItem(value: unknown): LlmCompactionResult['item'] | undefined {
+  if (!isJsonValue(value) || typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, LlmJsonValue>
+  return (record.type === 'compaction' || record.type === 'compaction_summary') && typeof record.encrypted_content === 'string'
+    ? record as LlmCompactionResult['item']
+    : undefined
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+function compactUsage(value: unknown): LlmCompactionResult['usage'] | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const usage = value as Record<string, unknown>
+  const inputTokens = positiveNumber(usage.input_tokens)
+  const outputTokens = positiveNumber(usage.output_tokens)
+  if (inputTokens === undefined || outputTokens === undefined) return undefined
+  const totalTokens = positiveNumber(usage.total_tokens)
+  const inputDetails = usage.input_tokens_details
+  const outputDetails = usage.output_tokens_details
+  const cacheReadTokens = typeof inputDetails === 'object' && inputDetails !== null && !Array.isArray(inputDetails)
+    ? positiveNumber((inputDetails as Record<string, unknown>).cached_tokens)
+    : undefined
+  const reasoningTokens = typeof outputDetails === 'object' && outputDetails !== null && !Array.isArray(outputDetails)
+    ? positiveNumber((outputDetails as Record<string, unknown>).reasoning_tokens)
+    : undefined
+  return {
+    inputTokens: cacheReadTokens === undefined ? inputTokens : Math.max(0, inputTokens - cacheReadTokens),
+    outputTokens,
+    ...totalTokens === undefined ? {} : { totalTokens },
+    ...cacheReadTokens === undefined ? {} : { cacheReadTokens },
+    ...reasoningTokens === undefined ? {} : { reasoningTokens },
+  }
+}
+
+interface ParsedCompactResponse {
+  item?: LlmCompactionResult['item']
+  usage?: NonNullable<LlmCompactionResult['usage']>
+}
+
+function unsupportedCompactStatus(status: number): boolean {
+  return status === 400 || status === 404 || status === 405 || status === 415 || status === 501
+}
+
+function unsupportedCompactBody(status: number, body: string): boolean {
+  if (!unsupportedCompactStatus(status)) return false
+  if (status !== 400) return true
+  const patterns = [
+    'unsupported',
+    'not support',
+    'unknown endpoint',
+    'model_not_found',
+    'unknown provider for model',
+    'compact.{0,24}(not found|unsupported|unavailable)',
+    'method.{0,24}(not allowed|unsupported)',
+  ]
+  return new RegExp(patterns.join('|'), 'i').test(body)
+}
+
+function parsedCompactResponse(value: unknown): ParsedCompactResponse {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const record = value as Record<string, unknown>
+  const output = record.output
+  const response = record.response
+  const responseRecord = typeof response === 'object' && response !== null && !Array.isArray(response)
+    ? response as Record<string, unknown>
+    : undefined
+  const outputItems = Array.isArray(output) ? output
+    : responseRecord !== undefined && Array.isArray(responseRecord.output) ? responseRecord.output
+      : []
+  const item = (record.type === 'response.output_item.done' ? readCompactionItem(record.item) : undefined)
+    ?? outputItems.map(readCompactionItem).find((candidate): candidate is LlmCompactionResult['item'] => candidate !== undefined)
+  const usage = compactUsage(record.usage ?? responseRecord?.usage)
+  return { ...item === undefined ? {} : { item }, ...usage === undefined ? {} : { usage } }
+}
+
+function parseCompactResponseText(raw: string): ParsedCompactResponse {
+  try {
+    return parsedCompactResponse(JSON.parse(raw) as unknown)
+  } catch {
+    let item: LlmCompactionResult['item'] | undefined
+    let usage: LlmCompactionResult['usage'] | undefined
+    let completed = false
+    let failed = false
+    for (const block of raw.split(/\r?\n\s*\r?\n/)) {
+      const data = block.split(/\r?\n/)
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice('data:'.length).trim())
+        .join('\n')
+      if (data.length === 0 || data === '[DONE]') continue
+      try {
+        const value = JSON.parse(data) as unknown
+        const parsed = parsedCompactResponse(value)
+        item ??= parsed.item
+        usage ??= parsed.usage
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+          const eventType = (value as Record<string, unknown>).type
+          completed ||= eventType === 'response.completed'
+          failed ||= eventType === 'response.failed' || eventType === 'response.incomplete' || eventType === 'error'
+        }
+      } catch {
+        // Ignore non-JSON SSE comments and continue looking for the terminal item.
+      }
+    }
+    return completed && !failed
+      ? { ...item === undefined ? {} : { item }, ...usage === undefined ? {} : { usage } }
+      : {}
+  }
+}
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
@@ -201,12 +334,25 @@ function reasoningInfo(
   }
 }
 
-/** Merge deployment headers while removing case-insensitive attribution collisions. */
-function requestHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
+/**
+ * Merge deployment headers, the optional per-session header, and Harness
+ * attribution. Dynamic session values replace a same-named static entry;
+ * attribution remains authoritative for its reserved names.
+ */
+function requestHeaders(
+  headers: Readonly<Record<string, string>> | undefined,
+  sessionHeader?: string,
+  sessionId?: string,
+): Record<string, string> {
   const attribution = attributionHeaders()
   const reserved = new Set(Object.keys(attribution).map(name => name.toLowerCase()))
+  const dynamicName = sessionHeader?.toLowerCase()
   return {
-    ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
+    ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => {
+      const normalized = name.toLowerCase()
+      return !reserved.has(normalized) && normalized !== dynamicName
+    })),
+    ...sessionHeader !== undefined && sessionId !== undefined ? { [sessionHeader]: sessionId } : {},
     ...attribution,
   }
 }
@@ -323,6 +469,157 @@ export class PiAiAdapter extends LlmAdapter {
     })
   }
 
+  /**
+   * Call the Codex remote-compaction wire for GPT Responses routes.
+   * pi-ai preserves reasoning signatures but does not expose compaction, so
+   * the adapter tries Sub2API's native V2 trigger first, then the legacy
+   * `/responses/compact` endpoint used by CLIProxyAPI, and keeps the returned
+   * item opaque for the next request.
+   * @param options - selected GPT route and history span to compact.
+   * @returns the opaque compaction item, or `undefined` for unsupported routes.
+   */
+  override async compact(options: LlmCompactOptions): Promise<LlmCompactionResult | undefined> {
+    if (!isGptModel(options.model)) return undefined
+    const snapshot = this.current()
+    const profile = this.profileOf(snapshot, options.provider)
+    const model = this.modelOf(snapshot, options.provider, options.model)
+    if (!RESPONSES_APIS.has(model.api)) return undefined
+    const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    if (apiKey === undefined) return undefined
+
+    const containsImage = options.messages.some(message => contentHasImage(message.content))
+    if (containsImage && !model.input.includes('image')) {
+      throw new LlmError(`pi-ai model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
+    }
+    const attachments = containsImage ? this.config.resolveAttachments?.() : undefined
+    if (containsImage && attachments === undefined) {
+      throw new LlmError('pi-ai image input requires the durable attachment service', 'UNSUPPORTED_CONTENT')
+    }
+    const compactOptions: GenerateOptions = {
+      provider: options.provider,
+      model: options.model,
+      messages: options.messages,
+      ...options.system === undefined ? {} : { system: options.system },
+      ...options.tools === undefined ? {} : { tools: options.tools },
+      ...options.signal === undefined ? {} : { signal: options.signal },
+      ...options.sessionId === undefined ? {} : { sessionId: options.sessionId },
+    }
+    const replayPolicy = {
+      api: model.api,
+      ...profile.requiresReasoningTextOnToolReplay === undefined
+        ? {}
+        : { requiresReasoningTextOnToolReplay: profile.requiresReasoningTextOnToolReplay },
+    }
+    const context = attachments === undefined
+      ? toPiContext(compactOptions, undefined, undefined, replayPolicy)
+      : await toPiContext(compactOptions, {
+        attachments,
+        resolveImageAccess: ref => this.config.resolveImageAccess?.(attachments, ref),
+        maxRequestImageBytes: profile.maxRequestImageBytes,
+        requestImagePolicy: {
+          maxPixels: profile.requestImagePixelBudget,
+          maxBytes: profile.requestImageMaxBytes,
+        },
+      }, undefined, replayPolicy)
+    const input = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
+      includeSystemPrompt: false,
+    })
+    const body: Record<string, unknown> = {
+      model: options.model,
+      input,
+      ...options.system === undefined ? {} : { instructions: options.system },
+      ...context.tools === undefined || context.tools.length === 0 ? {} : {
+        tools: convertResponsesTools(context.tools),
+      },
+    }
+    const headers: Record<string, string> = {
+      ...requestHeaders(
+        profile.headers,
+        profile.sessionHeader,
+        options.sessionId === undefined ? undefined : String(options.sessionId),
+      ),
+      authorization: `Bearer ${apiKey}`,
+      'content-type': 'application/json',
+      ...options.sessionId === undefined ? {} : { 'session_id': String(options.sessionId) },
+    }
+    const timeoutMs = profile.timeoutMs ?? profile.streamIdleTimeoutMs
+    const fetchCompact = async (
+      path: string,
+      payload: Record<string, unknown>,
+      extraHeaders: Readonly<Record<string, string>> = {},
+    ): Promise<{ response: Response; raw: string }> => {
+      const controller = new AbortController()
+      const requestSignal = options.signal === undefined
+        ? controller.signal
+        : AbortSignal.any([options.signal, controller.signal])
+      const timeout = setTimeout(() => {
+        controller.abort('LLM_COMPACTION_TIMEOUT')
+      }, timeoutMs)
+      try {
+        const response = await fetch(`${model.baseUrl.replace(/\/+$/, '')}${path}`, {
+          method: 'POST',
+          headers: { ...headers, ...extraHeaders },
+          body: JSON.stringify(payload),
+          signal: requestSignal,
+        })
+        return { response, raw: await response.text() }
+      } catch (error: unknown) {
+        if (controller.signal.aborted && !options.signal?.aborted) {
+          throw new LlmError(`OpenAI Responses compaction timed out after ${timeoutMs}ms`, 'TIMEOUT', { cause: error })
+        }
+        throw error
+      } finally {
+        clearTimeout(timeout)
+      }
+    }
+    try {
+      if (!Array.isArray(input)) {
+        throw new LlmError('OpenAI Responses compaction requires an input array', 'INVALID_COMPACTION_INPUT')
+      }
+      const nativeBody: Record<string, unknown> = {
+        ...body,
+        input: [...input, { type: 'compaction_trigger' }],
+        stream: true,
+        store: true,
+        reasoning: { effort: 'max', context: 'all_turns' },
+      }
+      const native = await fetchCompact('/responses', nativeBody, {
+        'x-codex-beta-features': 'remote_compaction_v2',
+      })
+      if (native.response.ok) {
+        const parsed = parseCompactResponseText(native.raw)
+        if (parsed.item !== undefined) return { item: parsed.item, ...parsed.usage === undefined ? {} : { usage: parsed.usage } }
+      } else if (!unsupportedCompactBody(native.response.status, native.raw)) {
+        throw new LlmError(
+          `OpenAI Responses native compaction failed with HTTP ${native.response.status}: ${native.raw.slice(0, 500)}`,
+          native.response.status === 429 ? 'RATE_LIMIT' : native.response.status >= 500 ? 'SERVER' : 'COMPACTION_FAILED',
+          { status: native.response.status },
+        )
+      }
+
+      // CLIProxyAPI and older Sub2API deployments implement the unary bridge.
+      // It is intentionally tried after native V2 so Sub2API can select its
+      // compact-capable account and preserve the Codex session protocol.
+      const legacy = await fetchCompact('/responses/compact', body)
+      if (legacy.response.ok) {
+        const parsed = parseCompactResponseText(legacy.raw)
+        if (parsed.item !== undefined) return { item: parsed.item, ...parsed.usage === undefined ? {} : { usage: parsed.usage } }
+      } else if (!unsupportedCompactBody(legacy.response.status, legacy.raw)) {
+        throw new LlmError(
+          `OpenAI Responses legacy compaction failed with HTTP ${legacy.response.status}: ${legacy.raw.slice(0, 500)}`,
+          legacy.response.status === 429 ? 'RATE_LIMIT' : legacy.response.status >= 500 ? 'SERVER' : 'COMPACTION_FAILED',
+          { status: legacy.response.status },
+        )
+      }
+      return undefined
+    } catch (error: unknown) {
+      if (options.signal?.aborted) {
+        throw new LlmError('OpenAI Responses compaction was aborted by caller', 'ABORTED', { cause: error })
+      }
+      throw error
+    }
+  }
+
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     return this.streamWithSnapshot(options, this.current())
   }
@@ -355,6 +652,13 @@ export class PiAiAdapter extends LlmAdapter {
     using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
 
     try {
+      const compactionItem = compactionItemOf(options.messages)
+      if (compactionItem !== undefined && (!isGptModel(options.model) || !RESPONSES_APIS.has(model.api))) {
+        throw new LlmError(
+          `provider route "${options.provider}/${options.model}" cannot replay an OpenAI Responses compaction item`,
+          'UNSUPPORTED_COMPACTION',
+        )
+      }
       const containsImage = options.messages.some(message => contentHasImage(message.content))
       if (containsImage && !model.input.includes('image')) {
         throw new LlmError(`pi-ai model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
@@ -366,8 +670,14 @@ export class PiAiAdapter extends LlmAdapter {
       const onReplayDegrade = (reason: string): void => {
         this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
       }
+      const replayPolicy = {
+        api: model.api,
+        ...profile.requiresReasoningTextOnToolReplay === undefined
+          ? {}
+          : { requiresReasoningTextOnToolReplay: profile.requiresReasoningTextOnToolReplay },
+      }
       const context = attachments === undefined
-        ? toPiContext(options, undefined, onReplayDegrade)
+        ? toPiContext(options, undefined, onReplayDegrade, replayPolicy)
         : await toPiContext({ ...options, signal: watchdog.signal }, {
           attachments,
           resolveImageAccess: ref => this.config.resolveImageAccess?.(attachments, ref),
@@ -376,7 +686,7 @@ export class PiAiAdapter extends LlmAdapter {
             maxPixels: profile.requestImagePixelBudget,
             maxBytes: profile.requestImageMaxBytes,
           },
-        }, onReplayDegrade)
+        }, onReplayDegrade, replayPolicy)
       const events = snapshot.models.streamSimple(model, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
@@ -385,7 +695,14 @@ export class PiAiAdapter extends LlmAdapter {
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
         // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        headers: requestHeaders(
+          profile.headers,
+          profile.sessionHeader,
+          options.sessionId === undefined ? undefined : String(options.sessionId),
+        ),
+        ...compactionItem === undefined ? {} : {
+          onPayload: (payload: unknown) => injectCompactionItem(payload, compactionItem),
+        },
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false

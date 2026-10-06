@@ -37,7 +37,7 @@ jobs:
   # switch is the separate DSH_CI_FAILOVER_WINDOWS variable on the windows-native
   # job below.
   node-24:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -103,7 +103,7 @@ jobs:
         run: pnpm run check:ci:static
 
   node-24-coverage:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -178,7 +178,7 @@ jobs:
         run: pnpm run check:ci:coverage
 
   node-24-bench:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: ubuntu-24.04
     name: node 24 / benchmarks
     # Wall-clock budgets need an otherwise idle runner, so this job runs the
@@ -224,7 +224,7 @@ jobs:
         run: pnpm run check:ci:bench
 
   node-24-consumers:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -326,7 +326,7 @@ jobs:
 
 
   node-compat:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     # This job admits only repository-owned PR code to the persistent shared VM.
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
@@ -412,7 +412,7 @@ jobs:
         run: pnpm exec vitest run packages/boot/app-boot/tests/loader-shape.compat.spec.ts
 
   python-sdk:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: ubuntu-latest
     name: python 3.10 / keyless SDK
     steps:
@@ -433,7 +433,7 @@ jobs:
   # keyless black-box, and trusted real-API path. Linux/Windows x64 block PRs;
   # Linux ARM64 and both macOS architectures run in ci-master.yml.
   python-runtime:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     name: python runtime / release-shaped matrix
     uses: ./.github/workflows/build-exe-for-python-sdk.yml
     with:
@@ -449,7 +449,7 @@ jobs:
   # Dependabot PRs are excluded from the self-hosted pool and stay queued for
   # the hosted runner.
   windows-build:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -493,7 +493,7 @@ jobs:
         run: pnpm run check:ci:windows-blocking
 
   windows-coverage:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -569,7 +569,7 @@ jobs:
           key: coverage-times-${{ github.run_id }}
 
   windows-native-tests:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
@@ -617,7 +617,7 @@ jobs:
           packages/subprocess/subprocess-local/tests/process-exit.spec.ts
 
   windows-observational:
-    if: github.event_name == 'pull_request'
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}
     continue-on-error: true
     runs-on: >-
       ${{ vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
@@ -682,7 +682,7 @@ jobs:
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
           || 'ubuntu-latest' }}
     needs: [node-24, node-24-coverage, node-24-bench, node-24-consumers, node-compat, python-sdk, python-runtime, windows-build, windows-native-tests]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (!cancelled() && github.event_name == 'pull_request') }}
     steps:
       - name: Fail if any needed job did not succeed
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')

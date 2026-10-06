@@ -26,6 +26,8 @@ interface ContentBlockMap {
   'file': FileBlock
   'tool-call': ToolCallBlock
   'tool-result': ToolResultBlock
+  /** Opaque OpenAI Responses compaction item; only Responses adapters serialize it. */
+  'compaction': { type: 'compaction'; item: LlmCompactionItem }
 }
 ```
 
@@ -804,6 +806,16 @@ declare abstract class LlmAdapter {
    */
   imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;
   /**
+   * Run provider-native conversation compaction when the adapter supports it.
+   * The default is unsupported so existing adapters keep their current text
+   * summarization path. Implementations must return the opaque item exactly as
+   * the provider returned it; callers persist it in the session log and replay
+   * it on later requests.
+   * @param _options - provider, model, selected history, and cancellation.
+   * @returns the opaque compaction item, or `undefined` when unsupported.
+   */
+  compact(_options: LlmCompactOptions): Promise<LlmCompactionResult | undefined>;
+  /**
    * List models this adapter can currently advertise for one owned provider.
    * The result is advisory: an adapter may accept unlisted model ids, and
    * consumers must not turn absence into request rejection.
@@ -981,6 +993,15 @@ imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | u
 fileRequestText(ref: FileAttachmentRef): string
 
 /**
+ * Ask the adapter for provider-native compaction of one selected history
+ * span. Unsupported routes return `undefined` so compaction backends can
+ * fall back to their ordinary summarizer.
+ * @param options - exact route, selected history, and cancellation.
+ * @returns the opaque provider item, or `undefined` when unsupported.
+ */
+compact(options: LlmCompactOptions): Promise<LlmCompactionResult | undefined>
+
+/**
  * Discover models advertised by one registered provider. Catalog membership
  * is advisory and never changes routing or request validation.
  * @param provider - registered provider route to inspect.
@@ -1088,3 +1109,52 @@ Waterfall around every streaming model call (retry, replay, routing). Bound to t
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 <!-- END GENERATED cordis-surface -->
+
+## Native Responses compaction
+
+Compaction-capable adapters retain an opaque provider item and replay it without interpreting or rewriting its encrypted content. Unsupported adapters return `undefined` and keep text summarization.
+
+```ts type-equiv
+/** JSON value retained when a provider returns an opaque protocol item. */
+type LlmJsonValue = string | number | boolean | null | LlmJsonValue[] | { [key: string]: LlmJsonValue }
+```
+
+```ts type-equiv
+/** OpenAI Responses compaction item preserved losslessly for later replay. */
+interface LlmCompactionItem {
+  /** Provider-native item tag for legacy or remote-compaction V2 responses. */
+  type: 'compaction' | 'compaction_summary'
+  encrypted_content: string
+  [key: string]: LlmJsonValue
+}
+```
+
+```ts type-equiv
+/** One provider compaction request over an already selected conversation span. */
+interface LlmCompactOptions {
+  /** Registered provider route selecting the adapter. */
+  provider: string
+  /** Exact model id; compaction-capable adapters may restrict this by model family. */
+  model: string
+  /** Ordered history to condense. */
+  messages: Message[]
+  /** System prompt sent with the compaction request, when present. */
+  system?: string
+  /** Tools active for the selected history, when present. */
+  tools?: ToolSchema[]
+  /** Cancellation for this maintenance request. */
+  signal?: AbortSignal
+  /** Session identity used for provider-side cache affinity, when available. */
+  sessionId?: Branded<'SessionId'>
+}
+```
+
+```ts type-equiv
+/** Result of a provider-native compaction request. */
+interface LlmCompactionResult {
+  /** Opaque item that must be replayed as a Responses input item. */
+  item: LlmCompactionItem
+  /** Provider usage for the maintenance call, when reported. */
+  usage?: TokenUsage
+}
+```

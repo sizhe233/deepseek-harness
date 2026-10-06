@@ -234,3 +234,34 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+@media (max-width: 640px) {
+  .panel {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    border-radius: 20px;
+  }
+
+  .nav {
+    width: clamp(112px, 34vw, 188px);
+    padding-right: 8px;
+    padding-left: 8px;
+    gap: 14px;
+  }
+
+  .navTitle {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .navCell {
+    gap: 6px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .options {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}

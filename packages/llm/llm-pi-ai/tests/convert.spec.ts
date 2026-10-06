@@ -371,7 +371,7 @@ describe('toPiContext', () => {
     expect((context.messages[0] as AssistantMessage).content).toEqual([{ type: 'text', text: 'visible' }])
   })
 
-  it('recombines durable content with pi-ai replay metadata across target providers and models', () => {
+  it('degrades provider-native replay metadata across target providers and models', () => {
     const state = toPiReplayState(assistant({
       api: 'openai-responses',
       provider: 'openai',
@@ -404,18 +404,18 @@ describe('toPiContext', () => {
 
     expect(context.messages[0]).toMatchObject({
       role: 'assistant',
-      api: 'openai-responses',
+      api: 'dsh-foreign',
       provider: 'openai',
       model: 'gpt-5',
-      responseModel: 'gpt-5-2026-01-01',
-      responseId: 'resp_123',
       stopReason: 'toolUse',
       content: [
-        { type: 'thinking', thinking: 'private reasoning', thinkingSignature: 'think-sig', redacted: true },
-        { type: 'text', text: 'calling', textSignature: 'text-sig' },
-        { type: 'toolCall', id: 'c1', name: 'f', arguments: { a: 1 }, thoughtSignature: 'tool-sig' },
+        { type: 'thinking', thinking: 'private reasoning' },
+        { type: 'text', text: 'calling' },
+        { type: 'toolCall', id: 'c1', name: 'f', arguments: { a: 1 } },
       ],
     })
+    expect(context.messages[0]).not.toHaveProperty('responseModel')
+    expect(context.messages[0]).not.toHaveProperty('responseId')
   })
 
   it.each(['high', ''])('preserves provider thinking level %j through durable projection and replay', (providerThinkingLevel) => {
@@ -467,7 +467,7 @@ describe('toPiContext', () => {
     }))
     const context = toPiContext({
       provider: 'deepseek',
-      model: 'new-model',
+      model: 'deepseek-v4-flash',
       messages: [createMessage({
         role: 'assistant',
         content: [
@@ -494,6 +494,41 @@ describe('toPiContext', () => {
     expect(context.messages[0]).not.toHaveProperty('responseId')
     expect(state.response).not.toHaveProperty('providerThinkingLevel')
     expect(context.messages[0]).not.toHaveProperty('providerThinkingLevel')
+  })
+
+  it('injects transient reasoning_text before a foreign tool call when the target route requires it', () => {
+    const context = toPiContext({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      messages: [createMessage({
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: ToolCallId('call-terra'), name: 'f', arguments: '{"a":1}' }],
+        source: {
+          kind: 'model',
+          provider: 'gpt-gateway',
+          model: 'gpt-terra',
+          replayState: toPiReplayState(assistant({
+            api: 'openai-responses',
+            provider: 'gpt-gateway',
+            model: 'gpt-terra',
+            stopReason: 'toolUse',
+            content: [{ type: 'toolCall', id: 'call-terra', name: 'f', arguments: { a: 1 } }],
+          })),
+        },
+      })],
+    }, undefined, undefined, {
+      api: 'openai-responses',
+      requiresReasoningTextOnToolReplay: true,
+    })
+
+    const message = context.messages[0] as AssistantMessage
+    expect(message.content.map(block => block.type)).toEqual(['thinking', 'toolCall'])
+    const thinking = message.content[0]
+    expect(thinking?.type).toBe('thinking')
+    const native = JSON.parse((thinking as Extract<AssistantMessage['content'][number], { type: 'thinking' }>).thinkingSignature ?? '{}') as {
+      content?: Array<{ type?: string }>
+    }
+    expect(native.content?.map(item => item.type)).toEqual(['reasoning_text'])
   })
 
   it('degrades unsupported replay-state versions to provider-neutral history', () => {
@@ -937,9 +972,54 @@ describe('mapStopReason / mapUsage', () => {
     'OpenAI Responses stream ended before a terminal response event',
     'openrouter stream ended without a terminal event',
     'Stream ended without finish_reason',
+    'stream_read_error',
   ])('maps pi-ai transport wording %j', (errorMessage) => {
     expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
       .toMatchObject({ kind: 'error', failure: { code: 'TRANSPORT' } })
+  })
+
+  it('keeps non-read stream sentinels as generic pi-ai errors', () => {
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'stream_write_error' })))
+      .toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+  })
+
+  it('maps only the exact flattened upstream failure sentinel to server', () => {
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: ' upstream_error: Upstream request failed ',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_error: Our servers are currently overloaded. Please try again later.',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER_OVERLOADED' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_is_overloaded: Our servers are currently overloaded. Please try again later.',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER_OVERLOADED' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'upstream_auth_error: Upstream request failed',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_auth_error: credentials rejected',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_error: Our servers are currently overloaded! Please try again later.',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_is_overloaded: Our servers are currently overloaded.',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_error: auth_unavailable: no auth available (providers=codex, model=gpt-6-astra; last upstream error: server_is_overloaded: Our servers are currently overloaded. Please try again later.)',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'SERVER_OVERLOADED' } })
+    expect(mapStopReason(assistant({
+      stopReason: 'error',
+      errorMessage: 'server_error: auth_unavailable: no auth available (providers=codex, model=gpt-6-astra; last upstream error: server_is_overloaded: capacity changed. Please try again later.)',
+    }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
   })
 
   it('uses pi-ai provider-specific overflow classification without losing rate-limit exclusions', () => {

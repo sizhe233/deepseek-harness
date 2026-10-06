@@ -93,6 +93,25 @@ async function bench() {
 }
 
 describe('Chat inject API', () => {
+  it('lets a document provider handle specialized files and preserves native navigation on decline', async () => {
+    const b = await bench()
+    const open = vi.fn().mockResolvedValue(false)
+    b.runtime.ctx.provide('chatFilePreview', { open })
+    const { injected } = b.chatViewApi(ROOT)
+    await injected.openFile('src/a.ts', { line: 7 })
+    expect(open).toHaveBeenCalledWith({ sessionId: ROOT, cwd: '/proj', path: 'src/a.ts', preferNative: true })
+    expect(b.sidebarRight.openResource).toHaveBeenCalledExactlyOnceWith('dsh-resource://file/session/root-1/src/a.ts', { params: { line: 7 } })
+    open.mockResolvedValueOnce(true)
+    await injected.openFile('table.xlsx')
+    expect(b.sidebarRight.openResource).toHaveBeenCalledTimes(1)
+    open.mockResolvedValueOnce(undefined)
+    await expect(injected.openFile('invalid.txt')).rejects.toThrow('invalid result')
+    open.mockRejectedValueOnce(new Error('refused'))
+    await expect(injected.openFile('refused.txt')).rejects.toThrow('refused')
+    expect(b.sidebarRight.openResource).toHaveBeenCalledTimes(1)
+    await b.runtime.dispose()
+  })
+
   it('loads older history and forks through the Session Controller', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(ROOT)

@@ -9,6 +9,7 @@ import type { Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { isPlugin, normalizeHandler } from './guard.ts'
@@ -88,6 +89,8 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** Maximum synchronous VM evaluation time in milliseconds. */
   vmTimeoutMs?: number
+  /** Maximum wait for one Client inspect response in milliseconds. */
+  clientInspectTimeoutMs?: number
 }
 
 type ResolvedConfig = Required<Config>
@@ -126,6 +129,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
 
   static Config: z<Config> = z.object({
     vmTimeoutMs: z.number().min(1).default(5000),
+    clientInspectTimeoutMs: z.number().min(1).default(30_000),
   })
 
   private readonly rootCtx: Context
@@ -140,7 +144,7 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
     super(ctx, 'dynamicCordisRunner')
     this.rootCtx = ctx
     this.resolved = config as ResolvedConfig
-    this.inspectRegistry = new CordisInspectRegistryService(ctx)
+    this.inspectRegistry = new CordisInspectRegistryService(ctx, this.resolved.clientInspectTimeoutMs)
   }
 
   /**
@@ -502,18 +506,18 @@ export class DynamicCordisRunnerService extends TypertRemoteService {
 
   /**
    * Claim one pending Client inspect query with its live result.
-   * @param agent - Session that owns the query.
+   * @param agentId - Session that owns the query.
    * @param requestId - exact pending query identity.
    * @param resolution - provider result or structured refusal.
    * @returns whether this answer won the query.
    */
   @Remote('resolveInspectQuery')
   resolveInspectQuery(
-    agent: Agent,
+    agentId: SessionId,
     requestId: CordisInspectRequestId,
     resolution: CordisInspectQueryResolution,
   ): CordisInspectResolveAck {
-    return this.inspectRegistry.resolveClientQuery(agent, requestId, resolution)
+    return this.inspectRegistry.resolveClientQuery(agentId, requestId, resolution)
   }
 
   /**

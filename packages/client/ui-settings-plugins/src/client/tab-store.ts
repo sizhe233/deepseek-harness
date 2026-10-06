@@ -1,18 +1,17 @@
 /**
  * The configurable-plugins tab's card list.
  *
- * The tab dispatches its slot by settings namespace, so what it renders is
- * the intersection of two ledgers: the namespaces the Host serves and the
- * cards registered into `settings.plugin.item`. A served namespace no card
- * claims renders nothing — another surface owns it, or this deployment ships
- * no browser half for it — and a card whose namespace the Host does not serve
- * is never dispatched, so a plugin this deployment did not compose leaves no
- * trace and does not count toward the empty line.
+ * The tab dispatches editable cards by settings namespace, then appends the
+ * independently editable MCP configuration group. A served namespace no card claims
+ * renders nothing — another surface owns it, or this deployment ships no
+ * browser half for it — and a card whose namespace the Host does not serve is
+ * never dispatched, so an uncomposed plugin leaves no trace.
  */
 
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { McpInventoryFace } from './mcp-inventory-controller.ts'
 
 /** What the section renders. */
 export interface ConfigurablePluginsTabState {
@@ -34,13 +33,16 @@ export interface ConfigurablePluginsTabState {
   namespaces: string[]
 }
 
-/** The registration-side face the tab's slot entry injects. */
-export interface ConfigurablePluginsTabFace {
+/** The registration-side face owned by the configurable-card controller. */
+export interface ConfigurablePluginsTabBaseFace {
   hooks: {
     /** Section snapshot bound by the renderer as usePluginConfigSection. */
     configurablePlugins: SnapshotStore<ConfigurablePluginsTabState>
   }
 }
+
+/** The complete registration-side face consumed by the configurable tab. */
+export type ConfigurablePluginsTabFace = ConfigurablePluginsTabBaseFace & McpInventoryFace
 
 /** Derives the served namespaces from the shared describe mirror and pairs them with the cards that claim them. */
 export class ConfigurablePluginsTabController {
@@ -78,7 +80,7 @@ export class ConfigurablePluginsTabController {
    * Build the face the tab's slot registration injects.
    * @returns the tab's snapshot source.
    */
-  inject(): ConfigurablePluginsTabFace {
+  inject(): ConfigurablePluginsTabBaseFace {
     return { hooks: { configurablePlugins: this.store } }
   }
 

@@ -57,6 +57,9 @@
       "path": "../../interaction/user-questions"
     },
     {
+      "path": "../../mcp/mcp-client"
+    },
+    {
       "path": "../session-controller/tsconfig.host.json"
     },
     {

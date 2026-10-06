@@ -101,6 +101,12 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # MCP configuration control plane: this row owns the Remote and the
+    # settings-backed override store; actual MCP server rows remain opt-in
+    # profile patches and are never created by the UI.
+    - id: mcp-configuration
+      name: '@deepseek-ai/dsh-mcp-client/configuration'
+
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'

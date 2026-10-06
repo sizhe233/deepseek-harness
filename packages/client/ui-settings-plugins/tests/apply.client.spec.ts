@@ -46,14 +46,23 @@ async function bench(served?: string[]) {
         })),
       },
     }))
+  const listMcp = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: { writable: true, revision: 0, entries: [] },
+  }))
+  const updateMcp = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: { writable: true, revision: 0, entries: [] },
+  }))
   const remote = new TestRemote(ctx, {
     credentials: { describe: describeCredentials, set: vi.fn() },
     session: { modelCatalog: models },
     settings: { describe: describeSettings },
+    mcpConfiguration: { list: listMcp, update: updateMcp },
   })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, models, remote,
+    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, listMcp, updateMcp, models, remote,
   }
 }
 
@@ -71,7 +80,7 @@ describe('ui-settings-plugins apply', () => {
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'remote.mcpConfiguration', 'settingsScope',
     ])
   })
 
@@ -117,12 +126,57 @@ describe('ui-settings-plugins apply', () => {
 
     const tab = slots.entries('settings.plugins.tab')[0]!
     const tabFace = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
-    expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins'])
+    expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins', 'mcpInventory'])
     for (const entry of slots.entries('settings.plugin.item')) {
       const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
       // Each card injects exactly one snapshot store plus its own actions.
       expect(Object.keys(face.hooks)).toHaveLength(1)
     }
+  })
+
+  it('loads the safe MCP inventory and refreshes it after a connection reset', async () => {
+    const { ctx, slots, listMcp } = await bench()
+    listMcp.mockResolvedValue({
+      ok: true,
+      value: {
+        writable: true,
+        revision: 0,
+        entries: [{
+          entryId: 'include:mcp-fixture',
+          moduleName: '@deepseek-ai/dsh-mcp-client',
+          enabled: false,
+          fiberPhase: null,
+        }] as never,
+      },
+    })
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    const tab = slots.entries('settings.plugins.tab')[0]!
+    const face = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
+    await vi.waitFor(() => {
+      expect(face.hooks.mcpInventory.getSnapshot()).toEqual({
+        status: 'ready',
+        writable: true,
+        revision: 0,
+        entries: [{
+          entryId: 'include:mcp-fixture',
+          moduleName: '@deepseek-ai/dsh-mcp-client',
+          enabled: false,
+          fiberPhase: null,
+        }] as never,
+      })
+    })
+    expect(listMcp).toHaveBeenCalledOnce()
+
+    listMcp.mockResolvedValue({ ok: true, value: { writable: true, revision: 1, entries: [] } })
+    ctx.emit('connection/reset')
+    await vi.waitFor(() => { expect(listMcp).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => {
+      expect(face.hooks.mcpInventory.getSnapshot()).toEqual({
+        status: 'ready', writable: true, revision: 1, entries: [],
+      })
+    })
   })
 
   it('keys each card it ships on the settings namespace that card edits', async () => {

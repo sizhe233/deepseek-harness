@@ -11,6 +11,7 @@
  * to the step, so a mounted-but-deciding step paints nothing here.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
   ConnectionIndicator,
@@ -202,7 +203,9 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           onReconnect={reconnect}
         />
       </div>
-      {open && (
+      {/* The sidebar clips its column on narrow screens. Mount the modal at
+          the document layer so the complete panel remains visible. */}
+      {open && createPortal((
         <SettingsPanel
           rows={rows}
           renderSlot={renderSlot}
@@ -210,7 +213,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           onSelect={setActiveId}
           onClose={close}
         />
-      )}
+      ), document.body)}
       {/* Dialog chrome and `#root` inert ownership live inside each step's
           visible branch. A step still deciding (private facts loading)
           renders null, so nothing paints or blocks while it decides. */}

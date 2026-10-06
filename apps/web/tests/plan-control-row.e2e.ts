@@ -93,6 +93,9 @@ describe('web e2e: plan chip click area at the narrow viewport', () => {
     // trigger would fit beside the chip even on the pre-fix layout. The
     // directory loads asynchronously, so poll for the real label.
     await expect.poll(() => trigger.getAttribute('aria-label'), { timeout: 10_000 }).toContain('DeepSeek-V4-Flash')
+    // Resizing animates the sidebar grid. Use the same stability and hit-test
+    // checks as the real click before sampling the settled geometry.
+    await chip.click({ trial: true })
     const chipBox = await chip.boundingBox()
     const triggerBox = await trigger.boundingBox()
     expect(chipBox).not.toBeNull()

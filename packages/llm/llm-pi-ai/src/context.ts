@@ -6,7 +6,14 @@
 
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type {
+  ContentBlock,
+  GenerateOptions,
+  ImageAttachmentAccessResolver,
+  LlmCompactionItem,
+  Message,
+  ToolCallId,
+} from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
   AttachmentStore,
@@ -14,15 +21,20 @@ import type {
   ImageRequestPolicy,
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import type { Context as PiContext, ImageContent, Message as PiMessage, TextContent, Tool as PiTool } from '@earendil-works/pi-ai'
+import type { Api, Context as PiContext, ImageContent, Message as PiMessage, TextContent, Tool as PiTool } from '@earendil-works/pi-ai'
 import { toPiAssistant } from './replay.ts'
+import type { PiReplayTarget } from './replay.ts'
 import { DEFAULT_REQUEST_IMAGE_MAX_BYTES, DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET } from './config.ts'
+
+/** Marker converted to one temporary user item before pi-ai payload rewriting. */
+export const COMPACTION_ITEM_SENTINEL = '\uE000dsh-compaction-item\uE001'
 
 /** Join the text blocks of a harness message. */
 function flattenText(message: Message): string {
   return message.content
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
+    .flatMap(block => block.type === 'text'
+      ? [block.text]
+      : block.type === 'compaction' ? [COMPACTION_ITEM_SENTINEL] : [])
     .join('')
 }
 
@@ -32,6 +44,62 @@ function toolResultText(blocks: readonly ContentBlock[]): string {
   return blocks.map(block => block.type === 'text'
     ? block.text
     : block.type === 'tool-result' ? toolResultText(block.content) : '').join('')
+}
+
+/**
+ * Find the one provider-native compaction item embedded in durable history.
+ * @param messages - durable conversation history.
+ * @returns the opaque item, or undefined when the history has no compaction.
+ */
+export function compactionItemOf(messages: readonly Message[]): LlmCompactionItem | undefined {
+  let found: LlmCompactionItem | undefined
+  const visit = (blocks: readonly ContentBlock[]): void => {
+    for (const block of blocks) {
+      if (block.type === 'compaction') {
+        if (found !== undefined) throw new LlmError('a request may contain only one compaction item', 'INVALID_COMPACTION_ITEM')
+        found = block.item
+      } else if (block.type === 'tool-result') {
+        visit(block.content)
+      }
+    }
+  }
+  for (const message of messages) visit(message.content)
+  return found
+}
+
+function containsCompactionSentinel(value: unknown): boolean {
+  if (value === COMPACTION_ITEM_SENTINEL) return true
+  if (Array.isArray(value)) return value.some(containsCompactionSentinel)
+  if (typeof value !== 'object' || value === null) return false
+  return Object.values(value).some(containsCompactionSentinel)
+}
+
+/**
+ * Replace the temporary marker in pi-ai's Responses payload with the opaque item.
+ * @param payload - the prepared Responses request body.
+ * @param item - the original opaque provider item.
+ * @returns the request body with its validated marker replaced.
+ */
+export function injectCompactionItem(payload: unknown, item: LlmCompactionItem): unknown {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new LlmError('pi-ai Responses payload is not an object', 'INVALID_COMPACTION_PAYLOAD')
+  }
+  const body = payload as Record<string, unknown>
+  if (!Array.isArray(body.input)) {
+    throw new LlmError('pi-ai Responses payload has no input array for compaction replay', 'INVALID_COMPACTION_PAYLOAD')
+  }
+  const indexes = body.input
+    .map((entry, index) => containsCompactionSentinel(entry) ? index : -1)
+    .filter(index => index >= 0)
+  if (indexes.length !== 1) {
+    throw new LlmError(
+      `pi-ai Responses payload contains ${indexes.length} compaction markers; expected exactly one`,
+      'INVALID_COMPACTION_PAYLOAD',
+    )
+  }
+  const input = [...(body.input as unknown[])]
+  input[indexes[0] as number] = item
+  return { ...body, input }
 }
 
 /** Reject image roles that pi-ai cannot replay before request-size offloading can replace them. */
@@ -79,6 +147,9 @@ async function userContent(
             content.push(...nested)
           }
         }
+        break
+      case 'compaction':
+        content.push({ type: 'text', text: COMPACTION_ITEM_SENTINEL })
         break
       default:
         // Other merge-extensible blocks are not user-input vocabulary for pi-ai.
@@ -161,20 +232,43 @@ function piContext(systemPrompt: string | undefined, options: GenerateOptions, m
   }
 }
 
+/** Exact target-route requirements used while preparing foreign tool history. */
+export interface PiReplayPolicy {
+  api?: Api
+  requiresReasoningTextOnToolReplay?: boolean
+}
+
+function replayTarget(options: GenerateOptions, policy?: PiReplayPolicy): PiReplayTarget {
+  return {
+    ...policy?.api === undefined ? {} : { api: policy.api },
+    provider: options.provider,
+    model: options.model,
+    ...policy?.requiresReasoningTextOnToolReplay === undefined
+      ? {}
+      : { requiresReasoningTextOnToolReplay: policy.requiresReasoningTextOnToolReplay },
+  }
+}
+
 function appendAssistant(
   message: Message,
   messages: PiMessage[],
   toolNames: Map<ToolCallId, string>,
+  options: GenerateOptions,
   onReplayDegrade?: (reason: string) => void,
+  replayPolicy?: PiReplayPolicy,
 ): void {
-  const assistant = toPiAssistant(message, onReplayDegrade)
+  const assistant = toPiAssistant(message, replayTarget(options, replayPolicy), onReplayDegrade)
   for (const block of assistant.content) {
     if (block.type === 'toolCall') toolNames.set(brandString<ToolCallId>(block.id), block.name)
   }
   messages.push(assistant)
 }
 
-function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: string) => void): PiContext {
+function textOnlyContext(
+  options: GenerateOptions,
+  onReplayDegrade?: (reason: string) => void,
+  replayPolicy?: PiReplayPolicy,
+): PiContext {
   assertSupportedImageRoles(options.messages)
   const split = splitSystemPrompt(options)
   const toolNames = new Map<ToolCallId, string>()
@@ -190,7 +284,7 @@ function textOnlyContext(options: GenerateOptions, onReplayDegrade?: (reason: st
       continue
     }
     if (message.role === 'assistant') {
-      appendAssistant(message, messages, toolNames, onReplayDegrade)
+      appendAssistant(message, messages, toolNames, options, onReplayDegrade, replayPolicy)
       continue
     }
     const text = flattenText(message)
@@ -231,6 +325,7 @@ export interface PiImageRequestContext {
  * @param options - the harness request; `options.system`, else a leading `system` message, maps to pi-ai's single `systemPrompt` slot.
  * @param images - absent; selects the synchronous conversion.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
+ * @param replayPolicy - target-route protocol and reasoning-text requirements.
  * @returns the pi-ai context; `tools` is omitted when the request declares none.
  * @throws {LlmError} `UNSUPPORTED_CONTENT` for images in any history role, including a leading system message.
  */
@@ -238,6 +333,7 @@ export function toPiContext(
   options: GenerateOptions,
   images?: undefined,
   onReplayDegrade?: (reason: string) => void,
+  replayPolicy?: PiReplayPolicy,
 ): PiContext
 /**
  * Convert harness history to a pi-ai Context while resolving durable images.
@@ -248,27 +344,31 @@ export function toPiContext(
  * @param options - the harness request; `options.system`, else a leading `system` message, maps to pi-ai's single `systemPrompt` slot.
  * @param images - attachment provider, current path resolver, and request limits.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
+ * @param replayPolicy - target-route protocol and reasoning-text requirements.
  * @returns the asynchronously resolved pi-ai context.
  */
 export function toPiContext(
   options: GenerateOptions,
   images: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
+  replayPolicy?: PiReplayPolicy,
 ): Promise<PiContext>
 export function toPiContext(
   options: GenerateOptions,
   images?: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
+  replayPolicy?: PiReplayPolicy,
 ): PiContext | Promise<PiContext> {
   return images === undefined
-    ? textOnlyContext(options, onReplayDegrade)
-    : toPiContextWithImages(options, images, onReplayDegrade)
+    ? textOnlyContext(options, onReplayDegrade, replayPolicy)
+    : toPiContextWithImages(options, images, onReplayDegrade, replayPolicy)
 }
 
 async function toPiContextWithImages(
   options: GenerateOptions,
   images: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
+  replayPolicy?: PiReplayPolicy,
 ): Promise<PiContext> {
   const { attachments, resolveImageAccess, maxRequestImageBytes } = images
   const requestImagePolicy = images.requestImagePolicy ?? {
@@ -303,7 +403,7 @@ async function toPiContextWithImages(
       continue
     }
     if (message.role === 'assistant') {
-      appendAssistant(message, messages, toolNames, onReplayDegrade)
+      appendAssistant(message, messages, toolNames, options, onReplayDegrade, replayPolicy)
       continue
     }
     // user role: text + tool results (each result becomes its own message).

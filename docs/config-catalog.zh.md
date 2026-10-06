@@ -517,6 +517,8 @@ export interface ToolResultPruneConfig {
 export interface Config {
   /** Maximum synchronous VM evaluation time in milliseconds. */
   vmTimeoutMs?: number
+  /** Maximum wait for one Client inspect response in milliseconds. */
+  clientInspectTimeoutMs?: number
 }
 ```
 
@@ -1177,6 +1179,12 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Optional per-request header carrying the current Harness session id.
+   * Providers that route or optimise by conversation affinity can use this
+   * instead of a static `headers` entry.
+   */
+  sessionHeader?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -1207,6 +1215,13 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * Some reasoning Responses gateways reject replayed tool calls unless a
+   * `reasoning_text` item immediately precedes them, including tool calls made
+   * by another provider during HA failover. Enable a transient compatibility
+   * placeholder for those routes; it is never written into durable history.
+   */
+  requiresReasoningTextOnToolReplay?: boolean
 }
 
 /** One configured model entry: an id plus the catalog fields it overrides. */
@@ -1371,7 +1386,7 @@ export type PiAiThinkingTokenBudgetField = NonNullable<OpenAICompletionsCompat['
 
 依赖：`Api`（`@earendil-works/pi-ai`）· `CacheRetention`（`@earendil-works/pi-ai`）· `Model`（`@earendil-works/pi-ai`）· `ModelThinkingLevel`（`@earendil-works/pi-ai`）· `OpenAICompletionsCompat`（`@earendil-works/pi-ai`）· [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets`（`@earendil-works/pi-ai`）· `Transport`（`@earendil-works/pi-ai`)
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:221`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-pi-ai/src/config.ts:234`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -1514,8 +1529,17 @@ export interface LspLocalServerConfig {
 需要：`tools`
 
 ```ts config-catalog
-/** Configuration for one stdio or Streamable HTTP MCP server. */
+/** Full apply-time input, including the private Web configuration gateway row. */
+export type ApplyConfig = Config | ConfigurationConfig
+
+/** Configuration accepted by the bridge module. */
 export type Config = StdioConfig | StreamableHttpConfig
+
+/** Configuration for one stdio or Streamable HTTP MCP server. */
+export interface ConfigurationConfig {
+  /** Selects the host-side configuration gateway rather than an MCP bridge. */
+  mode: 'configuration'
+}
 
 /** Config for connecting to an MCP server via a spawned child process over stdio. */
 export interface StdioConfig {

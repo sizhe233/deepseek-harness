@@ -35,6 +35,11 @@ import { TranscriptViewPolicy } from './transcript-view.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
 
+/** Optional document preview supplied by a separately installed plugin. */
+interface FilePreviewProvider {
+  open(request: { sessionId: SessionId; cwd: string | undefined; path: string; preferNative: boolean }): unknown
+}
+
 const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
   hooks: {
     turnData: (_standard, data) => function useTurnData(key) {
@@ -131,6 +136,14 @@ export function apply(ctx: Context): void {
           // to land.
           openFile: async (path, options) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+            const preview = ctx.get('chatFilePreview') as FilePreviewProvider | undefined
+            if (preview !== undefined) {
+              const handled = await preview.open({ sessionId, cwd, path, preferNative: true })
+              if (handled !== false) {
+                if (handled !== true) throw new Error('chatFilePreview returned an invalid result')
+                return
+              }
+            }
             const url = fileAddressFor(sessionId, cwd, path)
             if (options?.line === undefined) ctx.sidebarRight.openResource(url)
             else ctx.sidebarRight.openResource(url, { params: { line: options.line } })

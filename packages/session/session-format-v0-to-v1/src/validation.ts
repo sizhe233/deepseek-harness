@@ -197,6 +197,15 @@ export function assertReleasedEventPayload(event: SessionFormatEvent, version: 0
   const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
   if (event.type === 'subagent/descriptor' && data['version'] !== 3) {
     const descriptorVersion = sessionFormatCount(data['version'], `${event.type} ${event.seq} version`)
+    if (version === 0 && descriptorVersion === 2 && data['mode'] === 'continuable') {
+      // V2 did not persist persona/tool restrictions. Retain its old version:
+      // current readers keep the history but cannot revive it with guessed authority.
+      assertReleasedV0Keys(data, ['version', 'mode', 'provider', 'label', 'agentProvider', 'agentModel'], [], `${event.type} ${event.seq} legacy v2`)
+      for (const key of ['provider', 'label', 'agentProvider', 'agentModel']) {
+        if (typeof data[key] !== 'string' || data[key].length === 0) throw new SessionFormatError(`${event.type} ${event.seq} legacy ${key} must be non-empty`)
+      }
+      return
+    }
     if (version === 0) {
       throw new SessionFormatUnsupportedMigrationError(
         `${event.type} ${event.seq} uses unsupported descriptor version ${descriptorVersion}`,

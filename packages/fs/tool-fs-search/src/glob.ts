@@ -62,16 +62,18 @@ export interface GlobInput {
 
 /**
  * Validate value constraints the schema DSL can't express: a non-blank
- * `pattern`, and a non-blank `path` when given. Throws a plain `Error` (an
- * ordinary tool argument error) otherwise.
+ * `pattern`, and a non-blank `path` when given. An exact empty `path` emitted
+ * as an optional-field placeholder is omitted; other blank paths throw a
+ * plain `Error` (an ordinary tool argument error).
  *
  * @param args - the schema-validated `glob` arguments.
- * @returns the accepted input, unchanged.
+ * @returns the accepted input with an exact empty optional `path` omitted.
  */
 export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInput {
   if (args.pattern.trim().length === 0) throw new Error('pattern must be a non-empty string')
-  if (args.path !== undefined && args.path.trim().length === 0) throw new Error('path must be a non-empty string when given')
-  return { pattern: args.pattern, ...args.path !== undefined ? { path: args.path } : {} }
+  const path = args.path === '' ? undefined : args.path
+  if (path !== undefined && path.trim().length === 0) throw new Error('path must be a non-empty string when given')
+  return { pattern: args.pattern, ...path !== undefined ? { path } : {} }
 }
 
 /**

@@ -41,22 +41,16 @@ export const WIDER_MODES: Record<string, readonly SandboxMode[]> = {
 export const ESCALATION_TARGETS: readonly SandboxMode[] = ['workspace-write', 'danger-full-access']
 
 /**
- * Validate the escalation argument pairing a tool schema cannot express:
- * `sandbox_permissions` and `justification` travel together — an approval
- * prompt without a reason, or a reason driving nothing, is a malformed ask —
- * and the justification must be a non-empty sentence.
+ * Validate the escalation argument shape a tool schema cannot express.
+ * A reason without a requested mode is always malformed. A requested mode may
+ * omit its reason here because only the execution-time policy comparison can
+ * tell whether it is a real escalation or an already-covered no-op.
  * @param sandboxPermissions - the raw `sandbox_permissions` argument, if given.
  * @param justification - the raw `justification` argument, if given.
  */
 export function validateEscalationArgs(sandboxPermissions: string | undefined, justification: string | undefined): void {
-  if (sandboxPermissions !== undefined && justification === undefined) {
-    throw new Error('invalid escalation: sandbox_permissions requires a justification')
-  }
   if (justification !== undefined && sandboxPermissions === undefined) {
     throw new Error('invalid escalation: justification is only valid together with sandbox_permissions')
-  }
-  if (justification !== undefined && justification.trim().length === 0) {
-    throw new Error('invalid justification: expected a non-empty sentence')
   }
 }
 
@@ -132,8 +126,8 @@ export interface EscalationApproval<A = object, C = string> {
 export interface EscalationRequest {
   /** The requested target mode (schema-pinned to {@link ESCALATION_TARGETS} when advertised). */
   requestedMode: string
-  /** The model's one-sentence reason, shown verbatim to the user inside the audit reason. */
-  justification: string
+  /** The model's reason. Required only when the request actually widens the effective mode. */
+  justification: string | undefined
   /** The call's effective mode (session override ?? composition default) the request must strictly widen. */
   effectiveMode: SandboxMode
   /** The family's noun for the escalated action in user-facing texts (`command` for bash, `operation` for fs). */
@@ -141,26 +135,34 @@ export interface EscalationRequest {
 }
 
 /**
- * Resolve a sandbox-escalation request BEFORE anything executes: check strict
- * widening against the call's effective mode, then resolve the approval
+ * Resolve a sandbox-escalation request BEFORE anything executes: return the
+ * current policy when it already covers the request, otherwise check strict
+ * widening and the reason before resolving the approval
  * channel, then map every outcome — the ordered fail-closed sequence both
  * enforcing families share. Returns the granted mode to stamp onto exactly
  * this call; throws the distinct verbatim text for every other path (a
  * non-widening request, a missing approval service, an agent-less execution,
  * a rejection, a cancellation, an unanswerable ask) — the tool registry turns
  * the throw into the call's isError result, and nothing has run. A
- * non-widening request never prompts a human.
+ * already-covered request never prompts a human.
  * @param request - the escalation to judge (see {@link EscalationRequest}).
  * @param approval - the approval ingredients the tool holds (see {@link EscalationApproval}).
  * @returns the granted mode, consumed by the one call that asked.
  */
 export async function approveEscalation<A, C>(request: EscalationRequest, approval: EscalationApproval<A, C>): Promise<SandboxMode> {
   const { requestedMode: mode, effectiveMode, justification, subject } = request
-  // Strict widening is an EXECUTION check against the call's effective mode —
-  // deliberately not a schema constraint (the enum is the closed target
-  // vocabulary; the effective mode is per-call truth).
-  if (!(WIDER_MODES[effectiveMode] ?? []).includes(mode as SandboxMode)) {
+  const isWider = (WIDER_MODES[effectiveMode] ?? []).includes(mode as SandboxMode)
+  const isAlreadyCovered = mode === effectiveMode
+    || (WIDER_MODES[mode] ?? []).includes(effectiveMode)
+  if (isAlreadyCovered) return effectiveMode
+  if (!isWider) {
     throw new Error(`sandbox escalation to "${mode}" is not strictly wider than this call's current "${effectiveMode}" mode`)
+  }
+  if (justification === undefined) {
+    throw new Error('invalid escalation: sandbox_permissions requires a justification')
+  }
+  if (justification.trim().length === 0) {
+    throw new Error('invalid justification: expected a non-empty sentence')
   }
   if (approval.approver === undefined) {
     throw new Error(`sandbox escalation to "${mode}" requires approval, but no approval service is composed`)

@@ -34,6 +34,15 @@
     },
     {
       "path": "../../util/http-proxy"
+    },
+    {
+      "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }

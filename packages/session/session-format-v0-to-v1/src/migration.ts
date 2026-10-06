@@ -93,11 +93,38 @@ function normalizeReleasedV0Event(
   const steering = normalizeLegacySteering(header, sessionId)
   const retry = normalizeLegacyRetry(steering, sessionId, state.retryIds)
   const compaction = normalizeLegacyCompaction(retry, sessionId, state)
-  const message = normalizeLegacyMessage(compaction, sessionId, state.messageIds)
+  const descriptor = normalizeLegacyOneShotDescriptor(compaction)
+  const inbox = normalizeLegacyHaInbox(descriptor, sessionId)
+  const message = normalizeLegacyMessage(inbox, sessionId, state.messageIds)
   if (message.type !== 'assistant/chunk') assertReleasedEventPayload(message, 0)
   const messageId = eventMessageId(message)
   if (messageId !== undefined) state.messageIds.set(message.seq, messageId)
   return message
+}
+
+/** Released one-shot v2 descriptors have the same fields as one-shot v3. */
+function normalizeLegacyOneShotDescriptor(event: SessionFormatEvent): SessionFormatEvent {
+  if (event.type !== 'subagent/descriptor') return event
+  const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
+  if (data['version'] !== 2 || data['mode'] !== 'one-shot') return event
+  assertReleasedV0Keys(data, ['version', 'mode', 'provider'], ['label'], `${event.type} ${event.seq} v2`)
+  return { ...event, data: { ...data, version: 3 } }
+}
+
+/** Old HA steer calls logged unbranded user inputs before inbox normalization. */
+function normalizeLegacyHaInbox(event: SessionFormatEvent, sessionId: string): SessionFormatEvent {
+  if (event.type !== 'agent/inbox/spliced') return event
+  const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
+  if (!Array.isArray(data['inserted'])) return event
+  const inserted = data['inserted'].map((value, index) => {
+    const message = releasedV0Record(value, `${event.type} ${event.seq} inserted message`)
+    if (Object.hasOwn(message, 'id') || Object.hasOwn(message, 'role')) return message
+    const source = message['source']
+    if (!releasedIsRecord(source) || source['kind'] !== 'plugin' || source['plugin'] !== 'dsh-ha-orchestrator') return message
+    assertReleasedV0Keys(message, ['content', 'source'], [], `${event.type} ${event.seq} legacy HA input`)
+    return { ...message, id: `legacy-inbox:${sessionId}:${event.seq}:${index}`, role: 'user' }
+  })
+  return { ...event, data: { ...data, inserted } }
 }
 
 function normalizeLegacyCompactionType(event: SessionFormatEvent): SessionFormatEvent {

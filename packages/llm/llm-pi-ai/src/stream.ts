@@ -48,6 +48,17 @@ function classifyPiAiError(message: string): string {
   if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'
   if (/\b400\b|invalid.?request/i.test(message)) return 'INVALID_REQUEST'
   if (/\b5\d\d\b/.test(message)) return 'SERVER'
+  // Some OpenAI-compatible gateways flatten a transient upstream failure to
+  // this provider-side sentinel without retaining an HTTP status.
+  if (/^upstream_error:\s*upstream request failed$/i.test(message.trim())) return 'SERVER'
+  // These complete overload responses get their own code. HA owns an
+  // unbounded, cancellable retry loop for this code and must never fail over
+  // to a different model while the upstream is reporting capacity pressure.
+  if (message.trim() === 'server_error: Our servers are currently overloaded. Please try again later.') return 'SERVER_OVERLOADED'
+  // Codex-compatible gateways wrap the same overload response in an
+  // auth_unavailable envelope. Only the provider/model fields may vary.
+  if (/^server_error: auth_unavailable: no auth available \(providers=[^,;()]+, model=[^;()]+; last upstream error: server_is_overloaded: Our servers are currently overloaded\. Please try again later\.\)$/i.test(message.trim())) return 'SERVER_OVERLOADED'
+  if (message.trim() === 'server_is_overloaded: Our servers are currently overloaded. Please try again later.') return 'SERVER_OVERLOADED'
   if (/\btime(?:d)?\s*out\b|timeout/i.test(message)) return 'TIMEOUT'
   // A stream truncated before the provider's terminal event: each pi-ai provider
   // throws its own wording when the wire closes mid-response without a terminal
@@ -56,7 +67,10 @@ function classifyPiAiError(message: string): string {
   // finish_reason`). The connection dropped mid-response, so this is a transport
   // truncation, not a model-level error.
   if (/stream ended (?:before|without)\b/i.test(message)) return 'TRANSPORT'
-  if (/\b(?:network|connection|socket|fetch)\b|\bECONN[A-Z]+\b/i.test(message)
+  // OpenAI-compatible gateways can flatten the same condition to this exact
+  // response-body read sentinel.
+  if (/^stream_read_error$/i.test(message.trim())
+    || /\b(?:network|connection|socket|fetch)\b|\bECONN[A-Z]+\b/i.test(message)
     || /\b(?:other side closed|HTTP2 request did not get a response|WebSocket closed unexpectedly)\b/i.test(message)
     // undici renders a mid-stream socket drop as a bare `terminated` (its
     // `cause` — the real SocketError — was flattened away upstream); Node's

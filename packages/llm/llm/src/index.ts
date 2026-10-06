@@ -12,6 +12,8 @@ import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
   GenerateOptions,
   LlmConfigurableProvider,
+  LlmCompactOptions,
+  LlmCompactionResult,
   LlmDiscoveredModel,
   LlmFailure,
   LlmImageRequestPricing,
@@ -227,6 +229,19 @@ export abstract class LlmAdapter {
    */
   imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined {
     return undefined
+  }
+
+  /**
+   * Run provider-native conversation compaction when the adapter supports it.
+   * The default is unsupported so existing adapters keep their current text
+   * summarization path. Implementations must return the opaque item exactly as
+   * the provider returned it; callers persist it in the session log and replay
+   * it on later requests.
+   * @param _options - provider, model, selected history, and cancellation.
+   * @returns the opaque compaction item, or `undefined` when unsupported.
+   */
+  compact(_options: LlmCompactOptions): Promise<LlmCompactionResult | undefined> {
+    return Promise.resolve(undefined)
   }
 
   /**
@@ -675,6 +690,17 @@ export class LlmRuntime extends TypertRemoteService {
    */
   fileRequestText(ref: FileAttachmentRef): string {
     return fileHandleText(ref, this.fileReadPath(ref))
+  }
+
+  /**
+   * Ask the adapter for provider-native compaction of one selected history
+   * span. Unsupported routes return `undefined` so compaction backends can
+   * fall back to their ordinary summarizer.
+   * @param options - exact route, selected history, and cancellation.
+   * @returns the opaque provider item, or `undefined` when unsupported.
+   */
+  compact(options: LlmCompactOptions): Promise<LlmCompactionResult | undefined> {
+    return this.registration(options.provider).adapter.compact(options)
   }
 
   /** Detach typed adapter-owned modality metadata. */

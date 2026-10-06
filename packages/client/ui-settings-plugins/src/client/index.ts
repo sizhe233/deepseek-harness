@@ -1,6 +1,6 @@
 /**
  * Plugins settings surface, browser half — one section whose feature-owned
- * tabs include configurable Host plugin cards and read-only inventory.
+ * tabs include configurable Host plugin cards and editable MCP configuration.
  *
  * The section declares `settings.plugins.tab`; its own `configurable` tab then
  * declares `settings.plugin.item` and renders whatever cards were registered
@@ -19,17 +19,20 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  McpConfigurationPatch, McpConfigurationSnapshot,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
+import { McpInventoryController } from './mcp-inventory-controller.ts'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
 import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
-import { ConfigurablePluginsTabController } from './tab-store.ts'
+import { ConfigurablePluginsTabController, type ConfigurablePluginsTabFace } from './tab-store.ts'
 import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
@@ -38,7 +41,10 @@ import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
 export type { ConfigurablePluginsTabProps } from './ConfigurablePluginsTab.tsx'
-export type { ConfigurablePluginsTabFace, ConfigurablePluginsTabState } from './tab-store.ts'
+export type {
+  ConfigurablePluginsTabBaseFace, ConfigurablePluginsTabFace, ConfigurablePluginsTabState,
+} from './tab-store.ts'
+export type { McpInventoryEntry, McpInventoryFace, McpInventoryState } from './mcp-inventory-controller.ts'
 export type { PluginCardProps } from './PluginCard.tsx'
 export type { SettingsPluginItemOwnerProps } from './slot-contract.ts'
 export type { FieldProps } from './fields.tsx'
@@ -54,7 +60,7 @@ const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'remote.mcpConfiguration', 'settingsScope',
 ]
 
 /**
@@ -98,6 +104,54 @@ export function apply(ctx: ClientContext): void {
   // The shared SettingsScope mirror updates after document commits and reconnects.
   const configurable = new ConfigurablePluginsTabController(
     ctx.settingsScope.describe(), () => ctx.slots.entries('settings.plugin.item'))
+  type McpRemote = {
+    list: () => Promise<{
+      ok: true
+      value: McpConfigurationSnapshot
+    } | {
+      ok: false
+      error: { code: string; message: string }
+    }>
+    update: (
+      entryId: string,
+      patch: McpConfigurationPatch,
+      expectedRevision: number,
+    ) => Promise<{
+      ok: true
+      value: McpConfigurationSnapshot
+    } | {
+      ok: false
+      error: { code: string; message: string }
+    }>
+  }
+  // The generated API is present in the production web composition. The
+  // defensive lookup keeps older compositions from taking down this section
+  // while they are upgraded.
+  const mcpRemote = (ctx.remote as unknown as { mcpConfiguration?: McpRemote }).mcpConfiguration
+  const listMcp = mcpRemote === undefined ? undefined : async (): Promise<McpConfigurationSnapshot> => {
+    const result = await mcpRemote.list()
+    if (!result.ok) {
+      throw new Error(`mcpConfiguration.list failed: ${result.error.code}: ${result.error.message}`)
+    }
+    return result.value
+  }
+  const updateMcp = mcpRemote === undefined ? undefined : async (
+    entryId: string,
+    patch: McpConfigurationPatch,
+    expectedRevision: number,
+  ): Promise<McpConfigurationSnapshot> => {
+    const result = await mcpRemote.update(entryId, patch, expectedRevision)
+    if (!result.ok) {
+      throw new Error(`mcpConfiguration.update failed: ${result.error.code}: ${result.error.message}`)
+    }
+    return result.value
+  }
+  const mcpInventory = new McpInventoryController(listMcp, updateMcp)
+  ctx.effect(() => () => { mcpInventory.dispose() }, 'ui-settings-plugins: MCP inventory')
+  ctx.effect(
+    () => ctx.on('connection/reset', () => { mcpInventory.refresh() }),
+    'ui-settings-plugins: MCP inventory generation',
+  )
   ctx.effect(() => () => { configurable.dispose() }, 'ui-settings-plugins: tab directory')
   // A card registered after the first read joins the list without a wire call.
   ctx.effect(
@@ -160,7 +214,15 @@ export function apply(ctx: ClientContext): void {
     order: 0,
     label: () => t('configurableTab'),
     locale: NS,
-    inject: () => configurable.inject(),
+    inject: (): ConfigurablePluginsTabFace => {
+      const base = configurable.inject()
+      const mcp = mcpInventory.inject()
+      return {
+        hooks: { ...base.hooks, ...mcp.hooks },
+        retryMcp: mcp.retryMcp,
+        updateMcp: mcp.updateMcp,
+      }
+    },
     children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
   }, ConfigurablePluginsTab))
 

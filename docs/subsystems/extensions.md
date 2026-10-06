@@ -52,15 +52,17 @@ async query( platform: CordisInspectPlatform, providerId: string, methodName: st
 
 /**
  * Accept the first valid Client response for a pending query.
- * @param agent - Agent whose Session owns the query.
+ * @param agentId - Session that owns the query. This stays an identity instead
+ * of an Agent lookup because generic Remote routing intentionally fences
+ * subagent-owned sessions.
  * @param requestId - Pending Client query identity.
  * @param resolution - Client provider result or failure.
  * @returns whether this response settled the still-pending query.
  */
-resolveClientQuery( agent: Agent, requestId: CordisInspectRequestId, resolution: CordisInspectQueryResolution, ): CordisInspectResolveAck
+resolveClientQuery( agentId: SessionId, requestId: CordisInspectRequestId, resolution: CordisInspectQueryResolution, ): CordisInspectResolveAck
 ```
 
-Types: [Agent](core.md)
+Types: [Agent](core.md) · [SessionId](core.md)
 
 Source: [`packages/extensions/cordis-host-runner/src/inspect-registry.ts`](../../packages/extensions/cordis-host-runner/src/inspect-registry.ts)
 
@@ -169,12 +171,12 @@ async stop(agent: Agent, pluginId: CordisDynamicPluginId): Promise<DynamicCordis
 
 /**
  * Claim one pending Client inspect query with its live result.
- * @param agent - Session that owns the query.
+ * @param agentId - Session that owns the query.
  * @param requestId - exact pending query identity.
  * @param resolution - provider result or structured refusal.
  * @returns whether this answer won the query.
  */
-@Remote('resolveInspectQuery') resolveInspectQuery( agent: Agent, requestId: CordisInspectRequestId, resolution: CordisInspectQueryResolution, ): CordisInspectResolveAck
+@Remote('resolveInspectQuery') resolveInspectQuery( agentId: SessionId, requestId: CordisInspectRequestId, resolution: CordisInspectQueryResolution, ): CordisInspectResolveAck
 
 /**
  * Frame-wide inventory, grouped as one row per stable Plugin.
@@ -252,7 +254,7 @@ inspectPackage( agent: Agent, pluginId: CordisDynamicPluginId, packageId: Cordis
 @Remote('invoke') async invoke( pluginId: CordisDynamicPluginId, pluginRunId: CordisDynamicPluginRunId, method: string, args: JsonValue, ): Promise<DynamicCordisInvokeResult>
 ```
 
-Types: [Agent](core.md)
+Types: [Agent](core.md) · [SessionId](core.md)
 
 Source: [`packages/extensions/cordis-host-runner/src/index.ts`](../../packages/extensions/cordis-host-runner/src/index.ts)
 

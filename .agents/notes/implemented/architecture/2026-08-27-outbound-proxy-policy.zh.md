@@ -34,6 +34,8 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运�
 
 这样 `proxyForUrl()` 与 dispatcher 就从同一组值给出答案。两者必须一致：一旦对某个 URL 产生分歧，`web-fetch-http` 就会把 dispatcher 本打算隧道转发的连接固定到某个地址上。
 
+**建连有一个显式的截止时间。** `installProxyFromEnvironment` 只从继承的启动环境读取 `DSH_HTTP_CONNECT_TIMEOUT_MS`，校验其为正整数毫秒值；未设置时使用 30 秒。即使策略不走代理，它也会创建直连 `Agent`，并把同一个 `connectTimeout` 传给每个路由 `Agent`、`Pool` 与 `ProxyAgent`。该定时器只覆盖 DNS、TCP 与 TLS 建立；提供方请求和响应流的超时保持独立。畸形覆盖值会在全局 dispatcher 改变前终止启动，且 `.env` 层不得提供它，因为 `DSH_` 名称只限启动环境。
+
 **解析补上 Node 与 undici 都不提供的部分。** `ALL_PROXY` 为两种协议兜底；空值视为未设置，因为 undici 的 `??` 链会让空的小写名遮住有值的大写名；loopback 始终绕过，否则 Web UI、Connection 传输以及每一个本地测试服务器都会经由代理并形成回环。绕过列表同时携带 `::1` **与** `[::1]`：undici 自带的匹配器会把裸写的 `::1` 读成主机 `:` 端口 `1`，从而永不豁免它。
 
 **拒绝是静默的，且绝不为被拒协议改道。** 用户填写而被本包拒绝的槽位，会让该协议保持直连，而不是继续回退到 `ALL_PROXY` 或 HTTP 代理，从而让诊断与实际路由一致。SOCKS URL、无法解析的字符串或不受支持的协议，会在 stderr 上报告并跳过——该变量可能是为其他工具导出的，它的笔误不应阻止 agent 启动。环境是唯一来源，因此不存在一个本应适用 `AGENTS.md` 「配置错误必须响」规则的配置面。

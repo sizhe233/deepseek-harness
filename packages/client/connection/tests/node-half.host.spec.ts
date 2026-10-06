@@ -327,6 +327,41 @@ describe('connection node half', () => {
     expect(routes).toHaveLength(0)
   })
 
+  it('registers an authenticated RPC channel from a sibling plugin that injects only connection', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    provideBrowserCredentials(ctx)
+    const carrier = ctx.plugin({ name: 'sibling-carrier', apply(owner: Context) {
+      owner.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    } })
+    await carrier.await()
+    const connectionFiber = ctx.plugin({ inject: [...inject], apply })
+    await connectionFiber.await()
+    const consumer = ctx.plugin({ name: 'sibling-consumer', inject: ['connection'], apply(owner: Context) {
+      owner.connection.rpc.handle('/extension', async () => ({ ok: true, value: 'accepted' }))
+    } })
+    try {
+      await consumer.await()
+      const route = routes.find(value => value.path === '/extension')!
+      expect(route).toBeDefined()
+      const connection = ctx.get('connection') as HostConnectionHandle
+      const request: ClientRequest = { type: 'client-request', rpcId: RpcId('extension'), method: 'status', payload: {} }
+      const anonymous = fakeResponse()
+      await route.handler(fakePost({ host: '127.0.0.1:3080' }, '/extension/status', request), anonymous.response)
+      expect(anonymous.state.status).toBe(401)
+      const authorized = fakeResponse()
+      await route.handler(fakePost({ host: '127.0.0.1:3080', cookie: browserCookie(connection, '127.0.0.1:3080') }, '/extension/status', request), authorized.response)
+      expect(authorized.state.status).toBe(200)
+      await consumer.dispose()
+      expect(routes.some(value => value.path === '/extension')).toBe(false)
+      expect(routes.some(value => value.path === API_PATH)).toBe(true)
+    } finally {
+      await consumer.dispose()
+      await connectionFiber.dispose()
+      await carrier.dispose()
+    }
+  })
+
   it('dispatches claimed /api endpoints and withdraws the claim', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []

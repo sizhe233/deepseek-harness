@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "name": "dsh-api-session-controller",
+      "path": "packages/api/session-controller/lib/index.js",
+      "beforeSha256": "16ecb48f33996efe72868f1603223214430634c5ac4c3e8fe9060bf240e990ff",
+      "afterSha256": "15f4f4485e5770aaf81f8e4b71728dff9117db6daf9d73e491247a4db853e69d"
+    },
+    {
+      "name": "dsh-agent-loop",
+      "path": "packages/core/agent-loop/lib/index.js",
+      "beforeSha256": "257eb83c00a05ee068e9f4ba80ca71ab94e3a1275d24b7a0cf5038ff23dd0fd8",
+      "afterSha256": "43a7ed4fb0f01e45bd9c043684990119a9ab72e8c9cde8a1f45354090e39fa71"
+    }
+  ]
+}

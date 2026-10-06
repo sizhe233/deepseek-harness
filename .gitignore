@@ -44,3 +44,6 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Fork CI candidate packages are downloadable artifacts, not source.
+workbench-artifacts/

@@ -149,6 +149,12 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Optional per-request header carrying the current Harness session id.
+   * Providers that route or optimise by conversation affinity can use this
+   * instead of a static `headers` entry.
+   */
+  sessionHeader?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -179,6 +185,13 @@ export interface PiAiProviderProfile {
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
+  /**
+   * Some reasoning Responses gateways reject replayed tool calls unless a
+   * `reasoning_text` item immediately precedes them, including tool calls made
+   * by another provider during HA failover. Enable a transient compatibility
+   * placeholder for those routes; it is never written into durable history.
+   */
+  requiresReasoningTextOnToolReplay?: boolean
 }
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
@@ -331,6 +344,7 @@ const profile = z.object({
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
+  sessionHeader: z.string(),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -342,6 +356,7 @@ const profile = z.object({
   requestImagePixelBudget: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
   requestImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_MAX_BYTES),
   retryPolicy: RetryPolicySchema,
+  requiresReasoningTextOnToolReplay: z.boolean(),
 })
 
 /** Runtime schema for {@link Config}. */
@@ -395,6 +410,22 @@ function assertValidHeaders(provider: string, headers: Readonly<Record<string, s
   }
 }
 
+/** Reject a dynamic session-header name that Fetch cannot represent. */
+function assertValidSessionHeader(provider: string, name: string | undefined): void {
+  if (name === undefined) return
+  if (name.trim().length === 0) {
+    throw new Error(`llm-pi-ai: provider "${provider}" sessionHeader must be a non-empty HTTP field name`)
+  }
+  try {
+    new Headers([[name, 'session-id']])
+  } catch {
+    throw new Error(
+      `llm-pi-ai: provider "${provider}" sessionHeader "${name}" is not valid for Fetch;`
+      + ' use a valid HTTP field name',
+    )
+  }
+}
+
 /**
  * Resolve scalar defaults and materialize each route's serviceable models.
  * Deferred catalog validation retains diagnostics without deleting configured
@@ -422,6 +453,7 @@ export function resolveProfiles(
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
     assertValidHeaders(provider, source.headers)
+    assertValidSessionHeader(provider, source.sessionHeader)
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)
       || streamIdleTimeoutMs <= 0

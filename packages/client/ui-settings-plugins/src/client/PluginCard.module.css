@@ -148,3 +148,476 @@
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
 }
+
+/* MCP status stays in the row header; editable fields appear after expansion. */
+.mcpStatus {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.mcpStatus[data-enabled='false'] {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mcpCount {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.mcpDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  corner-shape: round;
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.mcpDot[data-phase='failed'] {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.mcpDot[data-phase='loading'],
+.mcpDot[data-phase='pending'] {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.mcpDot[data-phase='unobserved'] {
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.body {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  margin: 0 16px;
+  padding-bottom: 8px;
+}
+
+.mcpEntry {
+  display: block;
+  overflow-wrap: anywhere;
+  padding-top: 12px;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.mcpDetails {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 8px 0 0;
+}
+
+.mcpDetails div {
+  display: contents;
+}
+
+.mcpDetails dt {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.mcpDetails dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+/* The top-level MCP card owns the group; child rows stay flat and separated. */
+.mcpGroupBody {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  margin: 0 16px;
+  padding-bottom: 8px;
+}
+
+.mcpList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mcpItem {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mcpItem:first-child {
+  border-top: 0;
+}
+
+.mcpItemHeader {
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  font: inherit;
+  text-align: left;
+}
+
+.mcpItemHeader:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+.mcpItemBody {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  padding-bottom: 8px;
+}
+
+/* MCP editors use the same compact field rhythm as the domain cards while
+   keeping transport-specific controls readable on narrow screens. */
+.mcpEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.mcpGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+
+.mcpField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 0;
+}
+
+.mcpLabel {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.mcpInput,
+.mcpTextarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.mcpInput {
+  height: 34px;
+  padding: 0 10px;
+}
+
+.mcpTextarea {
+  min-height: 86px;
+  padding: 7px 10px;
+  resize: vertical;
+}
+
+.mcpInput:focus-visible,
+.mcpTextarea:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.mcpInput:disabled,
+.mcpTextarea:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.mcpFieldHint {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcpToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.mcpToggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
+.mcpToggle input:disabled {
+  cursor: default;
+}
+
+.mcpFieldset {
+  min-width: 0;
+  margin: 6px 0 0;
+  padding: 4px 0 8px;
+  border: 0;
+}
+
+.mcpFieldset legend {
+  padding: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.mcpSecretRows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.mcpSecretRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 7px;
+}
+
+.mcpSecretRow .mcpInput[readonly] {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mcpIconButton {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.mcpIconButton:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-error);
+}
+
+.mcpIconButton:focus-visible,
+.mcpAddButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.mcpIconButton:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.mcpAddButton {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mcpAddButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mcpAddButton:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.mcpAdvanced {
+  margin-top: 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mcpAdvanced summary {
+  padding: 10px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mcpAdvanced summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.mcpAdvanced[open] summary {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mcpValidation,
+.mcpSaved {
+  margin: 9px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mcpValidation {
+  color: var(--dsw-alias-label-error);
+}
+
+.mcpSaved {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.mcpFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mcpFooterSpacer {
+  flex: 1;
+}
+
+.mcpPhaseHint {
+  display: block;
+  padding: 0 0 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.readOnly {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mcpReadOnly {
+  margin: 10px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Carried on the header so a collapsed card still says it holds edits. */
+.pending {
+  flex: none;
+  border-radius: 999px;
+  corner-shape: round;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.failed {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-error);
+}
+
+.discard,
+.save {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.discard {
+  border-color: var(--dsw-alias-border-l2);
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.discard:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.save {
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-layer-3);
+}
+
+.discard:disabled,
+.save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.discard:focus-visible,
+.save:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+@media (max-width: 560px) {
+  .mcpGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mcpSecretRow {
+    grid-template-columns: minmax(0, 1fr) 30px;
+  }
+
+  .mcpSecretRow .mcpInput:first-child {
+    grid-column: 1 / -1;
+  }
+}

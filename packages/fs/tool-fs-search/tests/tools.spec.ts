@@ -743,6 +743,15 @@ describe('glob results', () => {
     expect(text(await call(ctx, 'glob', { pattern: '*', path: ' ' }))).toContain('path must be a non-empty string')
   })
 
+  it('treats an empty optional path placeholder as omitted', async () => {
+    const { ctx, subprocess } = await setup()
+    subprocess.handler = () => runResult('', { exitCode: 1 })
+    const result = await call(ctx, 'glob', { pattern: '*.ts', path: '' })
+    expect(result.isError).toBe(false)
+    expect(subprocess.spawns[0]?.argv).not.toContain('')
+    expect(subprocess.spawns[0]?.argv).not.toContain('--')
+  })
+
   it('threads a valid path through to the spawn as the plain search root element', async () => {
     const { ctx, subprocess } = await setup()
     subprocess.handler = () => runResult('sub/a.ts\n')
@@ -1062,6 +1071,16 @@ describe('grep results', () => {
     expect(text(await call(ctx, 'grep', { pattern: 'x', include: '  ' }))).toContain('include must be a non-empty glob')
     expect(text(await call(ctx, 'grep', { pattern: 'x', include: '!*.ts' }))).toContain('negated patterns')
     expect(text(await call(ctx, 'grep', { pattern: 'x', include: '*.ts,*.js' }))).toContain('comma-separated list')
+  })
+
+  it('treats empty optional path and include placeholders as omitted', async () => {
+    const { ctx, subprocess } = await setup()
+    subprocess.handler = () => runResult('', { exitCode: 1 })
+    const result = await call(ctx, 'grep', { pattern: 'x', path: '', include: '' })
+    expect(result.isError).toBe(false)
+    expect(subprocess.spawns[0]?.argv).not.toContain('')
+    expect(subprocess.spawns[0]?.argv).not.toContain('--')
+    expect(subprocess.spawns[0]?.argv.some(argument => argument.startsWith('--glob='))).toBe(false)
   })
 
   it('accepts a whitespace-only pattern (a legitimate regex) and brace alternation in include', async () => {

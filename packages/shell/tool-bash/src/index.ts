@@ -61,8 +61,8 @@ function validateBashArgs(args: BashToolArgs): void {
   if (args.timeoutMs !== undefined && (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0)) {
     throw new Error(`invalid timeoutMs: expected a positive number, got ${JSON.stringify(args.timeoutMs)}`)
   }
-  // The escalation pairing (sandbox_permissions ⇔ justification, non-empty) is
-  // the shared rule both enforcing families validate identically.
+  // Reject an orphan reason here; execution-time policy comparison decides
+  // whether a requested mode needs a non-empty approval reason.
   validateEscalationArgs(args.sandbox_permissions, args.justification)
 }
 
@@ -211,7 +211,7 @@ export function apply(ctx: Context, config: Config = {}): void {
    */
   const approveBashEscalation = (
     mode: string,
-    justification: string,
+    justification: string | undefined,
     exec: ToolExecution,
     standingPolicy: SandboxExecutionPolicy | undefined,
   ): Promise<SandboxMode> => {
@@ -330,7 +330,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       validateBashArgs(args)
       // Description is display metadata; workdir defaults to the caller's session.
       const standingPolicy = resolveSandboxPolicy(exec)
-      const approvedMode = args.sandbox_permissions !== undefined && args.justification !== undefined
+      const approvedMode = args.sandbox_permissions !== undefined
         ? await approveBashEscalation(args.sandbox_permissions, args.justification, exec, standingPolicy)
         : undefined
       const policy = approvedMode === undefined

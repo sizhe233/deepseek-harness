@@ -37,9 +37,13 @@ A card stages what the user types and writes it only when they save. Each contro
 
 The Subagent card stages its permission switch and exact model checkboxes together. Enabling requires at least one selected adapter route. Saving submits `enabled` and `allowedModels` in one mutation fenced by the revision where that draft began; a newer Host revision marks the draft failed instead of restoring a revoked route. Disabling retains the selected routes for later reuse. Available models are grouped by provider, while saved routes absent from the current catalog appear last and remain removable. Adapter names and model descriptions remain live directory metadata and are not stored, and the card refreshes them after adapter changes, settings commits, and reconnects.
 
+### MCP connections
+
+The grouped MCP card follows the ordinary plugin cards. Expand a server to edit its stdio or HTTP configuration, timeout and reconnect policy. Saving uses a revision-fenced Host update and reloads only that entry; stale drafts are rejected. Environment and header values are write-only: an unchanged blank value keeps the existing secret, and removal must be explicit. Add or remove server entries through the existing configuration-file action.
+
 ### Secret-role fields
 
-A key control starts blank, reports only whether one is configured, and writes through the credentials domain rather than the settings section; a blank draft writes nothing and keeps the stored key.
+A search-provider key control starts blank, reports only whether one is configured, and writes through the credentials domain rather than the settings section; a blank draft writes nothing and keeps the stored key.
 
 -----
 

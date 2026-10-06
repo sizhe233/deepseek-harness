@@ -123,4 +123,17 @@ describe('PluginInventoryGateway', () => {
       { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
     ])
   })
+
+  it('does not expose the internal MCP configuration control row', async () => {
+    const { ctx, inventory } = await harness()
+    ctx.loader.builtins.control = () => {}
+    const controlId = await ctx.loader.create({
+      name: 'cordis:control',
+      config: { mode: 'configuration' },
+    })
+    const control = ctx.loader.resolve(controlId)
+    control.options.name = '@deepseek-ai/dsh-mcp-client'
+
+    expect((await inventory.list()).entries.some(entry => entry.entryId === controlId)).toBe(false)
+  })
 })

@@ -22,6 +22,15 @@ function pluginEntryId(value: string): PluginEntryId {
   return value as PluginEntryId
 }
 
+/** The MCP configuration gateway is an internal control-plane row, not a plugin users can inspect here. */
+function isInternalMcpConfiguration(entry: { options: { name: string; config?: unknown } }): boolean {
+  if (entry.options.name === '@deepseek-ai/dsh-mcp-client/configuration') return true
+  if (entry.options.name !== '@deepseek-ai/dsh-mcp-client') return false
+  const config = entry.options.config
+  return typeof config === 'object' && config !== null && !Array.isArray(config)
+    && (config as Record<string, unknown>).mode === 'configuration'
+}
+
 /** Runtime mirror: FiberState is a cross-package const enum. */
 const FIBER_STATE = {
   PENDING: 0 as FiberState.PENDING,
@@ -67,6 +76,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const entries: PluginInventoryEntry[] = []
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
+      if (isInternalMcpConfiguration(entry)) continue
       entries.push({
         entryId: pluginEntryId(entry.id),
         moduleName: entry.options.name,

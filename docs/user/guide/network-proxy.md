@@ -57,6 +57,14 @@ export NODE_EXTRA_CA_CERTS=/path/to/corporate-ca.pem
 
 Node reads that variable only at process start, so export it before running `dsh`.
 
+**Connection setup has a separate deadline.** DSH allows 30 seconds for DNS, TCP, and TLS setup before a request reaches the provider. This is separate from the provider's request and response-stream timeouts. To use another value, export a positive integer millisecond value before launching DSH:
+
+```sh
+export DSH_HTTP_CONNECT_TIMEOUT_MS=45000
+```
+
+This launch-only setting is not accepted from a project or Harness-home `.env` file. An invalid value stops startup rather than silently using another deadline.
+
 **Tools DSH runs for you follow the same proxy.** Commands in the bash tool, `git`, `gh`, and MCP servers started as child processes all inherit these variables. A child that is itself a Node program honors them only on Node 22.21 or later; an older Node connects directly. If one of your proxy variables holds a value DSH rejected — a SOCKS URL, say — Node-based tools also connect directly rather than fail to start, while `curl` and `git` still read that value.
 
 **A password in the proxy URL reaches those tools too.** `HTTPS_PROXY=http://alice:s3cret@proxy.example:8080` is a normal environment variable, so every command DSH runs — including the ones the model writes — can read it, and a command that prints its environment puts the password in output that is kept. This is how the variable already behaves for everything else in your shell. If that matters, give the proxy a credential-free entry point, or authenticate it some other way than in the URL.

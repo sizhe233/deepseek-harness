@@ -105,6 +105,17 @@ export interface ToolResultBlock {
   isError?: boolean
 }
 
+/** JSON value retained when a provider returns an opaque protocol item. */
+export type LlmJsonValue = string | number | boolean | null | LlmJsonValue[] | { [key: string]: LlmJsonValue }
+
+/** OpenAI Responses compaction item preserved losslessly for later replay. */
+export interface LlmCompactionItem {
+  /** Provider-native item tag for legacy or remote-compaction V2 responses. */
+  type: 'compaction' | 'compaction_summary'
+  encrypted_content: string
+  [key: string]: LlmJsonValue
+}
+
 /**
  * Merge-extensible content blocks keyed by `type`. New core blocks must land
  * with adapter, UI, and compaction support.
@@ -116,6 +127,8 @@ export interface ContentBlockMap {
   'file': FileBlock
   'tool-call': ToolCallBlock
   'tool-result': ToolResultBlock
+  /** Opaque OpenAI Responses compaction item; only Responses adapters serialize it. */
+  'compaction': { type: 'compaction'; item: LlmCompactionItem }
 }
 
 /** The block `type` tag vocabulary; widens as plugins add entries to {@link ContentBlockMap}. */
@@ -456,4 +469,30 @@ export interface GenerateOptions {
    * generation policy. Ordinary conversation requests leave it unset.
    */
   purpose?: 'compaction' | 'session-title'
+}
+
+/** One provider compaction request over an already selected conversation span. */
+export interface LlmCompactOptions {
+  /** Registered provider route selecting the adapter. */
+  provider: string
+  /** Exact model id; compaction-capable adapters may restrict this by model family. */
+  model: string
+  /** Ordered history to condense. */
+  messages: Message[]
+  /** System prompt sent with the compaction request, when present. */
+  system?: string
+  /** Tools active for the selected history, when present. */
+  tools?: ToolSchema[]
+  /** Cancellation for this maintenance request. */
+  signal?: AbortSignal
+  /** Session identity used for provider-side cache affinity, when available. */
+  sessionId?: Branded<'SessionId'>
+}
+
+/** Result of a provider-native compaction request. */
+export interface LlmCompactionResult {
+  /** Opaque item that must be replayed as a Responses input item. */
+  item: LlmCompactionItem
+  /** Provider usage for the maintenance call, when reported. */
+  usage?: TokenUsage
 }

@@ -953,6 +953,11 @@ function modelRouteValue(value: SessionFormatJsonValue | undefined, label: strin
 }
 
 function subagentDescriptorValue(data: JsonRecord, label: string): void {
+  if (data['version'] === 2 && data['mode'] === 'continuable') {
+    assertReleasedV0Keys(data, ['version', 'mode', 'provider', 'label', 'agentProvider', 'agentModel'], [], `${label} legacy v2`)
+    for (const key of ['provider', 'label', 'agentProvider', 'agentModel']) nonEmptyString(data[key], `${label} ${key}`)
+    return
+  }
   literalValue(data['version'], [3], `${label} version`)
   nonEmptyString(data['provider'], `${label} provider`)
   if (data['mode'] === 'one-shot') {

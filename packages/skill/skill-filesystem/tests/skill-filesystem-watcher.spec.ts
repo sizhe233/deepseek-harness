@@ -141,6 +141,7 @@ describe('skill-filesystem watcher failures', () => {
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['canonical-skill'])
     expect(watcherHarness.watchers[0]?.path).toBe(await realpath(root))
     expect(watcherHarness.watchers[0]?.options.persistent).toBe(true)
+    expect(watcherHarness.watchers[0]?.options.usePolling).toBe(process.platform === 'darwin')
     await fiber.dispose()
   })
 

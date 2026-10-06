@@ -35,6 +35,7 @@ env:
 
 jobs:
   build:
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -79,6 +80,7 @@ jobs:
           path: website/.dist
 
   deploy:
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' }}
     needs: build
     runs-on: ubuntu-latest
     permissions:

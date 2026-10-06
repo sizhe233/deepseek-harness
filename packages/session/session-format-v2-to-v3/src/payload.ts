@@ -120,7 +120,7 @@ function assertSource(message: SessionFormatJsonObject): void {
   }
 }
 
-const CONTENT_KINDS = new Set(['text', 'reasoning', 'image', 'file', 'tool-call', 'tool-result'])
+const CONTENT_KINDS = new Set(['text', 'reasoning', 'image', 'file', 'tool-call', 'tool-result', 'compaction'])
 
 function contentArray(value: SessionFormatJsonValue | undefined, label: string): readonly SessionFormatJsonValue[] {
   if (!Array.isArray(value)) throw new SessionFormatError(label + ': content must be an array')
@@ -179,6 +179,15 @@ function assertContentKinds(content: SessionFormatJsonValue | undefined, label: 
 function assertContentBlock(value: SessionFormatJsonValue | undefined, label: string): void {
   const block = record(value, label)
   assertContentKind(block['type'], label)
+  if (block['type'] === 'compaction') {
+    keys(block, ['type', 'item'], [], label + ' kind "compaction"')
+    const item = record(block['item'], label + ' compaction item')
+    if ((item['type'] !== 'compaction' && item['type'] !== 'compaction_summary')
+      || typeof item['encrypted_content'] !== 'string' || item['encrypted_content'].length === 0) {
+      throw new SessionFormatError(label + ': invalid message content kind "compaction": requires an opaque encrypted compaction item')
+    }
+    return
+  }
   if (block['type'] === 'tool-result') {
     if (!Array.isArray(block['content'])) throw new SessionFormatError(label + '.content: invalid message content kind "tool-result": content must be an array')
     assertContentKinds(block['content'], label + '.content')

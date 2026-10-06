@@ -56,6 +56,7 @@ const carriers = [
 
 const admitted = [
   text,
+  { type: 'compaction', item: { type: 'compaction_summary', encrypted_content: 'opaque', metadata: { seq: 987 } } },
   { type: 'reasoning', text: '' },
   { type: 'image', attachment: { attachmentId: 'image', mediaType: 'image/png', bytes: 987, width: 1, height: 2, name: '', originalDimensions: { width: 3, height: 4 } } },
   { type: 'file', attachment: { attachmentId: 'file', name: '', bytes: 987 } },
@@ -63,6 +64,8 @@ const admitted = [
   { ...nested([text]), isError: false },
 ]
 const malformed = [
+  { block: { type: 'compaction', item: { type: 'compaction', encrypted_content: '' } }, kind: 'compaction' },
+  { block: { type: 'compaction', item: { type: 'future', encrypted_content: 'opaque' } }, kind: 'compaction' },
   { block: { type: 'text', text: 12 }, kind: 'text' },
   { block: { type: 'reasoning', text: 'ok', extra: true }, kind: 'reasoning' },
   { block: { type: 'image', attachment: {} }, kind: 'image' },

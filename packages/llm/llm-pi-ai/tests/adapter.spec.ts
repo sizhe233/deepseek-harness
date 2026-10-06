@@ -9,7 +9,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, ToolCallId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -73,6 +73,161 @@ beforeEach(() => {
 })
 
 describe('PiAiAdapter provider routing', () => {
+  it('uses the current GPT Responses route for native encrypted compaction', async () => {
+    const server = await mockServer([{
+      body: JSON.stringify({
+        output: [
+          { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-ciphertext' },
+        ],
+        usage: {
+          input_tokens: 12,
+          output_tokens: 4,
+          total_tokens: 16,
+          input_tokens_details: { cached_tokens: 3 },
+          output_tokens_details: { reasoning_tokens: 2 },
+        },
+      }),
+    }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        openai: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          baseURL: `${server.url}/v1`,
+          sessionHeader: 'x-opencode-session',
+        },
+      },
+    })
+
+    const result = await ctx.llm.compact({
+      provider: 'openai',
+      model: 'gpt-4.1',
+      system: 'system prompt',
+      sessionId: 'session-compaction' as never,
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'history' }],
+        source: { kind: 'user' },
+      })],
+    })
+
+    expect(result).toEqual({
+      item: { type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque-ciphertext' },
+      usage: {
+        inputTokens: 9,
+        outputTokens: 4,
+        totalTokens: 16,
+        cacheReadTokens: 3,
+        reasoningTokens: 2,
+      },
+    })
+    expect(server.paths).toEqual(['/v1/responses'])
+    expect(server.headers[0]?.['x-opencode-session']).toBe('session-compaction')
+    expect(server.requests[0]).toMatchObject({
+      model: 'gpt-4.1',
+      instructions: 'system prompt',
+      stream: true,
+      store: true,
+      input: [
+        { role: 'user', content: [{ type: 'input_text', text: 'history' }] },
+        { type: 'compaction_trigger' },
+      ],
+    })
+    expect(server.headers[0]?.['x-codex-beta-features']).toBe('remote_compaction_v2')
+  })
+
+  it('parses the native Responses SSE compaction item even when response.output is empty', async () => {
+    const server = await mockServer([{
+      rawEvents: [
+        'data: {"type":"response.output_item.done","item":{"id":"cmp_2","type":"compaction_summary","encrypted_content":"opaque-sse"}}',
+        'data: {"type":"response.completed","response":{"output":[],"usage":{"input_tokens":8,"output_tokens":2,"total_tokens":10}}}',
+      ],
+    }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { openai: { apiKeyEnv: 'PI_TEST_KEY', baseURL: `${server.url}/v1` } },
+    })
+
+    await expect(ctx.llm.compact({ provider: 'openai', model: 'gpt-4.1', messages: [] }))
+      .resolves.toEqual({
+        item: { id: 'cmp_2', type: 'compaction_summary', encrypted_content: 'opaque-sse' },
+        usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 },
+      })
+  })
+
+  it('falls back from native V2 to the legacy compact endpoint', async () => {
+    const server = await mockServer([
+      { status: 404, body: JSON.stringify({ detail: 'Not Found' }) },
+      { body: JSON.stringify({ output: [{ type: 'compaction', encrypted_content: 'legacy-ciphertext' }] }) },
+    ])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { openai: { apiKeyEnv: 'PI_TEST_KEY', baseURL: `${server.url}/v1` } },
+    })
+
+    await expect(ctx.llm.compact({ provider: 'openai', model: 'gpt-4.1', messages: [] }))
+      .resolves.toMatchObject({ item: { type: 'compaction', encrypted_content: 'legacy-ciphertext' } })
+    expect(server.paths).toEqual(['/v1/responses', '/v1/responses/compact'])
+  })
+
+  it('does not call native compaction for non-GPT models', async () => {
+    const server = await mockServer([])
+    const ctx = await harness(server.url)
+
+    await expect(ctx.llm.compact({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      messages: [],
+    })).resolves.toBeUndefined()
+    expect(server.paths).toEqual([])
+  })
+
+  it('falls back when a gateway exposes compact but cannot route the GPT alias', async () => {
+    const unsupported = {
+      status: 400,
+      body: JSON.stringify({ error: { code: 'model_not_found', message: 'unknown provider for model gpt-5.4' } }),
+    }
+    const server = await mockServer([unsupported, unsupported])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { openai: { apiKeyEnv: 'PI_TEST_KEY', baseURL: `${server.url}/v1` } },
+    })
+
+    await expect(ctx.llm.compact({ provider: 'openai', model: 'gpt-4.1', messages: [] }))
+      .resolves.toBeUndefined()
+    expect(server.paths).toEqual(['/v1/responses', '/v1/responses/compact'])
+  })
+
+  it('replays the opaque compaction item into the next Responses request', async () => {
+    const item = { type: 'compaction' as const, encrypted_content: 'opaque-ciphertext' }
+    const server = await mockServer([{
+      status: 401,
+      body: JSON.stringify({ error: { message: 'captured' } }),
+    }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { openai: { apiKeyEnv: 'PI_TEST_KEY', baseURL: `${server.url}/v1` } },
+    })
+
+    const result = await assemble(ctx, {
+      provider: 'openai',
+      model: 'gpt-4.1',
+      messages: [createUserMessage({
+        content: [{ type: 'compaction', item }],
+        source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
+      })],
+    })
+
+    expect(result.finish.kind).toBe('error')
+    const input = (server.requests[0] as { input?: unknown[] }).input ?? []
+    expect(input).toContainEqual(item)
+    expect(server.paths).toEqual(['/v1/responses'])
+  })
+
   it('resolves a catalog model dynamically and uses a private endpoint', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url)
@@ -121,6 +276,31 @@ describe('PiAiAdapter provider routing', () => {
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.['x-company']).toBe('private')
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
+  })
+
+  it('sends a configured session header with a stable per-conversation value', async () => {
+    const server = await mockServer([
+      { events: textEvents },
+      { events: textEvents },
+      { events: textEvents },
+      { events: textEvents },
+    ])
+    const ctx = await harness(server.url, {
+      headers: { 'X-OpenCode-Session': 'static-value' },
+      sessionHeader: 'x-opencode-session',
+    })
+
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: 'session-a' as never })
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: 'session-a' as never })
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: 'session-b' as never })
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+
+    expect(server.headers.map(headers => headers['x-opencode-session'])).toEqual([
+      'session-a',
+      'session-a',
+      'session-b',
+      undefined,
+    ])
   })
 
   it('forwards common stream options and profile reasoning', async () => {
@@ -238,6 +418,49 @@ describe('PiAiAdapter provider routing', () => {
     const result = await assemble(ctx, { provider: 'openai', model: 'gpt-4.1', messages: [] })
     expect(result.finish.kind).toBe('error')
     expect(server.paths).toEqual(['/v1/responses'])
+  })
+
+  it('puts a transient reasoning_text item before foreign tool-call replay when configured', async () => {
+    const server = await mockServer([{ status: 401, body: JSON.stringify({ error: { message: 'captured' } }) }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'deepseek-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-responses',
+          baseURL: `${server.url}/v1`,
+          reasoning: 'high',
+          requiresReasoningTextOnToolReplay: true,
+          models: [{ id: 'deepseek-v4-flash', reasoningEfforts: { high: 'high' } }],
+        },
+      },
+    })
+    const callId = ToolCallId('call-terra')
+    const assistant = createMessage({
+      role: 'assistant',
+      content: [{ type: 'tool-call', id: callId, name: 'lookup', arguments: '{}' }],
+      source: { kind: 'model', provider: 'gpt-gateway', model: 'gpt-terra' },
+    })
+    const result = createUserMessage({
+      content: [{ type: 'tool-result', toolCallId: callId, content: [{ type: 'text', text: 'ok' }] }],
+      source: { kind: 'plugin', plugin: 'test' },
+    })
+
+    await assemble(ctx, {
+      provider: 'deepseek-gateway',
+      model: 'deepseek-v4-flash',
+      messages: [assistant, result],
+      tools: [{ name: 'lookup', description: 'lookup', parameters: { type: 'object' } }],
+    })
+
+    const input = (server.requests[0] as { input?: Array<Record<string, unknown>> }).input ?? []
+    const callIndex = input.findIndex(item => item['type'] === 'function_call')
+    expect(callIndex).toBeGreaterThan(0)
+    expect(input[callIndex - 1]).toMatchObject({
+      type: 'reasoning',
+      content: [{ type: 'reasoning_text' }],
+    })
   })
 
   it('resolves attachment and filesystem services mounted after the adapter when dispatching an image', async () => {
@@ -384,6 +607,21 @@ describe('PiAiAdapter provider routing', () => {
     const ctx = await harness(server.url)
     const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(result.finish).toMatchObject({ kind: 'error', failure: { code } })
+    expect(server.paths).toEqual(['/chat/completions'])
+  })
+
+  it('preserves structured in-band SSE errors without an HTTP status', async () => {
+    const server = await mockServer([{
+      rawEvents: [
+        'event: error\ndata: {"message":"ERROR","error":{"code":502,"message":"Provider returned an error"}}',
+      ],
+    }])
+    const ctx = await harness(server.url)
+
+    const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'SERVER' } })
+    expect(result.finish.kind === 'error' ? result.finish.failure.message : '').toContain('"code":502')
     expect(server.paths).toEqual(['/chat/completions'])
   })
 
@@ -787,6 +1025,13 @@ describe('provider profile lifecycle', () => {
     const ctx = await harness(server.url, { apiKeyEnv: undefined })
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.authorization).toBe('Bearer ambient-key')
+  })
+
+  it('rejects an invalid dynamic session-header name before registration', () => {
+    expect(() => resolveProfiles({ openai: { sessionHeader: 'bad header name' } }))
+      .toThrow(/sessionHeader "bad header name" is not valid for Fetch/)
+    expect(() => resolveProfiles({ openai: { sessionHeader: '   ' } }))
+      .toThrow(/sessionHeader must be a non-empty HTTP field name/)
   })
 
   it('falls back to the ambient environment for apiKeyEnv without the credentials seam', async () => {

@@ -111,6 +111,19 @@ function assertTextOnly(blocks: readonly ContentBlock[]): void {
   if (contentHasImage(blocks)) {
     throw new LlmError('The DeepSeek chat-completions adapter does not support image content.', 'UNSUPPORTED_CONTENT')
   }
+  assertNoCompaction(blocks)
+}
+
+function assertNoCompaction(blocks: readonly ContentBlock[]): void {
+  for (const block of blocks) {
+    if (block.type === 'compaction') {
+      throw new LlmError(
+        'The DeepSeek chat-completions adapter cannot replay an OpenAI Responses compaction item.',
+        'UNSUPPORTED_COMPACTION',
+      )
+    }
+    if (block.type === 'tool-result') assertNoCompaction(block.content)
+  }
 }
 
 /** Reject roles whose DeepSeek history format cannot carry image input. */
@@ -287,6 +300,7 @@ export async function serializeMessagesWithImages(
   images: ImageSerializationOptions,
 ): Promise<WireMessage[]> {
   assertSupportedImageRoles(messages)
+  for (const message of messages) assertNoCompaction(message.content)
   const wire: WireMessage[] = []
   let pendingToolImages: WireImageContentPart[] = []
   const flushToolImages = (): void => {

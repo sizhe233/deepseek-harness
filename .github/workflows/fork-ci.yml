@@ -1,0 +1,44 @@
+name: Fork CI
+on:
+  push:
+    branches: [workbench, 'codex/**']
+  pull_request:
+    branches: [workbench]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_SNAPSHOT: replay
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run typecheck
+      - run: pnpm test --maxWorkers=2
+      - run: node --test workbench/*.test.mjs
+      - run: node workbench/apply-runtime-seams.mjs
+      - name: Package candidate host and web artifacts
+        run: |
+          node workbench/package-candidate.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-candidate-${{ github.sha }}
+          path: workbench-artifacts/
+          retention-days: 14

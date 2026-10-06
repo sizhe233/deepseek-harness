@@ -30,6 +30,37 @@ function createMigrationStage(id: string) {
 }
 
 describe('released Session format v0 to v1', () => {
+  it('promotes only the field-compatible one-shot v2 descriptor without changing ownership', () => {
+    const stage = createMigrationStage('legacy-child')
+    const source = { type: 'subagent/descriptor', seq: 0, time: 1, data: { version: 2, mode: 'one-shot', provider: 'spawn', label: 'work' } }
+    expect(stage.transform(source)).toEqual([{ ...source, data: { ...source.data, version: 3 } }])
+    expect(source.data.version).toBe(2)
+    expect(() => stage.transform({ ...source, data: { ...source.data, mode: 'continuable' } })).toThrow(/lacks required member/)
+    expect(() => stage.transform({ ...source, data: { ...source.data, unknown: 'not-audited' } })).toThrow()
+  })
+
+  it('retains an obsolete continuable v2 descriptor without inventing restoration permissions', () => {
+    const source = { type: 'subagent/descriptor', seq: 0, time: 1, data: {
+      version: 2, mode: 'continuable', provider: 'fork', label: 'historic member', agentProvider: 'p', agentModel: 'm',
+    } }
+    expect(createMigrationStage('legacy-member').transform(source)).toEqual([source])
+    expect(() => createMigrationStage('legacy-member').transform({ ...source, data: { ...source.data, persona: 'unknown legacy field' } })).toThrow()
+  })
+
+  it('assigns deterministic identities only to the known unbranded HA inbox input', () => {
+    const source = { type: 'agent/inbox/spliced', seq: 0, time: 1, data: {
+      target: 'next-step', start: 0,
+      inserted: [{ content: [{ type: 'text', text: 'continue remaining work' }], source: { kind: 'plugin', plugin: 'dsh-ha-orchestrator' } }],
+    } }
+    const first = createMigrationStage('legacy-ha').transform(source)
+    expect(first).toEqual(createMigrationStage('legacy-ha').transform(source))
+    expect(first[0]?.data).toEqual({ ...source.data, inserted: [{ ...source.data.inserted[0], id: 'legacy-inbox:legacy-ha:0:0', role: 'user' }] })
+    expect(source.data.inserted[0]).not.toHaveProperty('id')
+    const unknown = structuredClone(source)
+    unknown.data.inserted[0]!.source.plugin = 'unclassified-plugin'
+    expect(() => createMigrationStage('legacy-ha').transform(unknown)).toThrow(/lacks required member/)
+  })
+
   it('changes only the version of a canonical decoded artifact', () => {
     const header = {
       type: 'session',

@@ -3,6 +3,7 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import { assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
@@ -49,7 +50,7 @@ export class CordisInspectRegistryService extends Service {
   private nextRequest = 1
 
   /** Register the process-global Host registry. */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, private readonly clientQueryTimeoutMs = 30_000) {
     super(ctx, 'cordisInspect')
   }
 
@@ -127,18 +128,20 @@ export class CordisInspectRegistryService extends Service {
 
   /**
    * Accept the first valid Client response for a pending query.
-   * @param agent - Agent whose Session owns the query.
+   * @param agentId - Session that owns the query. This stays an identity instead
+   * of an Agent lookup because generic Remote routing intentionally fences
+   * subagent-owned sessions.
    * @param requestId - Pending Client query identity.
    * @param resolution - Client provider result or failure.
    * @returns whether this response settled the still-pending query.
    */
   resolveClientQuery(
-    agent: Agent,
+    agentId: SessionId,
     requestId: CordisInspectRequestId,
     resolution: CordisInspectQueryResolution,
   ): CordisInspectResolveAck {
     const pending = this.pending.get(requestId)
-    if (pending === undefined || pending.request.agentId !== agent.id) return { accepted: false }
+    if (pending === undefined || pending.request.agentId !== agentId) return { accepted: false }
     if (!resolution.ok) return { accepted: false }
     try {
       resolution = {
@@ -184,6 +187,18 @@ export class CordisInspectRegistryService extends Service {
       pending.settle({ ok: false, reason: 'cancelled', message: `Client inspect query ${providerId}.${methodName} was cancelled` })
       this.ctx.emit('cordis/inspect-query-resolved', { requestId })
     }
+    const onTimeout = (): void => {
+      const pending = this.pending.get(requestId)
+      if (pending === undefined) return
+      this.pending.delete(requestId)
+      pending.settle({
+        ok: false,
+        reason: 'cancelled',
+        message: `Client inspect query ${providerId}.${methodName} timed out after ${this.clientQueryTimeoutMs} ms because no browser page returned a valid result`,
+      })
+      this.ctx.emit('cordis/inspect-query-resolved', { requestId })
+    }
+    const timeout = setTimeout(onTimeout, this.clientQueryTimeoutMs)
     signal.addEventListener('abort', onAbort, { once: true })
     if (signal.aborted) onAbort()
     else this.ctx.emit('cordis/inspect-query', request)
@@ -192,6 +207,7 @@ export class CordisInspectRegistryService extends Service {
       if (!resolution.ok) throw new Error(`${providerId}.${methodName}: ${resolution.message}`)
       return resolution.data
     } finally {
+      clearTimeout(timeout)
       signal.removeEventListener('abort', onAbort)
     }
   }

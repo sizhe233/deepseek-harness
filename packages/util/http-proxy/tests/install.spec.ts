@@ -1,6 +1,11 @@
 import { spawnSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import {
+  createServer as createNetServer,
+  type AddressInfo,
+  type Server as NetServer,
+  type Socket,
+} from 'node:net'
 import { afterEach, beforeAll, afterAll, describe, expect, it } from 'vitest'
 import { getGlobalDispatcher } from 'undici'
 import {
@@ -17,6 +22,9 @@ let proxy: Server
 let origin: Server
 let proxyUrl: string
 let originUrl: string
+let blackhole: NetServer
+let blackholeUrl: string
+const blackholeSockets = new Set<Socket>()
 
 /**
  * The target for every assertion about a tunnelled hop. It is deliberately not loopback: no policy
@@ -25,13 +33,13 @@ let originUrl: string
  */
 const proxyTarget = 'http://origin.test/probe'
 
-function listen(server: Server): Promise<AddressInfo> {
+function listen(server: Server | NetServer): Promise<AddressInfo> {
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => { resolve(server.address() as AddressInfo) })
   })
 }
 
-function close(server: Server): Promise<void> {
+function close(server: Server | NetServer): Promise<void> {
   return new Promise((resolve) => { server.close(() => { resolve() }) })
 }
 
@@ -46,13 +54,26 @@ beforeAll(async () => {
     socket.end()
   })
   origin = createServer((_request, response) => { response.end('DIRECT') })
-  const [proxyAddress, originAddress] = await Promise.all([listen(proxy), listen(origin)])
+  // Accept a TCP connection but never complete TLS. A real fetch therefore exposes the dispatcher
+  // connection deadline without a DNS dependency or an upstream server.
+  blackhole = createNetServer((socket) => {
+    blackholeSockets.add(socket)
+    socket.on('close', () => { blackholeSockets.delete(socket) })
+    socket.on('error', () => undefined)
+  })
+  const [proxyAddress, originAddress, blackholeAddress] = await Promise.all([
+    listen(proxy),
+    listen(origin),
+    listen(blackhole),
+  ])
   proxyUrl = `http://127.0.0.1:${String(proxyAddress.port)}`
   originUrl = `http://127.0.0.1:${String(originAddress.port)}/probe`
+  blackholeUrl = `https://127.0.0.1:${String(blackholeAddress.port)}/probe`
 })
 
 afterAll(async () => {
-  await Promise.all([close(proxy), close(origin)])
+  for (const socket of blackholeSockets) socket.destroy()
+  await Promise.all([close(proxy), close(origin), close(blackhole)])
 })
 
 afterEach(() => {
@@ -171,20 +192,49 @@ describe('installProxyFromEnvironment', () => {
     await expect((await fetch(originUrl)).text()).resolves.toBe('DIRECT')
   })
 
-  it('installs no dispatcher and touches no environment when the user exported none', async () => {
+  it('installs a direct dispatcher and touches no environment when the user exported none', async () => {
     const before = getGlobalDispatcher()
     process.env.HTTP_PROXY = 'http://untouched.example'
     const { dispose, reported } = await install(env({}))
     try {
-      expect(getGlobalDispatcher()).toBe(before)
+      expect(getGlobalDispatcher()).not.toBe(before)
       expect(process.env.HTTP_PROXY).toBe('http://untouched.example')
       expect(reported).toEqual([])
       expect(proxyRouteFor(new URL(proxyTarget))).toEqual({ proxied: false })
     } finally {
       await dispose()
+      expect(getGlobalDispatcher()).toBe(before)
       delete process.env.HTTP_PROXY
     }
   })
+
+  it('uses the configured connection timeout for a direct global fetch', async () => {
+    const { dispose } = await install(env({ DSH_HTTP_CONNECT_TIMEOUT_MS: '1200' }))
+    try {
+      let failure: unknown
+      try {
+        await fetch(blackholeUrl, { signal: AbortSignal.timeout(5000) })
+      } catch (error) {
+        failure = error
+      }
+      const cause = (failure as { cause?: unknown } | undefined)?.cause
+      expect(cause).toBeInstanceOf(Error)
+      if (!(cause instanceof Error)) throw new Error('expected an Undici connection-timeout cause')
+      expect((cause as { code?: unknown }).code).toBe('UND_ERR_CONNECT_TIMEOUT')
+      expect(cause.message).toContain('timeout: 1200ms')
+    } finally {
+      await dispose()
+    }
+  })
+
+  it.each(['0', '-1', '1.5', 'not-a-duration', '2147483648'])(
+    'rejects the invalid DSH_HTTP_CONNECT_TIMEOUT_MS value %s before changing the dispatcher',
+    async (value) => {
+      const before = getGlobalDispatcher()
+      await expect(install(env({ DSH_HTTP_CONNECT_TIMEOUT_MS: value }))).rejects.toThrow('DSH_HTTP_CONNECT_TIMEOUT_MS')
+      expect(getGlobalDispatcher()).toBe(before)
+    },
+  )
 
   it('keeps a scheme direct when the policy refused the proxy the user named for it', async () => {
     // What `HTTPS_PROXY=socks5://…` plus `HTTP_PROXY=http://p` resolves to: http proxied, https

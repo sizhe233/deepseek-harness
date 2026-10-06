@@ -114,10 +114,11 @@ describe('web e2e: settings modal and General preferences', () => {
     await pluginRow.waitFor({ timeout: 10_000 })
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
       .filter(entry => !entry.options.group)
+      .filter(entry => entry.options.id !== 'mcp-configuration')
       .length
     const pluginSearch = dialog.getByRole('searchbox', { name: '搜索插件' })
     expect(await pluginSearch.count()).toBe(1)
-    // Every Loader entry appears exactly once in the global group — rows the
+    // Every public Loader entry appears exactly once in the global group — rows the
     // presets took over included, preset compositions excluded.
     expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
       .toBe(expectedPluginCount)

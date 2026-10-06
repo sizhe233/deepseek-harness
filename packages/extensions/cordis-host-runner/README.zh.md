@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-cordis-host-runner` 让动态包在本进程中可运行：模型用 `cordis_define` 记录的定义留在这里，host 半在 `node:vm` 沙箱中运行，带浏览器半的包会等待人在页面上批准或拒绝，模型也可以在这里检查实时运行时及其定义。面向模型的工具在 `@deepseek-ai/dsh-tool-cordis` 中，浏览器半经 `@deepseek-ai/dsh-cordis-client-runner` 装载。定义只存在于进程内存中，因此 DSH 重启即清空，也不会向磁盘写任何东西。唯一的配置字段 `vmTimeoutMs` 限制同步沙箱求值的时长。
+`dsh-cordis-host-runner` 让动态包在本进程中可运行：模型用 `cordis_define` 记录的定义留在这里，host 半在 `node:vm` 沙箱中运行，带浏览器半的包会等待人在页面上批准或拒绝，模型也可以在这里检查实时运行时及其定义。面向模型的工具在 `@deepseek-ai/dsh-tool-cordis` 中，浏览器半经 `@deepseek-ai/dsh-cordis-client-runner` 装载。定义只存在于进程内存中，因此 DSH 重启即清空，也不会向磁盘写任何东西。`vmTimeoutMs` 限制同步沙箱求值时长；`clientInspectTimeoutMs` 限制浏览器检查查询的等待时长。
 
 ## 目录
 
@@ -38,8 +38,11 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `vmTimeoutMs` | `5000` | host 半在 vm 中同步执行的那部分被中止求值前可运行的毫秒数 |
+| `clientInspectTimeoutMs` | `30000` | 等待有效浏览器检查回复的最长毫秒数；取消会提前结束等待 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-cordis-host-runner)是每个受支持字段的穷尽式真源。
+
+检查回复携带发起查询的会话 ID，也支持子会话。超时或取消后到达的回复会被拒绝。此截止时间适用于检查查询；激活审批仍等待用户决定或取消。
 
 ### run 会做什么
 

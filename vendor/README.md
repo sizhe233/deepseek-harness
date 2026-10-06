@@ -28,6 +28,8 @@ Intentionally **not** vendored (verified unused by this set): `reggol`, `@cordis
 
 ## Local modifications
 
+Local workbench compatibility restores `hmr/src/index.ts` exact configuration watches with `depth + 1`, polling enabled and a 50 ms interval. This preserves file creation and rapid atomic replacement on macOS without changing the ordinary module watcher. The runtime patch records the original and replacement hashes; upstream versions and license files remain unchanged.
+
 Keep this log exhaustive — every divergence from upstream must be listed.
 
 1. **`hmr/src/index.ts`**: removed the `./locales/en-US.yml` / `./locales/zh-CN.yml` imports, the `.i18n({...})` call on the `Config` schema, and the `src/locales/` directory. Rationale: those imports require a runtime YAML loader hook (`@cordisjs/unyaml`) that we do not vendor; the i18n texts only localize config descriptions.

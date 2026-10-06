@@ -18,6 +18,8 @@ import type {
   ContentBlock,
   GenerateOptions,
   LlmFailure,
+  LlmCompactOptions,
+  LlmCompactionResult,
   LlmResolvedModelInfo,
   Message,
   StreamChunk,
@@ -938,7 +940,21 @@ describe('compaction region transaction', () => {
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
   })
 
+  it('lands a native compaction item without text checkpoint framing', async () => {
+    const compact = service()
+    compact.summary = [{ type: 'compaction', item: { type: 'compaction_summary', encrypted_content: 'opaque' } }]
+    const session = conversation(3)
+    const before = [...session.surface.nodes]
+
+    await compact.compactRegion(before[0]!, before[3]!, agent(session, MODEL), SIGNAL)
+
+    expect(session.deriveMessages()[0]?.content).toEqual([
+      { type: 'compaction', item: { type: 'compaction_summary', encrypted_content: 'opaque' } },
+    ])
+  })
+
   it('replays the system head and latest routed tools so the summarizer reuses the cache', async () => {
+
     const compact = service()
     const session = conversation(3, undefined, 'CONVERSATION SYSTEM')
     const tools = [{ name: 'do_thing', description: 'd', parameters: { type: 'object' } }]
@@ -1199,6 +1215,8 @@ describe('compaction region transaction', () => {
 
 class ScriptedAdapter extends LlmAdapter {
   lastOptions: GenerateOptions | undefined
+  lastCompactOptions: LlmCompactOptions | undefined
+  nativeCompaction: LlmCompactionResult | undefined
   usage: TokenUsage | undefined
 
   constructor(
@@ -1206,6 +1224,11 @@ class ScriptedAdapter extends LlmAdapter {
     private readonly finish: (StreamChunk & { type: 'finish' })['reason'] = { kind: 'stop' },
   ) {
     super()
+  }
+
+  override compact(options: LlmCompactOptions): Promise<LlmCompactionResult | undefined> {
+    this.lastCompactOptions = options
+    return Promise.resolve(this.nativeCompaction)
   }
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -1278,6 +1301,33 @@ describe('default one-shot summarizer', () => {
     expect(adapter.lastOptions?.messages.at(-1)).toMatchObject({ role: 'user' })
     expect(result.shadowedSeqs).toEqual(nodes.slice(start, start + 2))
     if (system !== undefined) expect(session.surface.nodes[0]).toBe(nodes[0])
+  })
+
+  it('uses native GPT compaction and keeps the opaque item without a text summary call', async () => {
+    const { adapter, compact } = await summarizerHarness([], undefined, 'gpt-test')
+    adapter.nativeCompaction = {
+      item: { type: 'compaction', encrypted_content: 'opaque-ciphertext' },
+      usage: { inputTokens: 12, outputTokens: 2, totalTokens: 14 },
+    }
+    const session = Session.create(SessionId('native-compaction'))
+    const input = promptInput('history')
+    const output = await compact.runSummarize(input, agent(session, 'gpt-test'), SIGNAL)
+
+    expect(output).toEqual({
+      summary: [{ type: 'compaction', item: { type: 'compaction', encrypted_content: 'opaque-ciphertext' } }],
+      provider: 'gpt-test',
+      model: 'gpt-test',
+      usage: { inputTokens: 12, outputTokens: 2, totalTokens: 14 },
+    })
+    expect(adapter.lastOptions).toBeUndefined()
+    expect(adapter.lastCompactOptions).toMatchObject({
+      provider: 'gpt-test',
+      model: 'gpt-test',
+      messages: input.messages,
+      signal: SIGNAL,
+      sessionId: session.id,
+    })
+
   })
 
   it('requires complete raw output when a subclass marks one local LLM stream call', () => {

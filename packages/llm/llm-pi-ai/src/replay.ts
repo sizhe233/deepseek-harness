@@ -40,6 +40,16 @@ interface PiAiReplayState {
   blocks: PiAiReplayBlock[]
 }
 
+/** Target-route replay policy for one outbound request. */
+export interface PiReplayTarget {
+  api?: Api
+  provider: string
+  model: string
+  requiresReasoningTextOnToolReplay?: boolean
+}
+
+const REASONING_TEXT_REPLAY_PLACEHOLDER = '[reasoning unavailable after model failover]'
+
 /** Parse tool-call argument JSON; tolerate model malformations with {}. */
 function parseArguments(raw: string): Record<string, unknown> {
   try {
@@ -233,6 +243,55 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
   }
 }
 
+/** Whether a native reasoning signature contains the wire item this route requires. */
+function carriesReasoningText(signature: string | undefined): boolean {
+  if (signature === undefined) return false
+  try {
+    const item = JSON.parse(signature) as { type?: unknown; content?: unknown }
+    return item.type === 'reasoning'
+      && Array.isArray(item.content)
+      && item.content.some(value => (
+        typeof value === 'object' && value !== null
+        && (value as { type?: unknown }).type === 'reasoning_text'
+      ))
+  } catch {
+    return false
+  }
+}
+
+/** Add the transient reasoning item required by selected Responses routes. */
+function ensureReasoningTextToolReplay(message: AssistantMessage, target: PiReplayTarget): AssistantMessage {
+  const firstTool = message.content.findIndex(block => block.type === 'toolCall')
+  if (firstTool < 0) return message
+  if (message.content.slice(0, firstTool).some(block => (
+    block.type === 'thinking' && carriesReasoningText(block.thinkingSignature)
+  ))) return message
+
+  const content: AssistantMessage['content'] = message.content.map((block) => {
+    if (block.type !== 'thinking' || block.thinkingSignature === undefined
+      || carriesReasoningText(block.thinkingSignature)) return block
+    const { thinkingSignature: _signature, ...neutral } = block
+    return neutral
+  })
+  content.splice(firstTool, 0, {
+    type: 'thinking',
+    thinking: REASONING_TEXT_REPLAY_PLACEHOLDER,
+    thinkingSignature: JSON.stringify({
+      type: 'reasoning',
+      summary: [],
+      content: [{ type: 'reasoning_text', text: REASONING_TEXT_REPLAY_PLACEHOLDER }],
+    }),
+  })
+  const { responseId: _responseId, responseModel: _responseModel, ...unlinked } = message
+  return {
+    ...unlinked,
+    api: target.api ?? message.api,
+    provider: target.provider,
+    model: target.model,
+    content,
+  }
+}
+
 /**
  * Convert one durable Harness assistant message into pi-ai history.
  *
@@ -242,20 +301,35 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
  * no longer matches the content — therefore degrades the one message to
  * provider-neutral history instead of failing the request.
  * @param message - assistant content with required source and optional adapter-owned replay metadata.
+ * @param target - target model route and protocol requirements.
  * @param onDegrade - called with the diagnostic reason when an unusable replay
  *   state falls back to provider-neutral conversion.
  * @returns a native pi-ai assistant message reconstructed from durable content.
  */
-export function toPiAssistant(message: Message, onDegrade?: (reason: string) => void): AssistantMessage {
+export function toPiAssistant(
+  message: Message,
+  target: PiReplayTarget,
+  onDegrade?: (reason: string) => void,
+): AssistantMessage {
   const source = message.source
-  if (source.kind !== 'model' || source.replayState === undefined) return foreignAssistant(message)
-  try {
-    return replayedAssistant(message, source, source.replayState)
-  } catch (error: unknown) {
-    /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors; the
-       guard keeps a future non-replay failure loud instead of silently degrading it */
-    if (!(error instanceof LlmError) || error.code !== 'INVALID_REPLAY_STATE') throw error
-    onDegrade?.(error.message)
-    return foreignAssistant(message)
+  let assistant: AssistantMessage
+  if (source.kind !== 'model' || source.replayState === undefined) {
+    assistant = foreignAssistant(message)
+  } else {
+    try {
+      const replayed = replayedAssistant(message, source, source.replayState)
+      assistant = source.provider === target.provider && source.model === target.model
+        ? replayed
+        : foreignAssistant(message)
+    } catch (error: unknown) {
+      /* v8 ignore next -- replayedAssistant throws only INVALID_REPLAY_STATE LlmErrors; the
+         guard keeps a future non-replay failure loud instead of silently degrading it */
+      if (!(error instanceof LlmError) || error.code !== 'INVALID_REPLAY_STATE') throw error
+      onDegrade?.(error.message)
+      assistant = foreignAssistant(message)
+    }
   }
+  return target.requiresReasoningTextOnToolReplay
+    ? ensureReasoningTextToolReplay(assistant, target)
+    : assistant
 }

@@ -30,15 +30,15 @@ describe('the strictly-wider ladder', () => {
 })
 
 describe('validateEscalationArgs', () => {
-  it('accepts neither field, or both with a non-empty justification', () => {
+  it('accepts no request and defers requested-mode reasons to policy resolution', () => {
     expect(() => { validateEscalationArgs(undefined, undefined) }).not.toThrow()
     expect(() => { validateEscalationArgs('workspace-write', 'because the workspace needs it') }).not.toThrow()
+    expect(() => { validateEscalationArgs('workspace-write', undefined) }).not.toThrow()
+    expect(() => { validateEscalationArgs('workspace-write', '   ') }).not.toThrow()
   })
 
-  it('rejects one field without the other, and a blank justification', () => {
-    expect(() => { validateEscalationArgs('workspace-write', undefined) }).toThrow(/requires a justification/)
+  it('rejects a reason without a requested mode', () => {
     expect(() => { validateEscalationArgs(undefined, 'orphan reason') }).toThrow(/only valid together with sandbox_permissions/)
-    expect(() => { validateEscalationArgs('workspace-write', '   ') }).toThrow(/non-empty sentence/)
   })
 })
 
@@ -81,14 +81,23 @@ describe('approveEscalation', () => {
     expect(seen[0]?.reason).toBe('escalate sandbox to workspace-write: the user asked to write in the workspace')
   })
 
-  it('a non-widening request fails closed with its own text and never asks', async () => {
+  it('an already-covered request is a no-op and never asks', async () => {
     const seen: unknown[] = []
     const spy = ingredients({ approver: approver('allowed-once', r => seen.push(r)) })
-    await expect(approveEscalation(req({ requestedMode: 'read-only' }), spy))
-      .rejects.toThrow(/not strictly wider than this call's current "read-only" mode/)
-    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access' as never }), spy))
-      .rejects.toThrow(/not strictly wider/)
+    await expect(approveEscalation(req({ requestedMode: 'read-only', justification: undefined }), spy))
+      .resolves.toBe('read-only')
+    await expect(approveEscalation(req({ requestedMode: 'workspace-write', effectiveMode: 'danger-full-access', justification: ' ' }), spy))
+      .resolves.toBe('danger-full-access')
     expect(seen).toEqual([])
+  })
+
+  it('a real escalation requires a non-empty reason and unknown modes fail closed', async () => {
+    await expect(approveEscalation(req({ justification: undefined }), ingredients()))
+      .rejects.toThrow(/requires a justification/)
+    await expect(approveEscalation(req({ justification: ' ' }), ingredients()))
+      .rejects.toThrow(/non-empty sentence/)
+    await expect(approveEscalation(req({ requestedMode: 'unknown' }), ingredients()))
+      .rejects.toThrow(/not strictly wider/)
   })
 
   it('a missing approval service and an agent-less call each fail closed with distinct text', async () => {

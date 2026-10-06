@@ -1,0 +1,17 @@
+--- a/dist/utils/error-body.js
++++ b/dist/utils/error-body.js
+@@ -109,10 +109,13 @@
+  * - prefix:    `"<prefix> (<status>): <body>"`
+  */
+ export function formatProviderError(norm, prefix) {
+-    if (norm.messageCarriesBody || norm.status === undefined || norm.body === undefined) {
++    if (norm.messageCarriesBody || norm.body === undefined) {
+         return prefix !== undefined && norm.status !== undefined
+             ? `${prefix} (${norm.status}): ${norm.message}`
+             : norm.message;
++    }
++    if (norm.status === undefined) {
++        return prefix !== undefined ? `${prefix}: ${norm.body}` : norm.body;
+     }
+     return prefix !== undefined ? `${prefix} (${norm.status}): ${norm.body}` : `${norm.status}: ${norm.body}`;
+ }

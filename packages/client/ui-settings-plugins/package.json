@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-plugins",
-  "description": "Plugins settings section with feature-owned tabs and configurable host-plane plugin cards",
+  "description": "Plugins settings section with feature-owned tabs, configurable host-plane plugin cards, and editable MCP cards",
   "version": "0.1.5-rc.1",
   "publishConfig": {
     "access": "public"

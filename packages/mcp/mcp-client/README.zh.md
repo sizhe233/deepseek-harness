@@ -69,6 +69,12 @@ kind: "package-reference"
 
 启动后，服务器的工具会以 `mcp__<serverName>__<tool>` 形式出现——试着用一条提示词调用其中一个。如果初始连接失败，harness 仍会启动，但该服务器的工具不会出现，并会记录一条错误；设置 `failOnStartupError: true` 可让启动失败改为中止 harness。
 
+### Web 配置
+
+Web bundle 会把 `@deepseek-ai/dsh-mcp-client/configuration` 挂载为不加载传输代码的配置服务。它为已有服务器条目公开 `mcpConfiguration.list/update`，并在本地 `mcp-client` settings 命名空间保存带 revision 的覆盖配置。更新只会重新连接选中的服务器。快照只返回环境变量/header 键名和是否已配置，不返回其值；新的秘密值保存为 schema 声明的 secret 字段，并从 settings 的传输响应中移除。该控制条目不连接服务器，也不会出现在插件清单中。
+
+只有用户明确保存的字段才会覆盖 Loader 配置。已保存的覆盖配置在启动和 Profile 重载时保持生效；初始化期间的保存请求会返回冲突，应刷新后重试。
+
 ### 工具命名与共存
 
 模型看到每个工具都带有稳定的服务器限定名称：`mcp__<serverName>__<rawName>`，例如 `mcp__github__create_issue`——与 Claude Code 和 Codex 使用的命名形态相同。只要服务器保持相同的工具名称，名称就保持不变，因此会话历史与权限规则在重启和重载后仍然有效。两个服务器可以同时提供名为 `search` 的工具，分别以 `mcp__github__search` 和 `mcp__web__search` 共存。

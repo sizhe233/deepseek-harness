@@ -462,6 +462,7 @@ describe('pi-ai request context conversion', () => {
 
     expect(() => toPiAssistant(
       history('assistant', [{ type: 'image', attachment: ref }]),
+      { provider: 'openai', model: 'gpt-4.1' },
     )).toThrow(/assistant image output/)
   })
 

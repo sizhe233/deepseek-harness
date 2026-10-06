@@ -105,6 +105,10 @@ export type SummaryResult = {
   }
 )
 
+function isGptModel(model: string): boolean {
+  return /^gpt(?:[-_.]|$)/i.test(model)
+}
+
 /**
  * Run the default cache-reusing `ctx.llm.stream()` summarization call: replay
  * the conversation prefix, then append the compaction instruction as the final
@@ -133,6 +137,26 @@ export async function summarizeWithLlm(
     && agent.options.model.length > 0
     ? { provider: agent.options.provider, model: agent.options.model }
     : undefined
+  const nativeTarget = latest ?? agentTarget
+  if (configured === undefined && nativeTarget !== undefined && isGptModel(nativeTarget.model)) {
+    const compacted = await ctx.llm.compact({
+      provider: nativeTarget.provider,
+      model: nativeTarget.model,
+      messages: [...input.messages],
+      ...input.tools === undefined ? {} : { tools: [...input.tools] },
+      ...signal === undefined ? {} : { signal },
+      sessionId: agent.session.id,
+    })
+    if (compacted !== undefined) {
+      const usage = compacted.usage
+      return {
+        summary: [{ type: 'compaction', item: compacted.item }],
+        provider: nativeTarget.provider,
+        model: nativeTarget.model,
+        ...usage === undefined ? {} : { usage },
+      }
+    }
+  }
   const target = configured ?? latest ?? agentTarget
   if (target === undefined) {
     throw new Error(

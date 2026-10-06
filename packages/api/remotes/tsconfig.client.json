@@ -45,6 +45,9 @@
       "path": "../../host/plugin-inventory"
     },
     {
+      "path": "../../mcp/mcp-client"
+    },
+    {
       "path": "../../interaction/commands"
     },
     {

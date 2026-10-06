@@ -17,13 +17,22 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from './connection.ts'
-import type { ReconnectConfig } from './connection.ts'
+import { startConnection } from './connection.ts'
+import { RECONNECT_DEFAULTS, resolveReconnectPolicy } from './reconnect-policy.ts'
+import type { ReconnectConfig } from './reconnect-policy.ts'
+import { McpConfigurationGateway } from './configuration.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
 
 export type { McpResult } from './tools.ts'
-export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
+export type { ReconnectConfig, ResolvedReconnectPolicy } from './reconnect-policy.ts'
+export {
+  MCP_CLIENT_MODULE, MCP_CONFIGURATION_NAMESPACE, McpConfigurationGateway, McpOverridesSchema,
+} from './configuration.ts'
+export type {
+  McpConfigurationEntry, McpConfigurationPatch, McpConfigurationSnapshot, McpFiberPhase,
+  McpReconnectPatch, McpReconnectView, McpSecretKey, McpSecretPatch, McpTransport,
+} from './types.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-client'
@@ -95,13 +104,25 @@ export interface StreamableHttpConfig {
 }
 
 /** Configuration for one stdio or Streamable HTTP MCP server. */
+export interface ConfigurationConfig {
+  /** Selects the host-side configuration gateway rather than an MCP bridge. */
+  mode: 'configuration'
+}
+
+/** Configuration accepted by the bridge module. */
 export type Config = StdioConfig | StreamableHttpConfig
+
+/** Full apply-time input, including the private Web configuration gateway row. */
+export type ApplyConfig = Config | ConfigurationConfig
+
+/** Bridge-only configuration accepted by the connection and transport layers. */
+export type BridgeConfig = StdioConfig | StreamableHttpConfig
 
 type StdioConfigInput = Omit<StdioConfig, 'args' | 'env' | 'cwd' | 'toolCallTimeoutMs' | 'failOnStartupError'>
   & Partial<Pick<StdioConfig, 'args' | 'env' | 'cwd' | 'toolCallTimeoutMs' | 'failOnStartupError'>>
 type StreamableHttpConfigInput = Omit<StreamableHttpConfig, 'headers' | 'toolCallTimeoutMs' | 'failOnStartupError'>
   & Partial<Pick<StreamableHttpConfig, 'headers' | 'toolCallTimeoutMs' | 'failOnStartupError'>>
-type ConfigInput = StdioConfigInput | StreamableHttpConfigInput
+type ConfigInput = StdioConfigInput | StreamableHttpConfigInput | ConfigurationConfig
 
 const Reconnect: z<ReconnectConfig> = z.object({
   enabled: z.boolean().default(RECONNECT_DEFAULTS.enabled),
@@ -110,6 +131,9 @@ const Reconnect: z<ReconnectConfig> = z.object({
   maxAttempts: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(RECONNECT_DEFAULTS.maxAttempts),
 })
 
+// The schema also accepts the private configuration-gateway mode below. Keep
+// the public `Config` result typed as the bridge config so existing consumers
+// do not have to narrow an internal Loader row they never construct.
 export const Config = z.union([
   z.object({
     transport: z.const('stdio'),
@@ -131,6 +155,10 @@ export const Config = z.union([
     failOnStartupError: z.boolean().default(false),
     reconnect: Reconnect,
   }),
+  // The discriminator itself must be required. Schemastery's object union is
+  // intentionally permissive for unknown keys, so an optional `mode` branch
+  // would accept malformed bridge configs after the transport branches fail.
+  z.object({ mode: z.const('configuration').required() }),
 ]) as unknown as z<ConfigInput, Config>
 
 // ---- Plugin apply ----
@@ -143,11 +171,16 @@ export const Config = z.union([
  * @param config - resolved transport and server namespace configuration.
  * @returns startup readiness after connection and initial tool discovery settle.
  */
-export async function apply(ctx: Context, config: Config): Promise<void> {
+export async function apply(ctx: Context, config: ApplyConfig): Promise<void> {
+  if ('mode' in config) {
+    new McpConfigurationGateway(ctx)
+    return
+  }
+  const bridgeConfig = config
   // Fail loud at load: reconnect misconfiguration (including programmatic
   // construction that bypassed Schemastery) rejects THIS instance before any
   // effect registers.
-  const reconnect = resolveReconnectPolicy(config.reconnect, `mcp-client(${config.serverName}): reconnect`)
+  const reconnect = resolveReconnectPolicy(bridgeConfig.reconnect, `mcp-client(${bridgeConfig.serverName}): reconnect`)
 
   // Reserve the namespace next: a duplicate `serverName` fails THIS instance
   // at load with an actionable error and leaves the earlier instance intact.
@@ -158,19 +191,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       names = new Set()
       activeServerNames.set(owner, names)
     }
-    if (names.has(config.serverName)) {
+    if (names.has(bridgeConfig.serverName)) {
       throw new Error(
-        `mcp-client: serverName "${config.serverName}" is already in use by another mcp-client instance — pick a unique serverName in cordis.yml`,
+        `mcp-client: serverName "${bridgeConfig.serverName}" is already in use by another mcp-client instance — pick a unique serverName in cordis.yml`,
       )
     }
-    names.add(config.serverName)
-    return () => void names.delete(config.serverName)
+    names.add(bridgeConfig.serverName)
+    return () => void names.delete(bridgeConfig.serverName)
   }, 'mcp-client.serverName')
 
   // The supervisor owns the client/transport generations, the reconnect
   // loop, and the live tool registrations; disposal stops reconnection,
   // quiesces in-flight work, and unregisters the current generation.
-  const connection = startConnection(ctx, config, reconnect)
+  const connection = startConnection(ctx, bridgeConfig, reconnect)
 
   ctx.effect(() => {
     return () => connection.dispose()
@@ -182,7 +215,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // fiber (Cordis rolls it back); otherwise the error is logged and the
   // supervisor enters its reconnect loop.
   const outcome = await connection.ready
-  if (outcome.error !== undefined && config.failOnStartupError) {
-    throw new Error(`mcp-client(${config.serverName}): initial connection or tool synchronization failed`, { cause: outcome.error })
+  if (outcome.error !== undefined && bridgeConfig.failOnStartupError) {
+    throw new Error(`mcp-client(${bridgeConfig.serverName}): initial connection or tool synchronization failed`, { cause: outcome.error })
   }
 }

@@ -80,7 +80,7 @@ export const Config: Schema<Config> = z.object({
   agentsHome: z.string(),
   customSkillDirs: z.array(z.string()).default([]),
   watch: z.boolean().default(true),
-  watchUsePolling: z.boolean().default(false),
+  watchUsePolling: z.boolean().default(process.platform === 'darwin'),
   watchStabilityThresholdMs: z.number().default(DEFAULT_WATCH_STABILITY_THRESHOLD_MS),
   watchPollIntervalMs: z.number().default(DEFAULT_WATCH_POLL_INTERVAL_MS),
   watchMaxProjects: z.number().default(DEFAULT_WATCH_MAX_PROJECTS),
@@ -548,7 +548,7 @@ class SkillWatchManager {
     const target = resolve(path)
     if (this.closing || !isRelevantWatchEvent({ ...state.root, path: mode.anchor }, event, target)) return
     this.queueInvalidation()
-    if (target === mode.anchor && event === 'unlinkDir') {
+    if (event === 'unlinkDir' && (target === mode.anchor || target === state.root.path)) {
       state.unhealthy = true
       this.scheduleRewatch(state)
     }
@@ -614,7 +614,11 @@ function resolveWatchConfig(config: Config): ResolvedWatchConfig {
   assertPositiveInteger('watchMaxProjects', maxProjects)
   return {
     enabled: config.watch ?? true,
-    usePolling: config.watchUsePolling ?? false,
+    // Native FSEvents can lose rapid directory recreation under a previously
+    // missing root. Polling is the conservative local default on macOS; callers
+    // may still explicitly choose native events on platforms where they are
+    // reliable for this lifecycle.
+    usePolling: config.watchUsePolling ?? process.platform === 'darwin',
     stabilityThresholdMs,
     pollIntervalMs,
     maxProjects,
