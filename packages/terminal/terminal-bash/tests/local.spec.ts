@@ -367,30 +367,54 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     }
   }, 30_000)
 
-  it('pins UTF-8 output encoding so non-ASCII output survives the byte decode', async () => {
+  it.each([false, true])('pins UTF-8 output encoding so non-ASCII output survives the byte decode (hold output: %s)', async (holdOutput) => {
     const { ctx, root, agent } = await harness('danger-full-access', {
       idleSilenceMs: 300,
       handoffGraceMs: 300,
       timeoutMs: 8_000,
     }, 'pwsh')
     const created = await ctx.terminals.spawn(agent, { type: 'shell', name: 'main', cwd: root })
-    // The bootstrap itself must have pinned both encodings: the session byte
-    // decode is UTF-8, so an un-pinned console writing its host code page
-    // garbles every non-ASCII byte that follows.
-    const pinned = ctx.terminals.startSend(agent, created.sessionId, {
-      text: '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName',
-      submit: true,
-    })
-    const pinnedResult = await pinned.done
-    expect(pinnedResult.viewport).toContain('console=utf-8 out=utf-8')
-    // Char codes keep the submitted line ASCII-only, so the assertion is a
-    // pure output-decode check.
-    const sent = ctx.terminals.startSend(agent, created.sessionId, {
-      text: "[Console]::Write([char]0x4E2D + [char]0x6587 + ' encoding-ok')",
-      submit: true,
-    })
-    const result = await sent.done
-    expect(result.viewport).toContain('中文 encoding-ok')
-    await ctx.terminals.kill(agent, created.sessionId)
+    expect(created.motd).toContain('dsh> ')
+    const pid = created.pid ?? 0
+    expect(pid).toBeGreaterThan(0)
+    const read = () => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text
+    // Neither expected token occurs in the submitted ASCII-only commands:
+    // only decoded child output can prove the bootstrap pin and byte encoding.
+    const probes = [
+      {
+        name: 'pinned',
+        text: '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName',
+        expected: 'console=utf-8 out=utf-8',
+      },
+      {
+        name: 'decoded',
+        text: "[Console]::Write([char]0x4E2D + [char]0x6587 + ' encoding-ok')",
+        expected: '中文 encoding-ok',
+      },
+    ]
+    for (const probe of probes) {
+      const enteredFile = join(root, `${probe.name}-entered`)
+      const releaseFile = join(root, `${probe.name}-release`)
+      const barrier = holdOutput
+        ? `[IO.File]::WriteAllText('${enteredFile.replaceAll("'", "''")}', ''); while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
+        : ''
+      const command = barrier + probe.text
+      expect(command).not.toContain(probe.expected)
+      const sent = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
+      const result = await sent.done
+      expect(['stdin_read', 'inferred_idle']).toContain(result.waitReason)
+      if (holdOutput) {
+        await expect.poll(() => existsSync(enteredFile), { timeout: 8_000 }).toBe(true)
+        expect(result.waitReason).toBe('inferred_idle')
+        expect(result.viewport).not.toContain(probe.expected)
+        expect(read()).not.toContain(probe.expected)
+        writeFileSync(releaseFile, '')
+      }
+      // A settled send stops collecting bytes; later output remains in scrollback.
+      await expect.poll(read, { timeout: 8_000 }).toContain(probe.expected)
+    }
+    expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
+    expect(ctx.terminals.list(agent)).toEqual([])
+    expect(processIsRunning(pid)).toBe(false)
   }, 30_000)
 })
