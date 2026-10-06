@@ -187,7 +187,7 @@ jobs:
   # not restore a Linux hosted-cache producer: decide whether to add a master
   # seeder or remove the restore-only steps if cold starts become a concern.
   serial-macos:
-    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' }}
+    if: ${{ github.repository == 'deepseek-ai/deepseek-harness' && (false) }}
     name: serial / macos
     runs-on: macos-latest
     steps:

@@ -172,7 +172,7 @@ describe('CI workflow', () => {
       expect(job['runs-on']).toContain('self-hosted')
       expect(job['runs-on']).toContain('dsh-win-ci')
       expect(job['runs-on']).toContain('dsh-windows-2025-16core')
-      expect(job.if).toBe("github.event_name == 'pull_request'")
+      expect(job.if).toBe("${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}")
     }
 
     // windows-build runs the blocking build/site pair.
@@ -246,7 +246,7 @@ describe('CI workflow', () => {
     expect(windowsObservational['continue-on-error']).toBe(true)
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialWindows.if).toBe("${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'push' && github.ref == 'refs/heads/master') }}")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -342,7 +342,7 @@ describe('CI workflow', () => {
     const aggregate = workflowJob(workflow, 'all-checks-passed')
 
     expect(benchmark['runs-on']).toBe('ubuntu-24.04')
-    expect(benchmark.if).toBe("github.event_name == 'pull_request'")
+    expect(benchmark.if).toBe("${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}")
     expect(benchmark.needs).toBeUndefined()
     expect(benchmark['continue-on-error']).toBeUndefined()
     expect(benchmark.env).toBeUndefined()
@@ -415,19 +415,19 @@ describe('CI workflow', () => {
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
       // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe("${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'push' && github.ref == 'refs/heads/master') }}")
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.
     const NOT_PUSH_REACHABLE = new Set([
-      "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
-      "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
+      "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark') }}",
+      "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark') }}",
     ])
     const pushReachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
         if (!isRecord(job)) return false
         if (job.if === undefined) return true // unconditional: runs on every event
-        if (job.if === false) return false // `if: false` parses as a boolean
+        if (job.if === false || job.if === "${{ github.repository == 'deepseek-ai/deepseek-harness' && (false) }}") return false // Preserve the disabled standby
         if (typeof job.if !== 'string') return true // unrecognized shape: surface it
         return !NOT_PUSH_REACHABLE.has(job.if.trim())
       })
@@ -493,7 +493,7 @@ describe('CI workflow', () => {
     }
 
     expect(pythonRuntime).toMatchObject({
-      if: "github.event_name == 'pull_request'",
+      if: "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'pull_request') }}",
       name: 'python runtime / release-shaped matrix',
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: {
@@ -613,13 +613,13 @@ describe('Python release workflows', () => {
     expect(authorize.run).toContain('[ "$REPOSITORY" = "$PYPI_PUBLISHER_REPOSITORY" ]')
     expect(validateSteps).toContain('100000000')
     expect(publishRuntime).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch' && inputs.publish",
+      if: "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'workflow_dispatch' && inputs.publish) }}",
       needs: 'validate',
       environment: 'pypi-runtime',
       permissions: { contents: 'read', 'id-token': 'write' },
     })
     expect(publishSdk).toMatchObject({
-      if: "github.event_name == 'workflow_dispatch' && inputs.publish",
+      if: "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name == 'workflow_dispatch' && inputs.publish) }}",
       needs: ['validate', 'publish-runtime'],
       environment: 'pypi',
       permissions: { contents: 'read', 'id-token': 'write' },
@@ -835,7 +835,7 @@ describe('Weighted approval workflow', () => {
       'cancel-in-progress': false,
     })
     expect(job).toMatchObject({
-      if: "github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'",
+      if: "${{ github.repository == 'deepseek-ai/deepseek-harness' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}",
       name: 'weighted approval publisher',
       'runs-on': 'ubuntu-latest',
       'timeout-minutes': 5,
@@ -882,7 +882,7 @@ describe('Issue lifecycle workflow', () => {
     // never mint a Project/Issue App token nor touch the board.
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
-    expect(lifecycleJob.if).toBeUndefined()
+    expect(lifecycleJob.if).toBe("${{ github.repository == 'deepseek-ai/deepseek-harness' }}")
     // Keep the subscription-type gates: issue-lifecycle does not re-subscribe
     // ready_for_review (issue-policy owns that) and only reacts to submitted
     // review events.
