@@ -89,12 +89,12 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 }
 
 /**
- * The pwsh prompt function that emits the shared OSC `133;D;` + BEL marker
- * before every prompt, mirroring bash's PROMPT_COMMAND. `[char]27`/`[char]7`
- * build the control bytes inside the startup command instead of argv.
+ * Prime console input without consuming a key before publishing the pwsh prompt.
+ * Otherwise a POSIX tty can translate submitted CR to LF before the line editor
+ * enters raw mode. `[char]27`/`[char]7` build the shared OSC marker in the child.
  */
 export const PWSH_PROMPT_SETUP =
-  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
+  "function prompt { $null = [Console]::KeyAvailable; [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
 async function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy, signal?: AbortSignal): Promise<string[]> {
   const argv = [config.shellPath, ...config.shellArgs, ...(config.shellDialect === 'pwsh' && config.pwshBootstrap === 'argv'

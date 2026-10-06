@@ -1469,6 +1469,30 @@ describe('default one-shot summarizer', () => {
     }>().not.toExtend<SummaryResult>()
   })
 
+  it('forwards tools without cancellation and preserves missing native usage', async () => {
+    const { adapter, compact } = await summarizerHarness([], undefined, 'gpt-test')
+    const item = { type: 'compaction_summary' as const, encrypted_content: 'opaque' }
+    adapter.nativeCompaction = { item }
+    const session = Session.create(SessionId('native-with-tools'))
+    const tools = [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }]
+    const output = await compact.runSummarize({ ...promptInput('history'), tools }, agent(session, 'gpt-test'))
+    expect(output).toEqual({ summary: [{ type: 'compaction', item }], provider: 'gpt-test', model: 'gpt-test' })
+    expect(adapter.lastCompactOptions?.tools).toEqual(tools)
+    expect(adapter.lastCompactOptions).not.toHaveProperty('signal')
+    expect(adapter.lastOptions).toBeUndefined()
+  })
+
+  it('falls back to a text summary when a GPT route does not provide native compaction', async () => {
+    const { adapter, compact } = await summarizerHarness([{ type: 'text', text: 'fallback summary' }], undefined, 'gpt-test')
+    const session = Session.create(SessionId('native-unavailable'))
+    const input = promptInput('history')
+    await expect(compact.runSummarize(input, agent(session, 'gpt-test'))).resolves.toMatchObject({
+      summary: [{ type: 'text', text: 'fallback summary' }], provider: 'gpt-test', model: 'gpt-test',
+    })
+    expect(adapter.lastCompactOptions?.messages).toEqual(input.messages)
+    expect(adapter.lastOptions?.messages.slice(0, -1)).toEqual(input.messages)
+  })
+
   it('uses configured model/default cap, forwards cancellation, and keeps only safe text', async () => {
     const { adapter, compact } = await summarizerHarness([
       { type: 'reasoning', text: 'private' },

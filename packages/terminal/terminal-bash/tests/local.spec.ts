@@ -321,6 +321,32 @@ const hasPwsh = spawnSync(
 ).status === 0
 
 describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
+  it('preserves Enter sent after the prompt before the first console read', async () => {
+    const { ctx, root } = await harness('danger-full-access', {}, 'pwsh')
+    const releaseFile = join(root, 'release-read')
+    const keysFile = join(root, 'received-keys')
+    const command = ptyLocal.PWSH_PROMPT_SETUP
+      + '; [Console]::Write((prompt)); '
+      + `while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
+      + '$keys = @(1..4 | ForEach-Object { [int][Console]::ReadKey($true).KeyChar }); '
+      + `[IO.File]::WriteAllText('${keysFile.replaceAll("'", "''")}', ($keys -join ','))`
+    const terminal = await ctx.subprocess.spawnTerminal({
+      argv: [resolvePwshPath(), '-NoLogo', '-NoProfile', '-Command', command],
+      cwd: root, env: { NO_COLOR: '1' }, rows: 40, cols: 160, terminalType: 'dumb', graceMs: 500,
+    })
+    let output = ''
+    terminal.output.on('data', (chunk: Buffer) => { output = (output + chunk.toString('utf8')).slice(-4_096) })
+    try {
+      await expect.poll(() => output, { timeout: 8_000 }).toContain('dsh> ')
+      await terminal.write('abc\r')
+      writeFileSync(releaseFile, '')
+      await expect.poll(() => existsSync(keysFile), { timeout: 8_000 }).toBe(true)
+      expect(readFileSync(keysFile, 'utf8')).toBe('97,98,99,13')
+    } finally {
+      await terminal.terminate()
+    }
+  }, 30_000)
+
   it.each([false, true])('bootstraps a persistent pwsh, persists state, and scrubs secrets (hold command: %s)', async (holdCommand) => {
     const previous = process.env.DSH_TEST_SECRET
     process.env.DSH_TEST_SECRET = 'must-not-leak'

@@ -3,7 +3,7 @@
 .card {
   list-style: none;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 16px;
+  border-radius: var(--dsw-radius-lg);
   background: var(--dsw-alias-bg-layer-3);
   transition: border-color .16s, background .16s;
 }
@@ -30,11 +30,11 @@
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-radius: 12px;
+  border-radius: var(--dsw-radius-md);
 }
 
 .header:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: -2px;
 }
 
@@ -73,7 +73,7 @@
 .save {
   appearance: none;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-sm);
   padding: 5px 14px;
   font: inherit;
   font-size: 13px;
@@ -105,7 +105,7 @@
 
 .discard:focus-visible,
 .save:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -226,7 +226,7 @@
 }
 
 .mcpItemHeader:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: -2px;
 }
 
@@ -268,7 +268,7 @@
   box-sizing: border-box;
   width: 100%;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 7px;
+  border-radius: var(--dsw-radius-sm);
   background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -290,7 +290,7 @@
 .mcpInput:focus-visible,
 .mcpTextarea:focus-visible {
   outline: none;
-  border-color: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 .mcpInput:disabled,
@@ -369,7 +369,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -382,7 +382,7 @@
 
 .mcpIconButton:focus-visible,
 .mcpAddButton:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 
@@ -429,7 +429,7 @@
 }
 
 .mcpAdvanced summary:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 

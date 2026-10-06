@@ -9,7 +9,7 @@ import type {
 import { createDeveloperMessage, ToolCallId, createAssistantMessage, createMessage, createToolResultMessage, createUserMessage, offloadedImageText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message, RequestUserInput } from '@deepseek-ai/dsh-llm'
 import type { ContextFormed } from '@deepseek-ai/dsh-llm'
-import { toPiContext } from '../src/context.ts'
+import { COMPACTION_ITEM_SENTINEL, compactionItemOf, injectCompactionItem, toPiContext } from '../src/context.ts'
 import type { PiImageRequestContext } from '../src/context.ts'
 import { toPiAssistant } from '../src/replay.ts'
 
@@ -84,6 +84,24 @@ function history(role: 'system' | 'assistant', content: ContentBlock[]): Message
 }
 
 describe('pi-ai request context conversion', () => {
+  it('requires one opaque checkpoint and exactly one payload marker', async () => {
+    const item = { type: 'compaction' as const, encrypted_content: 'opaque' }
+    const message = user([{ type: 'compaction', item }])
+    expect(compactionItemOf([message])).toEqual(item)
+    expect(() => compactionItemOf([message, message])).toThrow(/only one compaction item/)
+    for (const payload of [null, [], 'body', {}, { input: null }, { input: [] }, {
+      input: [{ content: COMPACTION_ITEM_SENTINEL }, { content: [COMPACTION_ITEM_SENTINEL] }],
+    }]) {
+      expect(() => injectCompactionItem(payload, item)).toThrow(expect.objectContaining({ code: 'INVALID_COMPACTION_PAYLOAD' }))
+    }
+    const original = { input: [{ content: [{ text: COMPACTION_ITEM_SENTINEL }] }, { content: 'after' }] }
+    expect(injectCompactionItem(original, item)).toEqual({ input: [item, { content: 'after' }] })
+    expect(original.input[0]?.content).toEqual([{ text: COMPACTION_ITEM_SENTINEL }])
+    await expect(toPiContext(request([message]), imageContext(attachments))).resolves.toMatchObject({
+      messages: [{ role: 'user', content: COMPACTION_ITEM_SENTINEL }],
+    })
+  })
+
   it.each(['user', 'system', 'assistant', 'tool'] as const)('rejects tool-change blocks in %s history', (role) => {
     for (const type of ['tool-addition', 'tool-removal'] as const) {
       const message = { id: 'invalid', role, source: { kind: 'test' }, content: [{ type, toolName: 'search' }] } as unknown as Message

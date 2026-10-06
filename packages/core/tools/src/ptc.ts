@@ -391,7 +391,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       }
       const standingPolicy = runtime.sandboxMode === undefined ? undefined : options.resolveSandboxPolicy(exec)
       let policy = standingPolicy
-      if (args.sandbox_permissions !== undefined && args.justification !== undefined) {
+      if (args.sandbox_permissions !== undefined) {
         if (standingPolicy === undefined) throw new Error('sandbox_permissions is not available for this PTC runtime')
         const approvedMode = await approveEscalation({
           requestedMode: args.sandbox_permissions,

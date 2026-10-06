@@ -25,7 +25,8 @@ async function findWatchRoot(filename: string): Promise<{ filename: string; root
 }
 
 /**
- * Watch one patch path, including missing parents, and serialize refresh callbacks.
+ * Watch one patch path, discovering it independently of parent events until first delivery.
+ * Serialize refresh callbacks and drain discovery and refresh work during disposal.
  * @param ctx Context that owns watcher disposal and receives refresh failures.
  * @param filename Absolute patch-file path.
  * @param options Deployment watcher options; configuration watches enable write stabilization by default.
@@ -50,11 +51,29 @@ export async function watchConfig(
     interval: 50,
   })
   paths.add(target.filename)
-  const state = { dirty: false }
+  const state = { dirty: false, discovering: true }
+  let discoveryTimer: ReturnType<typeof setTimeout> | undefined
+  let discovery: Promise<void> | undefined
+  const stopDiscovery = () => {
+    state.discovering = false
+    clearTimeout(discoveryTimer)
+  }
+  const discover = () => {
+    discovery = stat(target.filename).then((stats) => {
+      if (state.discovering && stats.isFile()) watcher.add(target.filename)
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      stopDiscovery()
+      ctx.logger.warn(error)
+    }).finally(() => {
+      if (state.discovering) discoveryTimer = setTimeout(discover, watcher.options.interval).unref()
+    })
+  }
   let running: Promise<void> | undefined
   const onChange = (path: string) => {
     const observed = resolve(path)
     if (observed !== filename && observed !== target.filename) return
+    stopDiscovery()
     state.dirty = true
     if (running) return
     running = (async () => {
@@ -81,13 +100,19 @@ export async function watchConfig(
     if (pending) { pending = false; ready.reject(error) } else { ctx.logger.warn(error) }
   })
   const dispose = async () => {
+    stopDiscovery()
     await watcher.close()
+    await discovery
     paths.delete(target.filename)
     if (!inTransaction()) await running
   }
   try {
     await ready.promise
-    return ctx.effect(() => dispose, 'hmr.watchConfig()')
+    const cleanup = ctx.effect(() => dispose, 'hmr.watchConfig()')
+    // Chokidar's initial directory read precedes fs.watchFile's stat baseline.
+    // Exact enrollment preserves add/write stabilization if that gap hides creation.
+    if (state.discovering) discoveryTimer = setTimeout(discover, watcher.options.interval).unref()
+    return cleanup
   } catch (error) {
     await dispose()
     throw error

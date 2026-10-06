@@ -27,4 +27,6 @@ GITHUB_TOKEN-triggered PR checks may need approval under GitHub policy. Explicit
 
 A passing host CI is not full plugin compatibility. The private plugin repository must test the same candidate commit and preserve its pinned dependency baseline until a reviewed compatibility PR updates it. Verify Host/Client loading, UI entries, Sessions, attachments and each version-sensitive patch. Record missing evidence explicitly. A fresh build of this fork is a candidate and is not claimed byte-identical to the installed runtime.
 
+Candidate manifests include all source dependency-patch recipes, with original registry integrity, patch hashes and exact post-patch file hashes. Consumers apply every recipe present in their installed dependency graph and verify every installed copy; bundled and build-only recipes retain registry-source identities and absence evidence. A pristine registry dependency is not equivalent to its patched source counterpart.
+
 The production service, Profile, signing material, saved sessions and model routes are outside Actions scope. They require separate deployment approval and rollback planning.

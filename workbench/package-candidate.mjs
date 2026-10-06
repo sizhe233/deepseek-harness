@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { collectDependencyPatches } from './dependency-patches.mjs'
 
 /** Read package identity and integrity from the archive that a consumer will install. */
 export function inspectPackageArchive(path) {
@@ -61,6 +62,7 @@ export function packCandidate() {
   runtimeBundles.push({ name: '@deepseek-ai/dsh-client-ui-chat', path: 'lib/client.js', sourcePath: chatPath, sha256: createHash('sha256').update(readFileSync(join(root, chatPath))).digest('hex') })
   const nativeDependencies = JSON.parse(readFileSync(join(root, 'workbench/native-dependencies.json'), 'utf8'))
   verifyNativeDependencyFiles(root, nativeDependencies)
+  const dependencyPatches = collectDependencyPatches(root, stage)
   const manifest = {
     schemaVersion: 2,
     commit,
@@ -70,6 +72,7 @@ export function packCandidate() {
     packages,
     runtimeBundles,
     externalNativeDependencies: nativeDependencies,
+    dependencyPatches,
   }
   writeFileSync(join(stage, 'candidate.json'), JSON.stringify(manifest, null, 2) + '\n')
   renameSync(stage, destination)

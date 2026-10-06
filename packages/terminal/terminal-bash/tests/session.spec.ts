@@ -157,6 +157,19 @@ async function initialize(session: LocalPtySession, terminal: FakeTerminal): Pro
 }
 
 describe('LocalPtySession readiness and output', () => {
+  it('observes a process id published after terminal allocation', async () => {
+    vi.useFakeTimers()
+    const terminal = new FakeTerminal()
+    terminal.pid = 0
+    const session = new LocalPtySession(terminal, config())
+    expect(session.pid).toBe(0)
+    terminal.pid = 123
+    await initialize(session, terminal)
+    expect(session.pid).toBe(123)
+    await session.close('delayed process id')
+    expect(session.status().kind).toBe('exited')
+  })
+
   it('polls startup and settles sends without assembling scrollback for status checks', async () => {
     vi.useFakeTimers()
     const terminal = new FakeTerminal()

@@ -15,7 +15,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -2304,6 +2304,23 @@ describe('per-program execution controls', () => {
       expect((await execute(args)).isError).toBe(true)
       expect(ask).not.toHaveBeenCalled()
       expect(runtime.lastRequest).toBeUndefined()
+    } finally { await ctx.fiber.dispose() }
+  })
+
+  it.each([
+    ['workspace-write', 'workspace-write'],
+    ['danger-full-access', 'workspace-write'],
+    ['danger-full-access', 'danger-full-access'],
+  ] as const)('keeps a covered %s policy for a %s request without prompting or a reason', async (effective, requested) => {
+    const { ctx, runtime, session, execute } = await controlledSetup(false)
+    setSandboxMode(session, effective)
+    const ask = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
+    ctx.on('approval/request', ask)
+    try {
+      expect((await execute({ sandbox_permissions: requested })).isError).toBe(false)
+      expect(runtime.lastRequest?.sandboxPolicy?.mode).toBe(effective)
+      expect(ctx.sandboxPolicy.resolve({ session }).mode).toBe(effective)
+      expect(ask).not.toHaveBeenCalled()
     } finally { await ctx.fiber.dispose() }
   })
 

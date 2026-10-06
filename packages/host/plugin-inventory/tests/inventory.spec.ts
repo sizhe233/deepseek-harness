@@ -228,6 +228,37 @@ describe('PluginInventoryGateway', () => {
     ])
   })
 
+  it.each([false, true])('advertises management only while its provider is present (roster: %s)', async (withRoster) => {
+    const { ctx, inventory } = await harness()
+    if (withRoster) {
+      ctx.provide('agentPresets', {
+        compositionInventory: async () => [],
+      } satisfies Pick<AgentPresetRegistry, 'compositionInventory'>)
+    }
+    expect(await inventory.list()).not.toHaveProperty('managementAvailable')
+    // Inventory consumes only provider presence, so the stub needs no management methods.
+    const removeManagement = ctx.provide('pluginManager', {})
+    expect(await inventory.list()).toEqual({
+      entries: [], managementAvailable: true, ...withRoster ? { agentPresets: [] } : {},
+    })
+    removeManagement()
+    expect(await inventory.list()).not.toHaveProperty('managementAvailable')
+  })
+
+  it('hides standalone and legacy MCP control rows while retaining dormant bridge declarations', async () => {
+    const { ctx, inventory } = await harness()
+    const transportIds = await Promise.all([
+      undefined, null, [], {}, { transport: 'stdio', command: 'echo' },
+    ].map(config => ctx.loader.create({ name: '@deepseek-ai/dsh-mcp-client', disabled: true, config })))
+    await ctx.loader.create({ name: '@deepseek-ai/dsh-mcp-client/configuration', disabled: true })
+    await ctx.loader.create({ name: '@deepseek-ai/dsh-mcp-client', disabled: true, config: { mode: 'configuration' } })
+
+    const snapshot = await inventory.list()
+    expect(snapshot.entries.map(entry => entry.entryId)).toEqual(transportIds)
+    expect(snapshot.entries.every(entry => entry.moduleName === '@deepseek-ai/dsh-mcp-client'
+      && !entry.enabled && entry.fiberPhase === null)).toBe(true)
+  })
+
   it('does not expose the internal MCP configuration control row', async () => {
     const { ctx, inventory } = await harness()
     ctx.loader.builtins.control = () => {}

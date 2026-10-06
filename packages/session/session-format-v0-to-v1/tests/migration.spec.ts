@@ -61,6 +61,17 @@ describe('released Session format v0 to v1', () => {
     expect(() => createMigrationStage('legacy-ha').transform(unknown)).toThrow(/lacks required member/)
   })
 
+  it('refuses malformed legacy inbox arrays and empty continuable descriptor identities', () => {
+    const stage = createMigrationStage('invalid-legacy-input')
+    expect(() => stage.transform({ type: 'agent/inbox/spliced', seq: 0, time: 1,
+      data: { target: 'next-step', start: 0, inserted: null } })).toThrow(/array/)
+    for (const field of ['provider', 'label', 'agentProvider', 'agentModel']) {
+      expect(() => createMigrationStage('invalid-member').transform({ type: 'subagent/descriptor', seq: 0, time: 1,
+        data: { version: 2, mode: 'continuable', provider: 'fork', label: 'member', agentProvider: 'p', agentModel: 'm',
+          [field]: '' } })).toThrow(/must be non-empty/)
+    }
+  })
+
   it('changes only the version of a canonical decoded artifact', () => {
     const header = {
       type: 'session',

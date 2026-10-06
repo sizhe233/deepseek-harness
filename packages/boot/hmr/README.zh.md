@@ -44,7 +44,7 @@ kind: "package-reference"
 | `ignored` | `["**/node_modules", "**/.*", "cache", "data"]` | 排除的模块路径。 |
 | `debounce` | `100` | 合并模块变化的毫秒数。 |
 
-Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时观察新增、删除及初始不存在的父目录。监听深度包含文件层级；macOS 使用 50 毫秒轮询，其他宿主默认保留原生监听，除非显式请求轮询。`registerConfig()` 接受相对于 `baseDir` 的路径，并委托给同一个串行配置队列。刷新失败会发出 `hmr/config-update-failed`；观察者失败不会逃逸到监听器。它们默认使用 `awaitWriteFinish: true`：编辑后等待 Chokidar 的 2 秒写入稳定窗口，避免其变化事件节流丢失通知。可通过 `awaitWriteFinish` 调整窗口；禁用它可能漏掉快速连续编辑。直接通过 Plugin Manager 发起的操作无需等待文件事件即可应用。
+Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时观察新增、删除及初始不存在的父目录。在首个文件事件到达前，每 50 毫秒检查精确路径并通过 Chokidar 注册，即使目录通知丢失也保留写入稳定等待。销毁时停止检查并等待未完成的文件系统读取。监听深度包含文件层级；macOS 使用 50 毫秒轮询，其他宿主默认保留原生监听，除非显式请求轮询。`registerConfig()` 接受相对于 `baseDir` 的路径，并委托给同一个串行配置队列。刷新失败会发出 `hmr/config-update-failed`；观察者失败不会逃逸到监听器。它们默认使用 `awaitWriteFinish: true`：编辑后等待 Chokidar 的 2 秒写入稳定窗口，避免其变化事件节流丢失通知。可通过 `awaitWriteFinish` 调整窗口；禁用它可能漏掉快速连续编辑。直接通过 Plugin Manager 发起的操作无需等待文件事件即可应用。
 
 -----
 
@@ -99,7 +99,6 @@ Loader entry 保留原始导入结果。HMR 为每个 entry 名称与配置树 b
 - CommonJS 请求必须能由 Node 默认 resolver 解析。同步 hook 可以像 Desktop 的 Office resolver 一样处理解析后的文件名；依赖原始请求名或引入虚拟请求的 hook 不受支持。内置模块保留 Node 原有的加载行为。
 - 后续工作：跨 HMR 销毁和替换保留包配置失效状态。恢复原生 reader 后，其旧配置缓存可能重新可见。
 - 如果共享运行时的替换模块具有不同的插件回调，没有 Loader entry 的实例就无法确定应使用哪一个。HMR 会报告歧义错误并回滚此次重载。
-- `watchConfig()` 在 Chokidar 报告就绪时 resolve。darwin 上 libuv 随后才在自己的线程启动 FSEvents 流，因此注册后数毫秒内落地的写入要等到该目录的下一个事件才会被报告；启动之后的编辑不受影响。
 
 ### 开发备注
 

@@ -12,7 +12,7 @@ The disposal test also waits a fixed 250 ms before closing the watcher. That int
 
 ## Decision
 
-Exact config watches force polling only on macOS. Other platforms use native watching unless the caller explicitly requests polling. The retained missing-parent depth and 50 ms polling interval preserve the macOS workaround; the ordinary module watcher is unchanged. Polling readiness remains limited to Chokidar’s initial scan, rather than promising completion of Node’s polling baseline.
+Exact config watches force polling only on macOS. Other platforms use native watching unless the caller explicitly requests polling. The retained missing-parent depth and 50 ms polling interval preserve the macOS workaround; the ordinary module watcher is unchanged. Polling readiness remains limited to Chokidar’s initial scan, rather than promising completion of Node’s polling baseline. Until the first matching file event, exact-path discovery independently enrolls an existing target through Chokidar, preserving write stabilization when parent-directory notifications miss its creation. Disposal stops discovery and drains pending filesystem reads.
 
 The [HMR config tests](../../../../packages/boot/hmr/tests/workbench-config.spec.ts) retain real filesystem watchers and add explicit backend-selection assertions. The disposal case waits for the exact watcher’s `change` listener registered after HMR’s listener, proving the second refresh has been queued before disposal. Context cleanup runs before temporary-root removal, including when setup fails.
 

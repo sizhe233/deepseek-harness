@@ -2,7 +2,7 @@
 import { EventEmitter } from 'node:events'
 import { createServer, request as httpRequest } from 'node:http'
 import { Readable } from 'node:stream'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -392,6 +392,34 @@ describe('connection node half', () => {
     expect(routes.map(candidate => candidate.path)).toEqual([API_PATH])
     await fiber.dispose()
     expect(routes).toHaveLength(0)
+  })
+
+  it('rejects a dedicated channel without its caller carrier and leaves registration available after one appears', async () => {
+    const ctx = new Context()
+    const routes: WebRoute[] = []
+    provideBrowserCredentials(ctx)
+    const connectionFiber = ctx.plugin({ inject: [...inject], apply })
+    await connectionFiber.await()
+    const consumer = ctx.plugin({ inject: ['connection'], apply(owner: Context) {
+      expect(() => owner.connection.rpc.handle('/extension', async () => ({ ok: true, value: null })))
+        .toThrow('dedicated RPC channels require a webServer carrier')
+      expect(routes).toEqual([])
+    } })
+    try {
+      await consumer.await()
+      const carrier = ctx.plugin((owner) => {
+        owner.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+      })
+      await carrier.await()
+      consumer.ctx.connection.rpc.handle('/extension', async () => ({ ok: true, value: 'ready' }))
+      expect(routes.some(route => route.path === '/extension')).toBe(true)
+      await consumer.dispose()
+      expect(routes.some(route => route.path === '/extension')).toBe(false)
+      expect(ctx.get('connection') !== undefined).toBe(true)
+      expect(connectionFiber.state).toBe(FiberState.ACTIVE)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('registers an authenticated RPC channel from a sibling plugin that injects only connection', async () => {

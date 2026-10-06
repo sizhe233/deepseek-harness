@@ -44,7 +44,7 @@ Existing configurations replace the module name `@deepseek-ai/cordis-plugin-hmr`
 | `ignored` | `["**/node_modules", "**/.*", "cache", "data"]` | Excluded module paths. |
 | `debounce` | `100` | Milliseconds for combining module changes. |
 
-Chokidar options, including polling, retain their existing meaning. Exact configuration watches also observe additions, removals and initially missing parent directories. The watch depth includes the file level; macOS uses 50 ms polling and other hosts retain native watching unless polling is requested. `registerConfig()` accepts paths relative to `baseDir` and delegates to the same serialized configuration queue. Failed refreshes emit `hmr/config-update-failed` without letting observer failures escape the watcher. They default to `awaitWriteFinish: true`: edits wait for Chokidar's 2-second write-stability window, avoiding its lossy change-event throttle. Configure `awaitWriteFinish` to adjust that window; disabling it can miss rapid consecutive edits. Direct Plugin Manager operations apply without waiting for file events.
+Chokidar options, including polling, retain their existing meaning. Exact configuration watches also observe additions, removals and initially missing parent directories. Until the first file event, they probe the exact path every 50 ms and enroll it through Chokidar, preserving write stabilization even when directory notifications are missed. Disposal stops these probes and drains pending filesystem reads. The watch depth includes the file level; macOS uses 50 ms polling and other hosts retain native watching unless polling is requested. `registerConfig()` accepts paths relative to `baseDir` and delegates to the same serialized configuration queue. Failed refreshes emit `hmr/config-update-failed` without letting observer failures escape the watcher. They default to `awaitWriteFinish: true`: edits wait for Chokidar's 2-second write-stability window, avoiding its lossy change-event throttle. Configure `awaitWriteFinish` to adjust that window; disabling it can miss rapid consecutive edits. Direct Plugin Manager operations apply without waiting for file events.
 
 -----
 
@@ -99,7 +99,6 @@ Reloading a contributing plugin can change later request prefixes; HMR does not 
 - CommonJS requests must be resolvable by Node's default resolver. Synchronous hooks may postprocess the resulting filenames, as Desktop's Office resolver does; hooks requiring the original request name or introducing virtual requests are unsupported. Builtins retain Node's original loading behavior.
 - Future work: retain package invalidation across HMR disposal and replacement. Restoring the native readers can expose their older cached configuration again.
 - If a shared runtime's replacement modules have different plugin callbacks, an instance without a Loader entry cannot be assigned to one of them. HMR reports an ambiguity error and rolls back the reload.
-- `watchConfig()` resolves when Chokidar reports readiness. On darwin, libuv starts the FSEvents stream afterwards on its own thread, so a write that lands within milliseconds of registration is not reported until the next event in that directory; edits made after startup are unaffected.
 
 ### Dev Note
 

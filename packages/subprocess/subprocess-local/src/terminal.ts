@@ -57,7 +57,6 @@ function signalName(number: number | undefined): NodeJS.Signals | null {
  * the tracking a remote provider needs.
  */
 export class LocalTerminalHandle implements SubprocessTerminalHandle {
-  readonly pid: number
   readonly output = new PassThrough()
   readonly done: Promise<SubprocessOutcome>
 
@@ -74,7 +73,8 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   private quiescent = false
   private managedRangeEmpty = false
   /** The spawned shell's start identity; scans stop adopting members once the root pid no longer carries it. */
-  private readonly rootIdentity: ProcessIdentity | undefined
+  private rootIdentity: ProcessIdentity | undefined
+  private rootIdentityCaptured = false
 
   /**
    * @param terminal - allocated node-pty process.
@@ -93,9 +93,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     private readonly onQuiescence?: () => void,
     private readonly observeShellExit = false,
   ) {
-    this.pid = terminal.pid
-    try { this.rootIdentity = inspector.snapshot().tree(this.pid).find(member => member.pid === this.pid) }
-    catch (_rootIdentityUnavailable) { this.rootIdentity = undefined }
+    this.captureRootIdentity()
     this.done = this.outcome.promise
     const resume = (): void => {
       if (!this.outputPaused) return
@@ -105,6 +103,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     this.output.on('drain', resume)
     this.output.once('close', () => { this.output.off('drain', resume) })
     this.dataDisposable = terminal.onData((data) => {
+      this.captureRootIdentity()
       if (!this.output.write(Buffer.from(data, 'utf8')) && this.cleanup === undefined && !this.outputPaused) {
         this.outputPaused = true
         terminal.pause()
@@ -131,6 +130,21 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     })
   }
 
+  /** Current node-pty PID; Windows publishes it asynchronously when ConPTY connects. */
+  get pid(): number {
+    this.captureRootIdentity()
+    return this.terminal.pid
+  }
+
+  private captureRootIdentity(): void {
+    const pid = this.terminal.pid
+    if (pid <= 0 || this.rootIdentityCaptured || this.exited) return
+    // Never retry a positive PID: a later observation could adopt a recycled process.
+    this.rootIdentityCaptured = true
+    try { this.rootIdentity = this.inspector.snapshot().tree(pid).find(member => member.pid === pid) }
+    catch (_rootIdentityUnavailable) { this.rootIdentity = undefined }
+  }
+
   /** Whether node-pty has not yet published the top-level exit event. */
   get running(): boolean {
     return !this.exited
@@ -153,6 +167,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   // Local inspection is synchronous; the seam returns a promise for remote transports.
   // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
   async inspectForeground(): Promise<SubprocessTerminalForeground | undefined> {
+    if (this.pid <= 0) return undefined
     this.descendants(this.inspector.snapshot())
     const processGroupId = this.inspector.foregroundPgid(this.pid)
     if (processGroupId === undefined) return undefined
@@ -166,7 +181,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   async inspectActivity(): Promise<SubprocessTerminalActivity> {
     let state: SubprocessTerminalActivity['state'] = this.quiescent ? 'idle' : 'unknown'
     let revision = 0
-    if (!this.quiescent) {
+    if (!this.quiescent && this.pid > 0) {
       try {
         const shell = this.shellActivity?.inspect(this.pid) ?? { state: 'unknown' as const, revision: 0 }
         revision = shell.revision
@@ -265,6 +280,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   }
 
   private descendants(observed: ProcessSnapshot): ProcessIdentity[] {
+    if (this.pid <= 0) return []
     // Adopt newly scanned members only while the numeric root pid provably
     // still carries the spawned shell's start identity: after the shell dies,
     // a recycled pid's tree and session must not donate an unrelated
@@ -373,8 +389,10 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     // termination also does not reliably fire node-pty's exit notification
     // (the same console-list agent), so the tiers verify the shell's absence
     // through the inspector instead of waiting on `done` alone.
-    const shellGone = (): boolean =>
-      this.exited || (this.rootIdentity !== undefined && !this.inspector.isAlive(this.rootIdentity))
+    const shellGone = (): boolean => {
+      this.captureRootIdentity()
+      return this.exited || (this.rootIdentity !== undefined && !this.inspector.isAlive(this.rootIdentity))
+    }
     if (!shellGone() && this.rootIdentity !== undefined) {
       this.inspector.signalProcess(this.rootIdentity, 'SIGTERM')
       await this.waitForWindowsShellExit()

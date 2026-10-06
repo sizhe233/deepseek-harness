@@ -583,9 +583,6 @@ export class PiAiAdapter extends LlmAdapter {
       }
     }
     try {
-      if (!Array.isArray(replayedInput)) {
-        throw new LlmError('OpenAI Responses compaction requires an input array', 'INVALID_COMPACTION_INPUT')
-      }
       const nativeBody: Record<string, unknown> = {
         ...body,
         input: [...replayedInput, { type: 'compaction_trigger' }],

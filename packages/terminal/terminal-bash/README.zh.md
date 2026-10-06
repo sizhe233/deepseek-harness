@@ -83,7 +83,7 @@ shell 在整个生命周期内运行在有效的沙箱边界之下。当所有�
 
 ### 设计理念
 
-一个后端服务两种方言：bash 与 pwsh 共享同一套会话机制——清理器、有界缓冲区、就绪轮询、取消与关闭——只在 argv、环境与提示符安装方式上不同。bash 通过 `PS1` 加 `PROMPT_COMMAND` 接收私有标记。默认 pwsh argv 通过 `-NoExit -Command` 执行提示符函数与 UTF-8 编码设置，然后才进入行编辑器。显式非空的 `shellArgs` 保持不变，并通过 stdin 接收一次设置。两条路径都只有在验证私有标记与精确的可打印提示符后才发布启动；stdin 等待与回显的设置文本不能发布 shell。一个不保留 scrollback 的 `@xterm/headless` 实例会消费原始 PTY 数据，并通过同一句柄返回终端协议响应；逐行 sanitizer 仍是唯一输出投影。
+一个后端服务两种方言：bash 与 pwsh 共享同一套会话机制——清理器、有界缓冲区、就绪轮询、取消与关闭——只在 argv、环境与提示符安装方式上不同。bash 通过 `PS1` 加 `PROMPT_COMMAND` 接收私有标记。默认 pwsh argv 通过 `-NoExit -Command` 执行提示符函数与 UTF-8 编码设置，然后才进入行编辑器。显式非空的 `shellArgs` 保持不变，并通过 stdin 接收一次设置。pwsh 提示符在发出标记前初始化控制台输入，但不消费按键，因此在行编辑器启动前排队的输入会保留 Enter 键。两条路径都只有在验证私有标记与精确的可打印提示符后才发布启动；stdin 等待与回显的设置文本不能发布 shell。一个不保留 scrollback 的 `@xterm/headless` 实例会消费原始 PTY 数据，并通过同一句柄返回终端协议响应；逐行 sanitizer 仍是唯一输出投影。
 
 Scrollback 和尚未读取的发送输出保留独立拥有的字符串，并增量维护字节数与换行符数，因此清理后的切片不会保留已丢弃的控制序列。追加与淘汰文本的摊还耗时与输入文本量成正比；读取时才拼接保留的分片。保留策略维持码点边界，并将末尾换行符之后的空行计入行数。[历史保留策略决策](../../../.agents/notes/archived/bug-fix/2026-09-11-incremental-terminal-retention.md)记录复杂度与测量依据。
 

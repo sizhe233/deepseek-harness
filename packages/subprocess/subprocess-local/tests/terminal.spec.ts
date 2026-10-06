@@ -723,6 +723,140 @@ describe('LocalTerminalHandle', () => {
 describe('LocalTerminalHandle on Windows', () => {
   const win32 = 'win32' as NodeJS.Platform
 
+  it('captures a delayed ConPTY PID before forwarding output and retains its exact identity', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    const outputCaptures: number[] = []
+    handle.output.on('data', () => { outputCaptures.push(inspector.captures) })
+    try {
+      expect(handle.pid).toBe(0)
+      await expect(handle.inspectForeground()).resolves.toBeUndefined()
+      await expect(handle.inspectActivity()).resolves.toMatchObject({ state: 'unknown' })
+      expect(inspector.captures).toBe(0)
+
+      pty.pid = 123
+      inspector.alive.add(123)
+      pty.emitData('ready')
+      expect(outputCaptures).toEqual([1])
+      expect(handle.pid).toBe(123)
+      inspector.root = { pid: 123, started: 'recycled' }
+      inspector.readAlive = identity => identity.started === 'recycled'
+      inspector.members = [{ pid: 124, started: 'unrelated' }]
+      inspector.alive.add(124)
+      handle.terminateForHostExit()
+      expect(inspector.processes).toEqual([])
+      expect(pty.kills).toEqual([])
+    } finally {
+      pty.emitExit()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('captures a connected silent ConPTY PID on inspection and terminates its descendants', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    try {
+      pty.pid = 123
+      inspector.alive.add(123)
+      inspector.alive.add(124)
+      inspector.members = [{ pid: 124, started: 'child' }]
+      await expect(handle.inspectForeground()).resolves.toMatchObject({ processGroupId: 456 })
+      await handle.terminate()
+      await expect(handle.done).resolves.toEqual({ exitCode: null, signal: null })
+      expect(inspector.processes).toEqual([[124, 'SIGTERM'], [123, 'SIGTERM']])
+      expect(pty.kills).toEqual([])
+    } finally {
+      pty.emitExit()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('keeps early termination pending and kills a ConPTY PID published during its grace period', async () => {
+    vi.useFakeTimers()
+    const pty = new FakePty()
+    pty.pid = 0
+    pty.autoExitOnKill = false
+    const inspector = new FakeInspector()
+    const released = vi.fn()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32, undefined, undefined, undefined, released)
+    const terminating = handle.terminate()
+    try {
+      expect(handle.terminate()).toBe(terminating)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(pty.kills).toEqual(['SIGHUP'])
+      expect(released).not.toHaveBeenCalled()
+      pty.pid = 123
+      inspector.alive.add(123)
+      inspector.alive.add(124)
+      inspector.members = [{ pid: 124, started: 'late-child' }]
+      await vi.advanceTimersByTimeAsync(10)
+      await terminating
+      expect(inspector.processes).toEqual([[123, 'SIGKILL'], [124, 'SIGTERM']])
+      expect(inspector.alive.size).toBe(0)
+      expect(released).toHaveBeenCalledOnce()
+      await expect(handle.done).resolves.toEqual({ exitCode: null, signal: null })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      pty.emitExit()
+      await vi.runAllTimersAsync()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('does not capture a delayed PID after the PTY exit event', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    try {
+      pty.emitExit(1)
+      pty.pid = 123
+      inspector.root = { pid: 123, started: 'unrelated' }
+      inspector.alive.add(123)
+      expect(handle.pid).toBe(123)
+      expect(inspector.captures).toBe(0)
+      await handle.terminate()
+      expect(inspector.processes).toEqual([])
+      expect(pty.kills).toEqual([])
+      await expect(handle.done).resolves.toEqual({ exitCode: 1, signal: null })
+    } finally {
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('does not retry a failed identity capture after ConPTY publishes its PID', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    try {
+      pty.pid = 123
+      inspector.readTree = () => { throw new Error('process table unavailable') }
+      expect(() => { pty.emitData('ready') }).not.toThrow()
+      expect(inspector.captures).toBe(1)
+      inspector.readTree = () => [{ pid: 123, started: 'recycled' }, { pid: 124, started: 'unrelated' }]
+      inspector.alive.add(123)
+      inspector.alive.add(124)
+      expect(handle.pid).toBe(123)
+      expect(inspector.captures).toBe(1)
+      await handle.terminate()
+      expect(inspector.processes).toEqual([])
+      expect(pty.kills).toEqual(['SIGHUP'])
+    } finally {
+      pty.emitExit()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
   it('delivers SIGINT as a Ctrl-C input write without inspector signalling', async () => {
     const pty = new FakePty()
     const inspector = new FakeInspector()

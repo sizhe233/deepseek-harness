@@ -236,7 +236,6 @@ class LocalSendOperation implements TerminalSendOperation {
 /** Backend session wrapping one provider-owned terminal process. */
 export class LocalPtySession implements TerminalBackendSession {
   motd = ''
-  readonly pid: number
   private readonly decoder = new TextDecoder()
   /** Protocol state only; the sanitizer and bounded buffers own returned text. */
   private readonly emulator: HeadlessTerminalType
@@ -279,7 +278,6 @@ export class LocalPtySession implements TerminalBackendSession {
     private readonly terminal: SubprocessTerminalHandle,
     private readonly config: ResolvedConfig,
   ) {
-    this.pid = terminal.pid
     const { Terminal: HeadlessTerminal } = requireHeadless()
     this.emulator = new HeadlessTerminal({ cols: config.cols, rows: config.rows, scrollback: 0 })
     this.emulatorData = this.emulator.onData((data) => {
@@ -302,6 +300,11 @@ export class LocalPtySession implements TerminalBackendSession {
       outcome => this.onExit(outcome),
       (error: unknown) => { this.onTransportFailure(error) },
     )
+  }
+
+  /** ConPTY publishes its process id after asynchronous terminal connection. */
+  get pid(): number {
+    return this.terminal.pid
   }
 
   /**

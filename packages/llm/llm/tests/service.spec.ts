@@ -16,6 +16,7 @@ import LlmRuntime, {
   createMessage,
   createDeveloperMessage,
   createUserMessage,
+  fileHandleText,
 } from '@deepseek-ai/dsh-llm'
 import type {
   LlmCompactOptions,
@@ -117,6 +118,13 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
 }
 
 describe('LlmRuntime', () => {
+  it('prices a durable file with the same handle text used by request projection', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const file = { attachmentId: AttachmentId('file'), name: 'notes.txt', bytes: 4 }
+    expect(ctx.llm.fileRequestText(file)).toBe(fileHandleText(file, undefined))
+  })
+
   it('projects native compaction history and dispatches its captured adapter generation', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -159,6 +167,25 @@ describe('LlmRuntime', () => {
     await ctx.plugin(LlmRuntime)
     ctx.llm.registerAdapter(['ordinary'], new ScriptedAdapter([]))
     await expect(ctx.llm.compact({ provider: 'ordinary', model: 'm', messages: [] })).resolves.toBeUndefined()
+  })
+
+  it('dispatches compaction through an adapter whose prepared call omits the optional operation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    let received: LlmCompactOptions | undefined
+    const item = { type: 'compaction' as const, encrypted_content: 'legacy-adapter' }
+    const adapter = new class extends ScriptedAdapter {
+      override prepareCall(provider: string, model: string): Promise<PreparedAdapterCall> {
+        return Promise.resolve({ model: { provider, id: model, name: model }, stream: options => this.stream(options) })
+      }
+      override compact(options: LlmCompactOptions): Promise<LlmCompactionResult> {
+        received = options
+        return Promise.resolve({ item })
+      }
+    }([])
+    ctx.llm.registerAdapter(['legacy'], adapter)
+    await expect(ctx.llm.compact({ provider: 'legacy', model: 'm', messages: [] })).resolves.toEqual({ item })
+    expect(received).toMatchObject({ provider: 'legacy', model: 'm', messages: [] })
   })
 
   it('recognizes structured and model-capacity context-window overflow details', () => {

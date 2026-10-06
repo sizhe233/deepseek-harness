@@ -6,6 +6,7 @@ import {
   RELEASED_V0_EVENT_DISPOSITIONS,
 } from '../src/index.ts'
 import { assertReleasedEventPayload, assertReleasedSurfaceMetadata } from '../src/validation.ts'
+import { assertReleasedPayloadSemantics } from '../src/payload-validation.ts'
 import { restoreV0ToV1, restoreV1 } from '../src/testing/restore.ts'
 import {
   assertNormalizedReleasedV0Artifact,
@@ -575,6 +576,27 @@ describe('released event and payload inventory', () => {
     }) }).toThrow(/does not match/)
     expect(() => { assertPayload('user/message', { ...message, content: [textBlock] }) })
       .toThrow(/content does not match/)
+  })
+
+  it('validates creation payloads and matching revisions in legacy goal messages', () => {
+    const change = { kind: 'goal/change', version: 1, operation: 'create',
+      goal: { id: 'goal', revision: 1, objective: 'ship', phase: 'active', maxGoalRounds: 3 },
+      roundsStarted: 0, createdAt: 1, updatedAt: 2 }
+    const payload = { goal: change.goal, roundsStarted: 0, createdAt: 1, updatedAt: 2 }
+    const message = { id: 'legacy-create', role: 'user',
+      content: [{ type: 'text', text: `<goal_state>${JSON.stringify(payload)}</goal_state>` }],
+      source: { kind: 'goal', goalId: 'goal', revision: 1, round: 0, change } }
+    expect(() => { assertPayload('user/message', message) }).not.toThrow()
+    expect(() => { assertPayload('user/message', { ...message, source: { ...message.source, revision: 2 } }) })
+      .toThrow(/does not match/)
+  })
+
+  it('retains the exact legacy continuable descriptor payload through nested semantic validation', () => {
+    const event = { type: 'subagent/descriptor', seq: 0, time: 1,
+      data: { version: 2, mode: 'continuable', provider: 'fork', label: 'member', agentProvider: 'p', agentModel: 'm' } }
+    expect(() => { assertReleasedPayloadSemantics(event, 1) }).not.toThrow()
+    expect(() => { assertReleasedPayloadSemantics({ ...event, data: { ...event.data, persona: 'invented' } }, 1) }).toThrow()
+    expect(() => { assertReleasedPayloadSemantics({ ...event, data: { ...event.data, mode: 'one-shot' } }, 1) }).toThrow(/version/)
   })
 
   it('refuses malformed logical headers, cuts, event envelopes, and surface metadata', () => {

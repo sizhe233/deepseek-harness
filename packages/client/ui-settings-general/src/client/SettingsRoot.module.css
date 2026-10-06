@@ -246,7 +246,7 @@
   .panel {
     width: calc(100vw - 24px);
     max-width: calc(100vw - 24px);
-    border-radius: 20px;
+    border-radius: var(--dsw-radius-xl);
   }
 
   .nav {
