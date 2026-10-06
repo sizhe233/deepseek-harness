@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import type { SpawnOptions } from 'node:child_process'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -144,6 +145,32 @@ async function waitForInputReadiness(handle: SubprocessTerminalHandle): Promise<
 const linuxNative = process.platform === 'linux' && probeLinuxScope()
 
 describe.skipIf(!linuxNative)('Linux user-systemd native containment', () => {
+  it('joins a native scope cancelled immediately after launch', async () => {
+    let unit: string | undefined
+    const request = spec(['sleep', '30'])
+    const handle = bindManagedProcess(request, launchLinuxScope(request, targetEnvironment(request), {
+      spawn: ((command: string, args: readonly string[], options: SpawnOptions) => {
+        const unitArg = args.find(arg => arg.startsWith('--unit='))
+        if (unitArg === undefined) throw new Error('scope launch omitted its unit name')
+        unit = `${unitArg.slice('--unit='.length)}.scope`
+        return spawn(command, args, options)
+      }) as typeof spawn,
+    }))
+    try {
+      handle.terminate()
+      // Allow one backoff plus the separately bounded manager query and stop.
+      await expect(handle.waitForExit(AbortSignal.timeout(15_000))).resolves.toBe(true)
+      await expect(handle.done).resolves.toMatchObject({ exitCode: null })
+    } finally {
+      handle.terminateForHostExit()
+      // Even a regressed owner must not leave an active empty unit or observer behind.
+      if (unit !== undefined) {
+        spawnSync('systemctl', ['--user', 'stop', unit], { stdio: 'ignore', timeout: 5_000 })
+      }
+      await Promise.allSettled([handle.done, handle.waitForExit()])
+    }
+  }, 30_000)
+
   it('aborts an established scope before bootstrap consumption and joins its managed handle', async () => {
     const controller = new AbortController()
     const request: SubprocessSpawnSpec = {

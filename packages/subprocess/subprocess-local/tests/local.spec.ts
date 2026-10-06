@@ -1,3 +1,4 @@
+import { ChildProcess } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it, vi } from 'vitest'
 import { basename, dirname, relative, resolve } from 'node:path'
@@ -384,6 +385,7 @@ describe('LocalSubprocessRuntime', () => {
     vi.resetModules()
     mockWin32ForIsolatedRuntime()
     vi.doMock('node-pty', () => ({ spawn: () => terminal }))
+    vi.doMock('../src/linux-scope.ts', () => ({ probeLinuxNative: () => false }))
     vi.doMock('../src/process-inspector.ts', async importOriginal => ({
       ...await importOriginal<typeof import('../src/process-inspector.ts')>(),
       createProcessInspector: () => inspector,
@@ -404,6 +406,7 @@ describe('LocalSubprocessRuntime', () => {
       await fiber.dispose()
     } finally {
       vi.doUnmock('node-pty')
+      vi.doUnmock('../src/linux-scope.ts')
       vi.doUnmock('../src/process-inspector.ts')
       unmockWin32ForIsolatedRuntime()
       vi.resetModules()
@@ -593,6 +596,7 @@ describe('LocalSubprocessRuntime', () => {
     vi.resetModules()
     mockWin32ForIsolatedRuntime()
     vi.doMock('node-pty', () => ({ spawn: () => terminal }))
+    vi.doMock('../src/linux-scope.ts', () => ({ probeLinuxNative: () => false }))
     try {
       const { default: IsolatedLocalSubprocessRuntime } = await import('../src/index.ts')
       const ctx = new Context()
@@ -623,6 +627,7 @@ describe('LocalSubprocessRuntime', () => {
       expect(disposalErrors).toHaveLength(1)
     } finally {
       vi.doUnmock('node-pty')
+      vi.doUnmock('../src/linux-scope.ts')
       unmockWin32ForIsolatedRuntime()
       vi.resetModules()
     }
@@ -873,12 +878,39 @@ describe('LocalSubprocessRuntime', () => {
 
   it('disposal contains a spawn-failure rejection that races teardown', async () => {
     const ctx = new Context()
+    const disposalErrors: unknown[] = []
+    ctx.logger.error = ((error: unknown) => { disposalErrors.push(error) }) as typeof ctx.logger.error
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
-    // Dispose before the rejection continuation removes the handle from the
-    // live set, so teardown itself must swallow the rejected done.
-    const handle = ctx.subprocess.spawn(spec('true', { cwd: '/nonexistent-dir-dsh-subprocess-test' }))
-    await fiber.dispose()
-    await expect(handle.done).rejects.toThrow()
+    // An unspawned child leaves failure delivery under the fixture's control.
+    const child = Object.assign(new ChildProcess(), { stdin: null, stdout: null, stderr: null })
+    const runtime = ctx.subprocess as LocalSubprocessRuntime
+    runtime.internals = { platform: 'darwin', spawn: () => child }
+    const handle = runtime.spawn(spec('true'))
+    const live = (runtime as unknown as { live: Set<typeof handle> }).live
+    const spawnFailure = new Error('spawn failed during disposal')
+    const terminationStarted = Promise.withResolvers<undefined>()
+    const terminate = handle.terminate.bind(handle)
+    const terminating = vi.spyOn(handle, 'terminate').mockImplementation(() => {
+      terminate()
+      terminationStarted.resolve(undefined)
+    })
+    let disposed = false
+    const disposing = fiber.dispose().then(() => { disposed = true })
+    try {
+      await terminationStarted.promise
+      expect(live.has(handle)).toBe(true)
+      expect(disposed).toBe(false)
+      child.emit('error', spawnFailure)
+      await expect(handle.done).rejects.toBe(spawnFailure)
+      await disposing
+      expect(terminating).toHaveBeenCalledOnce()
+      expect(disposalErrors).toEqual([])
+      expect(live.size).toBe(0)
+    } finally {
+      if (child.listenerCount('error') > 0) child.emit('error', spawnFailure)
+      await disposing
+      terminating.mockRestore()
+    }
   })
 
   it('loading a second implementation throws (one processes service per context — cordis standard)', async () => {

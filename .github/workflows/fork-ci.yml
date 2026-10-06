@@ -31,7 +31,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build:native-system
       - name: Check migration regressions before the full build
-        run: pnpm exec vitest run scripts/ci-workflow.spec.ts scripts/ci-compatible-selfhosted.spec.ts scripts/tests/ci-master-platforms.spec.ts packages/subprocess/subprocess-local/tests/linux-scope.spec.ts packages/subprocess/subprocess-local/tests/native-containment.spec.ts --maxWorkers=4
+        run: >-
+          pnpm exec vitest run
+          scripts/ci-workflow.spec.ts
+          scripts/ci-compatible-selfhosted.spec.ts
+          scripts/tests/ci-master-platforms.spec.ts
+          packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts
+          packages/subprocess/subprocess-local/tests/local.spec.ts
+          packages/subprocess/subprocess-local/tests/linux-scope.spec.ts
+          packages/subprocess/subprocess-local/tests/native-containment.spec.ts
+          packages/shell/pwsh-local/tests/executor.spec.ts
+          --maxWorkers=4
       - run: pnpm run build
       - run: pnpm run typecheck
       - run: pnpm test --maxWorkers=4

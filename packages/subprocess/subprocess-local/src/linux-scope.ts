@@ -178,6 +178,7 @@ class LinuxScopeStartup {
 class SystemdScopeOwner implements BoundProcessOwner {
   private establishment: 'pending' | 'established' = 'pending'
   private stopped = false
+  private terminationRequested = false
   private observation: Promise<void> | undefined
   private killFailure: Error | undefined
   private wakeGeneration = 0
@@ -195,6 +196,7 @@ class SystemdScopeOwner implements BoundProcessOwner {
 
   signal(signal: 'SIGTERM' | 'SIGKILL'): void {
     if (this.stopped) return
+    this.terminationRequested = true
     if (this.direct.running()) this.startup.terminationSignals.add(signal)
     this.observeRequestConsumption()
     const directFallbackRequired = this.establishment === 'pending'
@@ -256,7 +258,29 @@ class SystemdScopeOwner implements BoundProcessOwner {
     return true
   }
 
-  private parseUnitState(stdout: string): { loadState: string; activeState: string } {
+  /**
+   * systemd can leave a scope active if its payload dies before entering the
+   * cgroup. Only a count queried after launcher exit excludes processes that
+   * the launcher could still add after the manager observed an empty cgroup.
+   */
+  private emptyRange(tasksCurrent: number | undefined, launcherExitedBeforeQuery: boolean): boolean {
+    return this.terminationRequested && tasksCurrent === 0 && launcherExitedBeforeQuery
+  }
+
+  /** Attempt bounded cleanup of an already-empty transient scope. */
+  private releaseEmptyRange(): void {
+    try {
+      this.runSync(this.systemctl, ['--user', 'stop', this.unit], {
+        env: managerEnvironment(),
+        stdio: 'ignore',
+        timeout: SYSTEMCTL_TIMEOUT_MS,
+      })
+    } catch {
+      // The range is already empty; a failed cleanup leaves only the transient unit.
+    }
+  }
+
+  private parseUnitState(stdout: string): { loadState: string; activeState: string; tasksCurrent: number | undefined } {
     const values = new Map<string, string>()
     for (const line of stdout.split(/\r?\n/u)) {
       if (line === '') continue
@@ -272,24 +296,37 @@ class SystemdScopeOwner implements BoundProcessOwner {
     }
     const loadState = values.get('LoadState')
     const activeState = values.get('ActiveState')
-    if (values.size !== 2 || loadState === undefined || activeState === undefined) {
+    // The manager prints this sentinel for a property the unit does not carry.
+    const reportedTasks = values.get('TasksCurrent')
+    const tasksCurrent = reportedTasks === '[not set]' ? undefined : reportedTasks
+    if (values.size !== (reportedTasks === undefined ? 2 : 3)
+      || loadState === undefined || activeState === undefined) {
       throw new Error(`systemctl returned incomplete state for ${this.unit}: ${JSON.stringify(stdout.trim())}`)
     }
-    return { loadState, activeState }
+    if (tasksCurrent !== undefined && !/^\d+$/u.test(tasksCurrent)) {
+      throw new Error(`systemctl returned a non-numeric TasksCurrent for ${this.unit}: ${JSON.stringify(tasksCurrent)}`)
+    }
+    return {
+      loadState,
+      activeState,
+      tasksCurrent: tasksCurrent === undefined ? undefined : Number(tasksCurrent),
+    }
   }
 
   private async rangeActive(): Promise<boolean> {
     this.observeRequestConsumption()
+    const launcherExitedBeforeQuery = !this.direct.running()
     const result = await this.query(this.systemctl, [
       '--user',
       'show',
       this.unit,
       '--property=LoadState',
       '--property=ActiveState',
+      '--property=TasksCurrent',
     ])
     const output = `${result.stdout}\n${result.stderr}`
     if (result.status === 0) {
-      const { loadState, activeState } = this.parseUnitState(result.stdout)
+      const { loadState, activeState, tasksCurrent } = this.parseUnitState(result.stdout)
       if (loadState === 'not-found' && activeState === 'inactive') return this.absentUnit()
       if (loadState !== 'loaded') {
         throw new Error(
@@ -302,6 +339,10 @@ class SystemdScopeOwner implements BoundProcessOwner {
         throw new Error(`systemctl returned unknown ActiveState for ${this.unit}: ${JSON.stringify(activeState)}`)
       }
       if (this.killFailure !== undefined) throw this.killFailure
+      if (this.emptyRange(tasksCurrent, launcherExitedBeforeQuery)) {
+        this.releaseEmptyRange()
+        return false
+      }
       return true
     }
     if (!MISSING_UNIT.test(output)) {

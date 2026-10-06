@@ -85,7 +85,7 @@ No direct effect; what the user reads here never enters a model request.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+The Node PDF smoke uses the package's exact `@napi-rs/canvas` development dependency and a real worker to verify page pixels. Its rendering dependency is locked explicitly rather than relying on PDF.js's optional dependency being present.
 
 </details>
 

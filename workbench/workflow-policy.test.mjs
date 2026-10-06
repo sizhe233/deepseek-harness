@@ -27,6 +27,38 @@ test('candidate CI is read-only and never runs in pull_request_target context', 
   assert.deepEqual(workflow.on.push.branches, ['workbench'])
 })
 
+const regressionPaths = [
+  'packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts',
+  'packages/subprocess/subprocess-local/tests/local.spec.ts',
+  'packages/subprocess/subprocess-local/tests/linux-scope.spec.ts',
+  'packages/subprocess/subprocess-local/tests/native-containment.spec.ts',
+  'packages/shell/pwsh-local/tests/executor.spec.ts',
+]
+function assertEarlyRegressions(steps) {
+  const early = steps.findIndex(step => step.name === 'Check migration regressions before the full build')
+  const build = steps.findIndex(step => step.run === 'pnpm run build')
+  assert.ok(early >= 0 && build > early, 'migration regressions must precede the full build')
+  const command = steps[early].run.split(/\s+/)
+  for (const path of regressionPaths) assert.ok(command.includes(path), `missing regression: ${path}`)
+}
+test('candidate CI checks PDF rendering and Linux lifecycle regressions before the full build', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  assertEarlyRegressions(workflow.jobs['build-and-test'].steps)
+})
+test('early regression check rejects missing suites and late execution', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  for (const path of regressionPaths) {
+    const steps = structuredClone(workflow.jobs['build-and-test'].steps)
+    const early = steps.find(step => step.name === 'Check migration regressions before the full build')
+    early.run = early.run.replace(path, '')
+    assert.throws(() => assertEarlyRegressions(steps), /missing regression:/)
+  }
+  const steps = structuredClone(workflow.jobs['build-and-test'].steps)
+  const early = steps.findIndex(step => step.name === 'Check migration regressions before the full build')
+  steps.push(...steps.splice(early, 1))
+  assert.throws(() => assertEarlyRegressions(steps), /must precede the full build/)
+})
+
 test('official job conditions retain their original event and disabled-state semantics', async () => {
   const { execFileSync } = await import('node:child_process')
   const baseline = JSON.parse(readFileSync(new URL('compatibility.json', import.meta.url), 'utf8')).upstreamBase
