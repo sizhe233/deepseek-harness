@@ -24,7 +24,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const repositoryRoot = fileURLToPath(new URL('../../../../../', import.meta.url))
 const DOCKKIT_BUNDLE = 'packages/client/ui-dockkit/lib/index.js'
-const DOCKKIT_CSS = join(repositoryRoot, 'packages/client/ui-dockkit/lib/components/dockkit.module.css')
+const DOCKKIT_CSS = [
+  join(repositoryRoot, 'packages/client/ui-dockkit/lib/components/dockkit.module.css'),
+  join(repositoryRoot, 'packages/client/ui-primitives/src/StateDot.module.css'),
+]
 
 /**
  * Files Node's ESM loader cannot import in this repository. None is a finding:
@@ -113,7 +116,7 @@ if (files.length === 0) {
     } catch (reason) {
       const expectedDockkitCss = reason instanceof Error
         && 'code' in reason && reason.code === 'ERR_UNKNOWN_FILE_EXTENSION'
-        && reason.message === `Unknown file extension ".css" for ${DOCKKIT_CSS}`
+        && DOCKKIT_CSS.some(css => reason.message === `Unknown file extension ".css" for ${css}`)
       if (exemption === undefined || (key === DOCKKIT_BUNDLE && !expectedDockkitCss)) {
         // A bundle that stopped being importable is a real finding, so it
         // fails rather than joining a tolerated total.

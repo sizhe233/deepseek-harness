@@ -23,6 +23,7 @@
       name: '@deepseek-ai/dsh-terminal-bash'
       config:
         shellDialect: pwsh
+        shellArgs: []
         timeoutMs: 30000
 
 - id: agent-default-model

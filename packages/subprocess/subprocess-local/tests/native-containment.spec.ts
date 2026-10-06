@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import type { SpawnOptions } from 'node:child_process'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -144,6 +145,57 @@ async function waitForInputReadiness(handle: SubprocessTerminalHandle): Promise<
 const linuxNative = process.platform === 'linux' && probeLinuxScope()
 
 describe.skipIf(!linuxNative)('Linux user-systemd native containment', () => {
+  it('joins a native scope cancelled immediately after launch', async () => {
+    let unit: string | undefined
+    const request = spec(['sleep', '30'])
+    const handle = bindManagedProcess(request, launchLinuxScope(request, targetEnvironment(request), {
+      spawn: ((command: string, args: readonly string[], options: SpawnOptions) => {
+        const unitArg = args.find(arg => arg.startsWith('--unit='))
+        if (unitArg === undefined) throw new Error('scope launch omitted its unit name')
+        unit = `${unitArg.slice('--unit='.length)}.scope`
+        return spawn(command, args, options)
+      }) as typeof spawn,
+    }))
+    try {
+      handle.terminate()
+      // Allow one backoff plus the separately bounded manager query and stop.
+      await expect(handle.waitForExit(AbortSignal.timeout(15_000))).resolves.toBe(true)
+      await expect(handle.done).resolves.toMatchObject({ exitCode: null })
+    } finally {
+      handle.terminateForHostExit()
+      // Even a regressed owner must not leave an active empty unit or observer behind.
+      if (unit !== undefined) {
+        spawnSync('systemctl', ['--user', 'stop', unit], { stdio: 'ignore', timeout: 5_000 })
+      }
+      await Promise.allSettled([handle.done, handle.waitForExit()])
+    }
+  }, 30_000)
+
+  it('aborts an established scope before bootstrap consumption and joins its managed handle', async () => {
+    const controller = new AbortController()
+    const request: SubprocessSpawnSpec = {
+      ...spec(['bash', '-c', 'exit 0']),
+      signal: controller.signal,
+      stdio: { stdin: 'pipe', stdout: { maxBytes: 1_024 }, stderr: { maxBytes: 1_024 } },
+    }
+    const handle = bindManagedProcess(request, launchLinuxScope(request, targetEnvironment(request), {
+      runnerInvocation: [process.execPath, join(import.meta.dirname, 'fixtures/hold-linux-bootstrap.ts')],
+    }))
+    try {
+      const deadline = Date.now() + 5_000
+      while (!handle.collected.stdout?.readFrom(0).text.includes('BOOTSTRAP_WAITING')) {
+        if (Date.now() >= deadline) throw new Error('bootstrap did not reach its input barrier')
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      controller.abort(new Error('cancel before target execution'))
+      await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+      await expect(handle.waitForExit()).resolves.toBe(true)
+    } finally {
+      handle.terminate()
+      await Promise.allSettled([handle.done, handle.waitForExit()])
+    }
+  })
+
   it('terminates a setsid descendant and waits for the scope to become empty', async () => {
     const pidFile = join(scratch, `setsid-${Date.now()}.pid`)
     const command = `setsid sh -c 'echo $$ > "$1"; trap "" TERM; while :; do sleep 60; done' sh ${JSON.stringify(pidFile)} & wait`

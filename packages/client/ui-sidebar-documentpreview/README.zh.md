@@ -85,7 +85,7 @@ PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态�
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-无。
+Node PDF 冒烟测试使用本包精确锁定的 `@napi-rs/canvas` 开发依赖和真实 worker 来验证页面像素。渲染依赖显式写入锁文件，不依赖 PDF.js 的可选依赖碰巧已安装。
 
 </details>
 

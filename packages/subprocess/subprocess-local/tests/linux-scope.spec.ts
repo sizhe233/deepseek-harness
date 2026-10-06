@@ -17,6 +17,7 @@ import {
   writeLinuxStartupError,
 } from '../src/runner-protocol.ts'
 import { SUBPROCESS_RUNNER_ENV } from '../src/runner-launch.ts'
+import { bindManagedProcess } from '../src/spawn.ts'
 
 const childProcessMocks = vi.hoisted(() => ({
   execFile: vi.fn(),
@@ -81,6 +82,20 @@ function unloadedUnit() {
 
 function unitState(loadState: string, activeState: string) {
   return { status: 0, stdout: `LoadState=${loadState}\nActiveState=${activeState}\n`, stderr: '' }
+}
+
+function activeUnitWithTasks(tasks: string) {
+  return { status: 0, stdout: `LoadState=loaded\nActiveState=active\nTasksCurrent=${tasks}\n`, stderr: '' }
+}
+
+/** Deny every real process-group signal so a fake child never reaches a live host group. */
+function denyProcessGroups(): void {
+  vi.spyOn(process, 'kill').mockImplementation(() => { throw new Error('missing process group') })
+}
+
+/** Record the systemctl invocations a scope owner makes, succeeding unless a case overrides it. */
+function recordingSystemctl() {
+  return vi.fn((_command: string, _args: readonly string[]) => ({ status: 0, stdout: '', stderr: '' }))
 }
 
 function spec() {
@@ -197,6 +212,33 @@ describe('Linux native capability selection', () => {
 })
 
 describe('Linux scope establishment and quiescence', () => {
+  it.each(['abort', 'terminate'] as const)('settles and cleans a managed handle after early %s', async (action) => {
+    const { child, result, requestPath } = launch(async () => missingUnit())
+    const controller = new AbortController()
+    const handle = bindManagedProcess({ ...spec(), signal: controller.signal }, result)
+    if (action === 'abort') controller.abort(new Error('cancelled'))
+    else handle.terminate()
+    expect(child.kills).toEqual(['SIGTERM'])
+    child.exit(null, 'SIGTERM')
+    child.stdout.end()
+    child.stderr.end()
+    await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    await expect(handle.waitForExit()).resolves.toBe(true)
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+  })
+
+  it.each([
+    { exitCode: 1, signal: null },
+    { exitCode: null, signal: 'SIGSEGV' as const },
+  ])('retains unrelated bootstrap failure $exitCode / $signal after a termination request', async (outcome) => {
+    const { child, result } = launch(async () => missingUnit())
+    result.owner.signal('SIGTERM')
+    child.exit(outcome.exitCode, outcome.signal)
+    await expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    await expect(result.owner.waitForExit()).resolves.toBeUndefined()
+    result.owner.cleanup?.()
+  })
+
   it('does not mistake pre-establishment unit absence for quiescence and settles an empty range after cancellation', async () => {
     const { child, result, requestPath, spawnSync } = launch(async () => missingUnit())
     const waiting = result.owner.waitForExit()
@@ -205,7 +247,7 @@ describe('Linux scope establishment and quiescence', () => {
     expect(spawnSync).toHaveBeenCalledWith('/bin/systemctl', expect.arrayContaining([
       'kill', '--kill-whom=all', '--signal=SIGTERM',
     ]), expect.anything())
-    const direct = expect(result.direct).rejects.toThrow('before its bootstrap consumed')
+    const direct = expect(result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
     child.exit(null, 'SIGTERM')
     await direct
     await expect(waiting).resolves.toBeUndefined()
@@ -337,23 +379,27 @@ describe('Linux scope establishment and quiescence', () => {
     launched.result.owner.cleanup?.()
   })
 
-  it('reports child termination before request consumption to the direct result and settles the empty range', async () => {
+  it.each([
+    { exitCode: 127, signal: null },
+    { exitCode: null, signal: 'SIGTERM' as const },
+  ])('rejects unexpected bootstrap exit $exitCode / $signal and settles the empty range', async (outcome) => {
     const { child, result } = launch(async () => missingUnit())
-    child.exit(127, null)
+    child.exit(outcome.exitCode, outcome.signal)
     await expect(result.direct).rejects.toThrow('before its bootstrap consumed')
     await expect(result.owner.waitForExit()).resolves.toBeUndefined()
     result.owner.cleanup?.()
   })
 
-  it('reconstructs a pre-exec startup error instead of exposing bootstrap exit 127', async () => {
+  it('preserves a recorded pre-exec failure even when cancellation also terminates the bootstrap', async () => {
     const { child, result, requestPath } = launch(async () => missingUnit())
     const files = linuxLaunchFilesFromLocator(requestPath)
+    result.owner.signal('SIGTERM')
     unlinkSync(requestPath)
     writeLinuxStartupError(files, {
       type: 'error',
       error: { name: 'Error', message: 'spawn tool ENOENT', code: 'ENOENT' },
     })
-    child.exit(127, null)
+    child.exit(null, 'SIGTERM')
     await expect(result.direct).rejects.toMatchObject({ code: 'ENOENT' })
     result.owner.cleanup?.()
   })
@@ -414,11 +460,115 @@ describe('Linux scope establishment and quiescence', () => {
       ['LoadState=loaded\nLoadState=loaded\nActiveState=active\n', 'duplicate LoadState'],
       ['LoadState=loaded\n', 'incomplete state'],
       ['LoadState=loaded\nActiveState=inactive\nOther=value\n', 'incomplete state'],
+      ['LoadState=loaded\nActiveState=active\nTasksCurrent=0\nOther=value\n', 'incomplete state'],
     ] as const) {
       const launched = launch(async () => ({ status: 0, stdout, stderr: '' }))
       await expect(launched.result.owner.waitForExit()).rejects.toThrow(message)
       launched.result.owner.cleanup?.()
     }
+  })
+
+  it('rejects a manager process count that is neither numeric nor the unset sentinel', async () => {
+    const launched = launch(async () => activeUnitWithTasks('many'))
+    await expect(launched.result.owner.waitForExit()).rejects.toThrow('non-numeric TasksCurrent')
+    launched.result.owner.cleanup?.()
+  })
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('releases an active empty scope after %s and its client exits', async (signal) => {
+    // Regression: the manager's empty cgroup never ends this unit on its own.
+    denyProcessGroups()
+    const spawnSync = recordingSystemctl()
+    const query = vi.fn(async () => activeUnitWithTasks('0'))
+    const launched = launch(query, {
+      spawnSync: spawnSync as never,
+      sleep: async () => { throw new Error('an empty cancelled scope cannot become inactive by itself') },
+    })
+    launched.result.owner.signal(signal)
+    launched.child.exit(null, signal)
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal })
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(query).toHaveBeenCalledExactlyOnceWith('/bin/systemctl', [
+      '--user', 'show', expect.stringMatching(/\.scope$/u),
+      '--property=LoadState', '--property=ActiveState', '--property=TasksCurrent',
+    ])
+    expect(spawnSync.mock.calls.map(call => call[1])).toEqual([
+      ['--user', 'kill', '--kill-whom=all', `--signal=${signal}`, expect.stringMatching(/\.scope$/u)],
+      ['--user', 'stop', expect.stringMatching(/\.scope$/u)],
+    ])
+    launched.result.owner.cleanup?.()
+  })
+
+  it('concludes the empty range even when releasing the leftover scope fails', async () => {
+    denyProcessGroups()
+    const spawnSync = recordingSystemctl()
+      .mockImplementationOnce(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockImplementationOnce(() => { throw new Error('systemctl is gone') })
+    const launched = launch(async () => activeUnitWithTasks('0'), { spawnSync: spawnSync as never })
+    launched.result.owner.signal('SIGKILL')
+    launched.child.exit(null, 'SIGKILL')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    launched.result.owner.cleanup?.()
+  })
+
+  it('keeps waiting while the client still owns an active scope with no processes', async () => {
+    denyProcessGroups()
+    const spawnSync = recordingSystemctl()
+    const states = [activeUnitWithTasks('0'), unloadedUnit()]
+    const launched = launch(async () => states.shift() ?? unloadedUnit(), {
+      spawnSync: spawnSync as never,
+    })
+    launched.result.owner.signal('SIGTERM')
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(spawnSync.mock.calls.map(call => call[1]?.[1])).toEqual(['kill'])
+    launched.result.owner.cleanup?.()
+  })
+
+  it('keeps waiting for an active empty scope no termination has requested', async () => {
+    const states = [activeUnitWithTasks('0'), unloadedUnit()]
+    const launched = launch(async () => states.shift() ?? unloadedUnit())
+    consumeLinuxLaunchRequest(launched.requestPath)
+    launched.child.exit(0, null)
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: 0, signal: null })
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(launched.spawnSync).not.toHaveBeenCalled()
+    launched.result.owner.cleanup?.()
+  })
+
+  it('rechecks an empty count queried before the launcher exits', async () => {
+    denyProcessGroups()
+    const firstQuery = Promise.withResolvers<ReturnType<typeof activeUnitWithTasks>>()
+    const query = vi.fn()
+      .mockImplementationOnce(async () => await firstQuery.promise)
+      .mockResolvedValueOnce(activeUnitWithTasks('1'))
+      .mockResolvedValueOnce(unloadedUnit())
+    const launched = launch(query, { sleep: async () => {} })
+    launched.result.owner.signal('SIGTERM')
+    const waiting = launched.result.owner.waitForExit()
+    expect(query).toHaveBeenCalledOnce()
+    launched.child.exit(null, 'SIGTERM')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+    firstQuery.resolve(activeUnitWithTasks('0'))
+    await expect(waiting).resolves.toBeUndefined()
+    expect(query).toHaveBeenCalledTimes(3)
+    expect(launched.spawnSync).toHaveBeenCalledOnce()
+    launched.result.owner.cleanup?.()
+  })
+
+  it.each([
+    ['missing', activeUnit()],
+    ['unset', activeUnitWithTasks('[not set]')],
+    ['nonzero', activeUnitWithTasks('1')],
+  ] as const)('keeps waiting after cancellation when the process count is %s', async (_name, state) => {
+    denyProcessGroups()
+    const states = [state, unloadedUnit()]
+    const launched = launch(async () => states.shift() ?? unloadedUnit())
+    launched.result.owner.signal('SIGKILL')
+    launched.child.exit(null, 'SIGKILL')
+    await expect(launched.result.direct).resolves.toEqual({ exitCode: null, signal: 'SIGKILL' })
+    await expect(launched.result.owner.waitForExit()).resolves.toBeUndefined()
+    expect(launched.spawnSync).toHaveBeenCalledOnce()
+    launched.result.owner.cleanup?.()
   })
 
   it('keeps signal failures scoped to final kill proof and stays idempotent after stop', async () => {
@@ -539,6 +689,27 @@ describe('Linux PTY bootstrap reuse', () => {
     cols: 80,
     graceMs: 100,
   } as const
+
+  it.each(['SIGTERM', 'SIGKILL'] as const)('preserves %s before bootstrap consumption and joins the empty scope', async (signal) => {
+    const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' }, {
+      spawnSync: vi.fn(() => missingUnit()) as never,
+      systemctlQuery: async () => missingUnit(),
+    })
+    const requestPath = scope.env[SUBPROCESS_RUNNER_ENV]
+    if (requestPath === undefined) throw new Error('missing PTY request')
+    directories.push(linuxLaunchFilesFromLocator(requestPath).directory)
+    let running = true
+    const kill = vi.fn()
+    const owner = scope.bindOwner({ running: () => running, signal: kill })
+    owner.signal(signal)
+    expect(kill).toHaveBeenCalledExactlyOnceWith(signal)
+    running = false
+    expect(existsSync(requestPath)).toBe(true)
+    expect(scope.resolveOutcome({ exitCode: 0, signal })).toEqual({ exitCode: 0, signal })
+    await expect(owner.waitForExit()).resolves.toBeUndefined()
+    scope.cleanup()
+    expect(existsSync(linuxLaunchFilesFromLocator(requestPath).directory)).toBe(false)
+  })
 
   it('uses the same request/bootstrap, preserves argv, and cleans after owner settlement', async () => {
     const scope = prepareLinuxTerminalScope(terminalSpec, { TARGET: 'yes' }, {

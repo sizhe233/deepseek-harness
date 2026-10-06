@@ -1,19 +1,27 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Hmr from '@deepseek-ai/cordis-plugin-hmr'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
+import { watch, type FSWatcher } from 'chokidar'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('chokidar', async (importOriginal) => {
+  const native = await importOriginal<typeof import('chokidar')>()
+  return { ...native, watch: vi.fn(native.watch) }
+})
 
 /** Every per-test tree root, removed once the booted watcher has been disposed. */
 const hmrRoots: string[] = []
+const hmrContexts: Context[] = []
 
 async function bootHmr(dir: string, root: string[] = [], usePolling?: boolean): Promise<Context> {
   const ctx = new Context()
+  hmrContexts.push(ctx)
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   await ctx.plugin(Loader)
   await ctx.plugin(Timer)
@@ -26,6 +34,12 @@ async function bootHmr(dir: string, root: string[] = [], usePolling?: boolean): 
   return ctx
 }
 
+function latestWatcher(): FSWatcher {
+  const result = vi.mocked(watch).mock.results.at(-1)
+  if (result?.type !== 'return') throw new Error('HMR did not open a watcher')
+  return result.value
+}
+
 async function eventually(test: () => boolean, message: string): Promise<void> {
   const deadline = Date.now() + 10_000
   while (!test()) {
@@ -35,8 +49,23 @@ async function eventually(test: () => boolean, message: string): Promise<void> {
 }
 
 describe('HMR exact config paths', () => {
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(hmrContexts.splice(0).map(ctx => ctx.fiber.dispose()))
+    vi.mocked(watch).mockClear()
     for (const root of hmrRoots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  it.each([undefined, false, true])('preserves platform and requested polling for exact paths (%s)', async (usePolling) => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-backend-'))
+    hmrRoots.push(dir)
+    const ctx = await bootHmr(dir, [], usePolling)
+    try {
+      await ctx.hmr.registerConfig(join(dir, 'plugins.yml'), () => {})
+      const watcher = latestWatcher()
+      expect(watcher.options.usePolling).toBe(process.platform === 'darwin' || usePolling === true)
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('observes module changes when its watch base is a filesystem alias', { timeout: 30_000 }, async () => {
@@ -159,10 +188,16 @@ describe('HMR exact config paths', () => {
         active -= 1
       })
       await started.promise
+      const watcher = latestWatcher()
+      const delivered = Promise.withResolvers<undefined>()
+      const watchFilename = await realpath(filename)
+      // HMR registered its handler first, so delivery here acknowledges that
+      // the second refresh is queued behind the blocked first callback.
+      watcher.on('change', (path) => {
+        if (resolve(path) === watchFilename) delivered.resolve(undefined)
+      })
       writeFileSync(filename, 'two')
-      // Chokidar coalesces atomic writes for 100 ms by default. Wait beyond
-      // that window so this edit is queued before registration disposal.
-      await new Promise(resolve => setTimeout(resolve, 250))
+      await delivered.promise
 
       let disposed = false
       const disposal = dispose().then(() => { disposed = true })

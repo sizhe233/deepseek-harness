@@ -34,6 +34,7 @@ test('every built bundle imports under Node', (context) => {
 // The hook replaces only the chosen bundle; shared build artifacts stay intact.
 test.each([
   ['expected-css', 0, 'baselineExempt=1 unexpectedBaselineFailure=0'],
+  ['expected-primitives-css', 0, 'baselineExempt=1 unexpectedBaselineFailure=0'],
   ['error', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['other-css', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['other-code', 1, '- UNEXPECTED BASELINE FAILURE'],
@@ -41,7 +42,9 @@ test.each([
 ] as const)('classifies dockkit import: %s', (mode, status, finding) => {
   const root = new URL('../../../../../', import.meta.url)
   const bundle = 'packages/client/ui-dockkit/lib/index.js'
-  const css = fileURLToPath(new URL('packages/client/ui-dockkit/lib/components/dockkit.module.css', root))
+  const css = fileURLToPath(new URL(mode === 'expected-primitives-css'
+    ? 'packages/client/ui-primitives/src/StateDot.module.css'
+    : 'packages/client/ui-dockkit/lib/components/dockkit.module.css', root))
   const message = mode === 'error'
     ? 'dockkit-negative-control'
     : `Unknown file extension ".css" for ${mode === 'other-css' ? `${css}.other.css` : css}`
