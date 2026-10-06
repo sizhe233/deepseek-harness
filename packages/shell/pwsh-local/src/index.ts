@@ -123,6 +123,10 @@ export function assertServiceablePwshConfig(config: Config): void {
 export class PwshLocalExecutor extends ShellExecutor {
   static inject = ['subprocess']
 
+  override get commandSyntax(): 'powershell' {
+    return 'powershell'
+  }
+
   static Config = z.object({
     cwd: z.string().volatile(),
     timeoutMs: z.number().default(120_000).volatile(),

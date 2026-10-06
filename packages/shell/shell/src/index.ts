@@ -67,6 +67,15 @@ export abstract class ShellExecutor extends Service {
   }
 
   /**
+   * Command language accepted by this provider, independent of the Host platform.
+   * Bash-compatible providers inherit POSIX syntax; PowerShell providers override it.
+   * @returns the syntax consumers use when constructing command strings.
+   */
+  get commandSyntax(): 'posix' | 'powershell' {
+    return 'posix'
+  }
+
+  /**
    * The sandbox mode this executor applies by default, or `undefined` when it
    * does not sandbox commands.
    * @returns the configured default sandbox mode, when supported.

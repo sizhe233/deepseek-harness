@@ -108,6 +108,11 @@ async function readUntil(proc: ShellProcess, expected: string, timeoutMs: number
 }
 
 describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => {
+  it('reports PowerShell command syntax independently of the Host platform', async () => {
+    const { bash } = await setup()
+    expect(bash.commandSyntax).toBe('powershell')
+  })
+
   it('trusts an explicit configured path verbatim', () => {
     expect(resolvePwshPath('C:\\custom\\pwsh.exe')).toBe('C:\\custom\\pwsh.exe')
     expect(resolvePwshPath('pwsh')).toBe('pwsh')

@@ -56,6 +56,7 @@ describe('ShellExecutor service seam', () => {
   it('a concrete subclass registers as ctx.shell and serves the abstract API', async () => {
     const ctx = new Context()
     await ctx.plugin(StubExecutor)
+    expect(ctx.shell.commandSyntax).toBe('posix')
     const spec = ctx.shell.resolve({ command: 'echo hi' })
     expect(spec).toEqual({ command: 'echo hi', workdir: '/stub', timeoutMs: 1000, onExpiry: 'kill', stdoutMaxBytes: 64_000, sandboxPolicy: undefined })
 

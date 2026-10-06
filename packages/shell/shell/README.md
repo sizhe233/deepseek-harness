@@ -49,6 +49,8 @@ The seam has two expiry policies and no hand-over protocol. `'kill'` stops the c
 
 ### Requests and resolved specs
 
+Trusted plugins construct commands for `ctx.shell.commandSyntax`, which reports `posix` or `powershell` from the mounted provider rather than the Host operating system. Bash-compatible providers inherit `posix`; PowerShell providers override it. This fact does not quote arguments, authorize effects, or change sandbox and deadline handling.
+
 Every execution starts from a `ShellExecRequest` with optional fields; the executor's `resolve()` turns it into a fully-resolved `ShellExecSpec` with explicit defaults and caps before anything runs. This request/spec split is the repository's template for explicit resolution at package boundaries: callers never rely on hidden defaults inside `execute`. `resolve()` fills the working directory, timeout, and expiry policy (default `'kill'`) from the executor's configuration and the request, caps per-call overrides, and carries optional inputs — `stdin`, ordinary `env`, and the trusted `DSH_*` snapshot — through verbatim.
 
 ### Choosing and composing an executor

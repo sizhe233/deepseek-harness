@@ -49,6 +49,8 @@ seam 只有两种到期策略，没有任何移交协议。`'kill'` 在 deadline
 
 ### 请求与已解析 spec
 
+受信任插件按 `ctx.shell.commandSyntax` 构造命令；该属性由已挂载的提供方报告 `posix` 或 `powershell`，不按宿主操作系统推断。兼容 Bash 的提供方继承 `posix`，PowerShell 提供方覆盖它。该属性不负责参数引用、效果授权，也不改变沙箱与 deadline 处理。
+
 每次执行都从带可选字段的 `ShellExecRequest` 开始；执行器的 `resolve()` 在任何东西运行之前，把它变成默认值与上限都已显式填好的 `ShellExecSpec`。这一请求/spec 拆分正是仓库在包边界显式解析的模板：调用方绝不依赖 `execute` 内部隐藏的默认值。`resolve()` 从执行器配置与请求填充工作目录、超时与到期策略（默认 `'kill'`）、对每次调用的覆盖值设上限，并按原样携带可选输入——`stdin`、普通 `env` 与受信任的 `DSH_*` 快照。
 
 ### 选择并组合一个执行器

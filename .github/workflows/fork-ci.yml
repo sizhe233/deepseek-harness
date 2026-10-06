@@ -184,6 +184,10 @@ jobs:
           node-version: '24'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Diagnose macOS PowerShell input modes
+        if: ${{ runner.os == 'macOS' }}
+        timeout-minutes: 2
+        run: node workbench/diagnose-native-pwsh.mjs
       - run: pnpm run build:native-system
       - name: Check native watcher and terminal compatibility
         run: >-
