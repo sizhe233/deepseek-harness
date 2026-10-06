@@ -16,7 +16,7 @@ Status: implemented
 
 [真实 shell 测试](../../../../packages/terminal/terminal-bash/tests/local.spec.ts) 接受两种受支持的就绪层级，拒绝超时和退出结算，并在 scrollback 中观察格式化的子进程输出，证明环境持久化、当前目录与凭据清理。预期文本不出现在提交的命令中。私有文件屏障将执行阻塞到静默结算之后，只有下一次 send 结算后才释放，证明后续输出仍可被观察，而不延长生产时序。会话释放先于私有测试目录删除。
 
-编码探针同样观察子进程产生的 scrollback：两个编码名称都必须为 `utf-8`，仅含 ASCII 字符的字符码命令必须解码为 `中文 encoding-ok`。其文件屏障变体确认每条命令已进入执行，将输出阻塞至 `inferred_idle` 结算，验证预期文本尚未出现，然后释放执行。两个预期文本均不出现在提交的命令中。关闭会话必须移除其注册表项，并确保进程已停止。
+编码探针同样观察子进程产生的 scrollback：两个编码名称都必须为 `utf-8`，仅含 ASCII 字符的字符码命令必须解码为 `中文 encoding-ok`。一个仅含 ASCII 字符的命令产生两个预期文本，避免将前一条命令的最终提示符归因于后续命令。其文件屏障变体确认命令已进入执行，将两个输出阻塞至 send 结算之后，验证两个预期文本尚未出现，然后释放执行。两种受支持的就绪层级都可能先于命令进入执行；文件屏障独立证明输出仍待产生。两个预期文本均不出现在提交的命令中。关闭会话必须移除其注册表项，并确保进程已停止。
 
 [单次](../../../../snapshots/session/pwsh-tool-turn/snapshot.yml)与[持久](../../../../snapshots/session/persistent-pwsh-tool-turn/snapshot.yml) fixture 及其拥有的 header pin 使用真实 PowerShell 可执行文件和已录制模型回复，经构建后的 headless profile 刷新。策略事件和可用工具保留在预期中；工具结果与最终回复仍为 `PWSH_OK` 和 `DONE`。
 
@@ -28,4 +28,4 @@ Status: implemented
 
 ## Consequences
 
-文件屏障用例能确定性地拒绝仅接受精确就绪的断言，修复后的测试则在推断结算之后证明命令效果。编码变体能拒绝旧的仅检查 viewport 的断言、ASCII 启动编码设置与非 UTF-8 解码器。此证据需要真实 PowerShell；本地跳过不算验证。聚焦的构建后回放同时检查 Session 输出与 header pin，不改动 normalizer。生产终端行为、时序配置与 CI 路由均不变。
+文件屏障用例能确定性地拒绝仅接受精确就绪的断言，修复后的测试则在推断结算之后证明命令效果。编码变体能拒绝旧的仅检查 viewport 的断言、ASCII 启动编码设置与非 UTF-8 解码器。真实 `Read-Host` 对照证明，`stdin_read` 可以在进入输出屏障前结算；就绪归因与编码保证相互独立。此证据需要真实 PowerShell；本地跳过不算验证。聚焦的构建后回放同时检查 Session 输出与 header pin，不改动 normalizer。生产终端行为、时序配置与 CI 路由均不变。

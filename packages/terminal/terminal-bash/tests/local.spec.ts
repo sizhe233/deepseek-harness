@@ -378,41 +378,32 @@ describe.skipIf(!hasPwsh)('terminal-bash pwsh real shell', () => {
     const pid = created.pid ?? 0
     expect(pid).toBeGreaterThan(0)
     const read = () => ctx.terminals.read(agent, created.sessionId, { offset: 0, count: 100 }).text
-    // Neither expected token occurs in the submitted ASCII-only commands:
+    // Neither expected token occurs in the submitted ASCII-only command:
     // only decoded child output can prove the bootstrap pin and byte encoding.
-    const probes = [
-      {
-        name: 'pinned',
-        text: '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName',
-        expected: 'console=utf-8 out=utf-8',
-      },
-      {
-        name: 'decoded',
-        text: "[Console]::Write([char]0x4E2D + [char]0x6587 + ' encoding-ok')",
-        expected: '中文 encoding-ok',
-      },
-    ]
-    for (const probe of probes) {
-      const enteredFile = join(root, `${probe.name}-entered`)
-      const releaseFile = join(root, `${probe.name}-release`)
-      const barrier = holdOutput
-        ? `[IO.File]::WriteAllText('${enteredFile.replaceAll("'", "''")}', ''); while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
-        : ''
-      const command = barrier + probe.text
-      expect(command).not.toContain(probe.expected)
-      const sent = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
-      const result = await sent.done
-      expect(['stdin_read', 'inferred_idle']).toContain(result.waitReason)
-      if (holdOutput) {
-        await expect.poll(() => existsSync(enteredFile), { timeout: 8_000 }).toBe(true)
-        expect(result.waitReason).toBe('inferred_idle')
-        expect(result.viewport).not.toContain(probe.expected)
-        expect(read()).not.toContain(probe.expected)
-        writeFileSync(releaseFile, '')
+    const expected = ['console=utf-8 out=utf-8', '中文 encoding-ok']
+    const enteredFile = join(root, 'encoding-entered')
+    const releaseFile = join(root, 'encoding-release')
+    const barrier = holdOutput
+      ? `[IO.File]::WriteAllText('${enteredFile.replaceAll("'", "''")}', ''); while (-not [IO.File]::Exists('${releaseFile.replaceAll("'", "''")}')) { [Threading.Thread]::Sleep(10) }; `
+      : ''
+    const command = barrier
+      + '"console=" + [Console]::OutputEncoding.WebName + " out=" + $OutputEncoding.WebName; '
+      + "[Console]::Write([char]0x4E2D + [char]0x6587 + ' encoding-ok')"
+    for (const token of expected) expect(command).not.toContain(token)
+    const sent = ctx.terminals.startSend(agent, created.sessionId, { text: command, submit: true })
+    const result = await sent.done
+    expect(['stdin_read', 'inferred_idle']).toContain(result.waitReason)
+    if (holdOutput) {
+      // Readiness can precede command entry; the barrier independently holds
+      // both outputs until after the send has stopped collecting bytes.
+      await expect.poll(() => existsSync(enteredFile), { timeout: 8_000 }).toBe(true)
+      for (const token of expected) {
+        expect(result.viewport).not.toContain(token)
+        expect(read()).not.toContain(token)
       }
-      // A settled send stops collecting bytes; later output remains in scrollback.
-      await expect.poll(read, { timeout: 8_000 }).toContain(probe.expected)
+      writeFileSync(releaseFile, '')
     }
+    for (const token of expected) await expect.poll(read, { timeout: 8_000 }).toContain(token)
     expect(await ctx.terminals.kill(agent, created.sessionId)).toBe(true)
     expect(ctx.terminals.list(agent)).toEqual([])
     expect(processIsRunning(pid)).toBe(false)
