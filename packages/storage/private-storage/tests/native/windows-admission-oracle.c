@@ -44,7 +44,7 @@ typedef struct {
 } FACTS;
 static const GUID fixtureReparseGuid = {0x4e65b2a1, 0x7c39, 0x4d0e, {0xb3, 0x74, 0x1e, 0x63, 0xc8, 0x7d, 0xa2, 0x90}};
 
-static const char *boolean(BOOL value) { return value ? "true" : "false"; }
+static const char *json_boolean(BOOL value) { return value ? "true" : "false"; }
 static void hex(const void *data, size_t length) {
   const BYTE *bytes = (const BYTE *)data;
   size_t i;
@@ -155,7 +155,7 @@ static void facts_json(const FACTS *facts) {
   hex(facts->id.FileId.Identifier, sizeof(facts->id.FileId.Identifier));
   printf("},\"descriptorHex\":"); hex(facts->descriptor, facts->descriptorBytes);
   printf(",\"directory\":%s,\"links\":%lu,\"sizeBytes\":\"%lld\",\"attributes\":%lu,\"reparseTag\":%lu,\"aces\":[",
-    boolean(facts->standard.Directory), (unsigned long)facts->standard.NumberOfLinks,
+    json_boolean(facts->standard.Directory), (unsigned long)facts->standard.NumberOfLinks,
     (long long)facts->standard.EndOfFile.QuadPart, (unsigned long)facts->tag.FileAttributes, (unsigned long)facts->tag.ReparseTag);
   if (GetSecurityDescriptorDacl(facts->descriptor, &present, &acl, &defaulted) && present && acl) {
     for (i = 0; i < acl->AceCount; ++i) {
@@ -192,7 +192,7 @@ static int bootstrap(const wchar_t *path) {
   status = completed(initial, handle, &iosb);
   printf("{\"complete\":true,\"diagnosticOnly\":true,\"name\":"); text(name);
   printf(",\"objectAttributes\":4160,\"desiredAccess\":1179809,\"shareAccess\":3,\"createOptions\":2097185,\"initialStatus\":%ld,\"nativeStatus\":%ld,\"opened\":%s}\n",
-    (long)initial, (long)status, boolean(status >= 0 && handle && handle != INVALID_HANDLE_VALUE));
+    (long)initial, (long)status, json_boolean(status >= 0 && handle && handle != INVALID_HANDLE_VALUE));
   if (handle && handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
   return 0;
 }
@@ -222,13 +222,13 @@ static int inventory(void) {
     free(drives); free(privileges); CloseHandle(token); return failure("inventory-drives", error, FALSE);
   }
   printf("{\"complete\":true,\"readOnly\":true,\"inventoryScope\":\"mounted-drive-letters\",\"privilegesEnabled\":false,\"elevated\":%s,\"restricted\":%s,\"threadTokenPresent\":%s,\"threadTokenError\":%lu,\"privileges\":[",
-    boolean(elevation.TokenIsElevated), boolean(IsTokenRestricted(token)), boolean(threadPresent), (unsigned long)threadError);
+    json_boolean(elevation.TokenIsElevated), json_boolean(IsTokenRestricted(token)), json_boolean(threadPresent), (unsigned long)threadError);
   for (i = 0; i < privileges->PrivilegeCount; ++i) {
     wchar_t name[256]; DWORD length = 256;
     BOOL named = LookupPrivilegeNameW(NULL, &privileges->Privileges[i].Luid, name, &length);
     printf("%s{\"name\":", i ? "," : ""); if (named) text(name); else printf("null");
     printf(",\"attributes\":%lu,\"enabled\":%s}", (unsigned long)privileges->Privileges[i].Attributes,
-      boolean(privileges->Privileges[i].Attributes & SE_PRIVILEGE_ENABLED));
+      json_boolean(privileges->Privileges[i].Attributes & SE_PRIVILEGE_ENABLED));
   }
   /* Suppress media-error UI on this thread only; no machine or drive setting changes. */
   errorModeChanged = SetThreadErrorMode(SEM_FAILCRITICALERRORS, &previousErrorMode);
@@ -247,11 +247,11 @@ static int inventory(void) {
     }
     printf("%s{\"root\":", first ? "" : ","); text(drive); first = FALSE;
     printf(",\"driveType\":%u,\"metadataAttempted\":%s,\"metadataAvailable\":%s,\"win32Error\":%lu,\"filesystem\":",
-      (unsigned)type, boolean(metadataAttempted), boolean(available), (unsigned long)error);
+      (unsigned)type, json_boolean(metadataAttempted), json_boolean(available), (unsigned long)error);
     text(filesystem);
     printf(",\"flags\":%lu,\"readOnly\":%s,\"persistentAcls\":%s,\"reparsePoints\":%s,\"remote\":%s",
-      (unsigned long)flags, boolean(flags & FILE_READ_ONLY_VOLUME), boolean(flags & FILE_PERSISTENT_ACLS),
-      boolean(flags & FILE_SUPPORTS_REPARSE_POINTS), boolean(type == DRIVE_REMOTE));
+      (unsigned long)flags, json_boolean(flags & FILE_READ_ONLY_VOLUME), json_boolean(flags & FILE_PERSISTENT_ACLS),
+      json_boolean(flags & FILE_SUPPORTS_REPARSE_POINTS), json_boolean(type == DRIVE_REMOTE));
     if (metadataAttempted) {
       if (GetDiskFreeSpaceExW(drive, &freeBytes, &total, &totalFree))
         printf(",\"availableBytes\":\"%llu\",\"totalBytes\":\"%llu\"", (unsigned long long)freeBytes.QuadPart, (unsigned long long)total.QuadPart);
@@ -312,7 +312,7 @@ static int malformed(const wchar_t *path) {
   unchanged = before.descriptorBytes == after.descriptorBytes &&
     memcmp(before.descriptor, after.descriptor, before.descriptorBytes) == 0 && memcmp(&before.id, &after.id, sizeof(before.id)) == 0;
   printf("{\"complete\":true,\"submission\":\"NtSetSecurityObject\",\"aclRevisionStatus\":%ld,\"descriptorRevisionStatus\":%ld,\"unchanged\":%s,\"before\":",
-    (long)aclStatus, (long)revisionStatus, boolean(unchanged)); facts_json(&before); printf(",\"after\":"); facts_json(&after); printf("}\n");
+    (long)aclStatus, (long)revisionStatus, json_boolean(unchanged)); facts_json(&before); printf(",\"after\":"); facts_json(&after); printf("}\n");
   LocalFree(before.descriptor); LocalFree(after.descriptor); return 0;
 }
 static int short_name(const wchar_t *path) {
@@ -375,7 +375,7 @@ static int case_sensitive(const wchar_t *path) {
   }
   CloseHandle(lower); CloseHandle(upper);
   printf("{\"complete\":true,\"flags\":%lu,\"setStatus\":%ld,\"queryStatus\":%ld,\"distinctFileIds\":%s,\"privilegesEnabled\":false}\n",
-    (unsigned long)observed, (long)status, (long)queryStatus, boolean(memcmp(&lowerId, &upperId, sizeof(lowerId)) != 0)); return 0;
+    (unsigned long)observed, (long)status, (long)queryStatus, json_boolean(memcmp(&lowerId, &upperId, sizeof(lowerId)) != 0)); return 0;
 }
 /* Reparse buffers use documented wire offsets; user-mode SDK lacks REPARSE_DATA_BUFFER in some releases. */
 static int reparse(const wchar_t *path, const wchar_t *target, BOOL junction) {

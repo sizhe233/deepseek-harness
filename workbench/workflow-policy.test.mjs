@@ -125,6 +125,8 @@ function assertBrowserAcceptance(workflow) {
   assert.ok(!browser.run.includes('refresh'), 'CI must not rewrite goldens')
   const artifact = steps.find(step => step.name === 'Preserve browser failure evidence')
   assert.equal(artifact.if, '${{ failure() }}')
+  assert.equal(artifact.with.path, '.artifacts/web-e2e-*', 'browser diagnostics must remain restricted')
+  assert.equal(artifact.with['include-hidden-files'], true, 'browser diagnostics are inside .artifacts')
   for (const script of ['pnpm run typecheck', 'pnpm run lint:contracts-ready', 'pnpm run doc-sync']) assert.ok(steps.some(step => step.run === script), `missing static acceptance: ${script}`)
 }
 test('candidate CI requires pinned strict browser replay and static acceptance', () => {
@@ -136,6 +138,12 @@ test('candidate CI requires pinned strict browser replay and static acceptance',
   const missing = structuredClone(workflow)
   missing.jobs['linux-build-and-test'].steps = missing.jobs['linux-build-and-test'].steps.filter(step => step.name !== 'Replay settings and plan browser acceptance')
   assert.throws(() => assertBrowserAcceptance(missing), /strict browser replay required/)
+  const hidden = structuredClone(workflow)
+  delete hidden.jobs['linux-build-and-test'].steps.find(step => step.name === 'Preserve browser failure evidence').with['include-hidden-files']
+  assert.throws(() => assertBrowserAcceptance(hidden), /browser diagnostics are inside .artifacts/)
+  const broad = structuredClone(workflow)
+  broad.jobs['linux-build-and-test'].steps.find(step => step.name === 'Preserve browser failure evidence').with.path = '.artifacts/**'
+  assert.throws(() => assertBrowserAcceptance(broad), /browser diagnostics must remain restricted/)
 })
 
 test('each native runner explicitly requires real PowerShell PTY cases', () => {

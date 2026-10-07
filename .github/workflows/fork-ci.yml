@@ -197,6 +197,7 @@ jobs:
         with:
           name: browser-failure-${{ env.CANDIDATE_SHA }}
           path: .artifacts/web-e2e-*
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 14
 

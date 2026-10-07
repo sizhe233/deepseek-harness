@@ -96,7 +96,7 @@ static void darwin_ancestor_acl_probe(int parent, const uuid_t owner) {
       require(acl_set_tag_type(entry, deny ? ACL_EXTENDED_DENY : ACL_EXTENDED_ALLOW) == 0, "set ancestor ACL tag");
       require(acl_set_qualifier(entry, owner) == 0, "set ancestor ACL owner");
       require(acl_get_permset(entry, &permissions) == 0 &&
-              acl_add_perm(permissions, deny ? ACL_WRITE_OWNER : ACL_READ_DATA) == 0, "set ancestor ACL permission");
+              acl_add_perm(permissions, deny ? ACL_CHANGE_OWNER : ACL_READ_DATA) == 0, "set ancestor ACL permission");
     }
     require(acl_valid(acl) == 0, "validate ancestor fixture ACL");
     require(acl_set_fd_np(fd, acl, ACL_TYPE_EXTENDED) == 0, "set owned ancestor ACL");

@@ -6,7 +6,7 @@ These fixtures are test-only, generic and synthetic. They never enable privilege
 
 ## Build the SDK oracle
 
-Use the existing public Windows x64 runner, native PowerShell, Node 24 and the installed Microsoft C compiler. No WDK or toolchain download is required.
+Use the existing public Windows x64 runner, native PowerShell, Node 24 and the installed Microsoft C compiler. No WDK or toolchain download is required. Fixture-local JSON helpers avoid Windows SDK type names, including the RPC `boolean` typedef.
 
 ```powershell
 $oracleDirectory = Join-Path $env:RUNNER_TEMP 'private-storage-oracle'

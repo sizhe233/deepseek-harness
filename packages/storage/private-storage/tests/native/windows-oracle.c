@@ -28,7 +28,7 @@ static void hex(const void *value, size_t length) {
   putchar('"');
 }
 
-static const char *boolean(BOOL value) { return value ? "true" : "false"; }
+static const char *json_boolean(BOOL value) { return value ? "true" : "false"; }
 
 static void json_string(const char *value) {
   const unsigned char *p = (const unsigned char *)value;
@@ -65,7 +65,7 @@ static FARPROC native_proc(const char *name) {
 
 static int abi(void) {
   printf("{\"complete\":true,\"pointerBytes\":%zu,\"ntstatusBytes\":%zu,\"ntstatusSigned\":%s,\"structures\":{",
-    sizeof(void *), sizeof(NTSTATUS), boolean((NTSTATUS)0xc0000022L < 0));
+    sizeof(void *), sizeof(NTSTATUS), json_boolean((NTSTATUS)0xc0000022L < 0));
   START_LAYOUT(OBJECT_ATTRIBUTES); MEMBER(OBJECT_ATTRIBUTES, Length); MEMBER(OBJECT_ATTRIBUTES, RootDirectory);
   MEMBER(OBJECT_ATTRIBUTES, ObjectName); MEMBER(OBJECT_ATTRIBUTES, Attributes);
   MEMBER(OBJECT_ATTRIBUTES, SecurityDescriptor); MEMBER(OBJECT_ATTRIBUTES, SecurityQualityOfService); END_LAYOUT();
@@ -145,7 +145,7 @@ static int token_facts(void) {
   printf(",\"defaultOwnerSid\":"); hex(owner->Owner, GetLengthSid(owner->Owner));
   printf(",\"restricted\":%s,\"elevated\":%s,\"tokenType\":%u,\"threadTokenPresent\":%s,\"threadTokenError\":%lu,"
     "\"handleCount\":%lu,\"osBuild\":%lu,\"osMajor\":%lu,\"osMinor\":%lu}\n",
-    boolean(IsTokenRestricted(token)), boolean(elevation.TokenIsElevated), (unsigned)type, boolean(threadPresent),
+    json_boolean(IsTokenRestricted(token)), json_boolean(elevation.TokenIsElevated), (unsigned)type, json_boolean(threadPresent),
     (unsigned long)threadError, (unsigned long)handles, (unsigned long)version.dwBuildNumber,
     (unsigned long)version.dwMajorVersion, (unsigned long)version.dwMinorVersion);
   free(user); free(owner);
@@ -262,7 +262,7 @@ cleanup:
   if (error) { free(owner); free(subjectUser); free(restrictions); return failure(operation, error, blocked); }
   if (controlStatus != 0 || controlError || controlBytes != 1) {
     printf("{\"complete\":false,\"status\":\"blocked\",\"operation\":\"token readable-control prerequisite\",\"nativeStatus\":%ld,\"win32Error\":%lu,\"threadRestored\":%s}\n",
-      (long)controlStatus, (unsigned long)controlError, boolean(restored));
+      (long)controlStatus, (unsigned long)controlError, json_boolean(restored));
     free(owner); free(subjectUser); free(restrictions); return 3;
   }
   printf("{\"complete\":true,\"subject\":\"%s\",\"ownerSid\":", anonymousMode ? "anonymous" : restrictedMode ? "same-user-restricted" : "ordinary");
@@ -271,8 +271,8 @@ cleanup:
   if (anonymousMode) hex(anonymous, anonymousBytes); else hex(owner->User.Sid, GetLengthSid(owner->User.Sid));
   printf(",\"sameUser\":%s,\"restricted\":%s,\"threadTokenError\":%lu,\"ordinaryPrivateReadable\":true,\"controlStatus\":%ld,\"controlReadBytes\":%lu,"
     "\"privateStatus\":%ld,\"privateReadError\":%lu,\"privateReadBytes\":%lu,\"threadRestored\":%s,\"privilegesEnabled\":false}\n",
-    boolean(sameUser), boolean(restricted), (unsigned long)threadError, (long)controlStatus, (unsigned long)controlBytes,
-    (long)privateStatus, (unsigned long)privateError, (unsigned long)privateBytes, boolean(restored));
+    json_boolean(sameUser), json_boolean(restricted), (unsigned long)threadError, (long)controlStatus, (unsigned long)controlBytes,
+    (long)privateStatus, (unsigned long)privateError, (unsigned long)privateBytes, json_boolean(restored));
   free(owner); free(subjectUser); free(restrictions);
   return 0;
 }
@@ -360,7 +360,7 @@ static int inspect(const wchar_t *path, BOOL descriptorOnly) {
   printf(",\"ownerSidText\":"); json_string(ownerText);
   printf(",\"descriptorHex\":"); hex(descriptor, descriptorLength);
   printf(",\"descriptorControl\":%u,\"daclPresent\":%s,\"daclNull\":%s,\"daclProtected\":%s,\"aces\":[",
-    (unsigned)control, boolean(present), boolean(acl == NULL), boolean(control & SE_DACL_PROTECTED));
+    (unsigned)control, json_boolean(present), json_boolean(acl == NULL), json_boolean(control & SE_DACL_PROTECTED));
   if (acl) for (i = 0; i < acl->AceCount; ++i) {
     ACE_HEADER *ace;
     GetAce(acl, i, (void **)&ace);
@@ -380,12 +380,12 @@ static int inspect(const wchar_t *path, BOOL descriptorOnly) {
   }
   printf("],\"directory\":%s,\"links\":%lu,\"sizeBytes\":\"%lld\",\"attributes\":%lu,\"reparseTag\":%lu,"
     "\"fileType\":%lu,\"mode\":%lu,\"modeScope\":\"independently-opened-oracle-handle\",\"modeStatus\":%ld,"
-    "\"filesystem\":", boolean(standard.Directory), (unsigned long)standard.NumberOfLinks, (long long)standard.EndOfFile.QuadPart,
+    "\"filesystem\":", json_boolean(standard.Directory), (unsigned long)standard.NumberOfLinks, (long long)standard.EndOfFile.QuadPart,
     (unsigned long)basic.FileAttributes, (unsigned long)tag.ReparseTag, (unsigned long)fileType, (unsigned long)mode.Mode, (long)modeStatus);
   json_string(filesystemAscii);
   printf(",\"filesystemFlags\":%lu,\"maximumComponentLength\":%lu,\"deviceType\":%lu,\"deviceCharacteristics\":%lu,"
     "\"remote\":%s,\"deviceStatus\":%ld}\n", (unsigned long)flags, (unsigned long)maximumComponent, (unsigned long)device.DeviceType,
-    (unsigned long)device.Characteristics, boolean(device.Characteristics & 0x10), (long)deviceStatus);
+    (unsigned long)device.Characteristics, json_boolean(device.Characteristics & 0x10), (long)deviceStatus);
   LocalFree(ownerText); LocalFree(descriptor);
   return CloseHandle(file) ? 0 : 1;
 }

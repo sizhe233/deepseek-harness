@@ -6,7 +6,7 @@
 
 ## 构建 SDK 校验程序
 
-使用现有公开 Windows x64 runner、原生 PowerShell、Node 24 与已安装的 Microsoft C 编译器，无需 WDK 或下载工具链。
+使用现有公开 Windows x64 runner、原生 PowerShell、Node 24 与已安装的 Microsoft C 编译器，无需 WDK 或下载工具链。 fixture 内部的 JSON 辅助函数避开 Windows SDK 类型名，包括 RPC 的 `boolean` typedef。
 
 ```powershell
 $oracleDirectory = Join-Path $env:RUNNER_TEMP 'private-storage-oracle'
