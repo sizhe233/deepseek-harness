@@ -70,7 +70,7 @@ Watched module paths use Node ESM resolution's `realpathSync()` spelling, includ
 
 The module replacement implementation derives from `@cordisjs/plugin-hmr` 1.0.15, with Harness Node-loader and lazy-config changes. Its [MIT license](LICENSE) is retained.
 
-With an explicit `profileDocuments` binding, HMR subscribes to native revision notifications instead of watching original Profile files. Replay and rescan notifications reread the admitted view; duplicate successfully applied references are skipped. Nested Includes refresh within the same held view, and failures retain the previous applied reference. Subscription cancellation is synchronous, so a reload that removes HMR does not wait on its own queue. Source observation, external import and draft watches remain the native provider’s responsibility.
+With an explicit `profileDocuments` binding, HMR subscribes to native revision notifications instead of watching original Profile files. Replay and rescan notifications reread the admitted view; duplicate successfully applied references are skipped. Nested Includes refresh within the same held view, and failures retain the previous applied reference. Subscription cancellation is synchronous, so a reload that removes HMR does not wait on its own queue. Retained callbacks and queued notifications cannot refresh documents after their subscription is cancelled. Source observation, external import and draft watches remain the native provider’s responsibility.
 
 </details>
 

@@ -72,6 +72,8 @@ Consumers that change request prefixes determine cache effects.
 
 Managed form edits use the native document authority through ConfigEditor. The logical `documentPath` is diagnostic and cannot be handed to an external editor as current content. With qualified native drafts, external opening creates an editing copy. Save it in the editor, then use **Apply saved copy**; imports compare both the exact base view and saved-byte digest before publication, and ordinary Loader reconciliation follows. Stale or invalid copies remain available for review. Native legacy import retains per-section publication receipts and rejections in the provider’s committed-state ledger, so interruption cannot duplicate a completed import. Original files are never renamed. Missing capabilities refuse safely, while ordinary forms remain usable.
 
+If publication succeeds but Loader reconciliation fails, the import error retains the publication receipt; inspect the published revision before retrying. Legacy migration recovers interrupted acknowledgements by stable section identity and refuses to mark an uncertain native publication as rejected.
+
 - Nested Includes own separate configurations and are not editable through the active profile’s form.
 - Field-level resets restore inherited values; they cannot delete a value supplied by a lower configuration layer. Unsetting an array index removes that element.
 

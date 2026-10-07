@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { bindSnapshotSelector, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GeneralSectionComponentProps } from '../src/client/GeneralSection.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
@@ -183,6 +184,56 @@ describe('SettingsDocumentAction', () => {
     await mirror.load()
     expect(await screen.findByRole('button', { name: 'Open configuration file' })).toBeTruthy()
     expect(describe).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([en, zh])('keeps saved-copy controls visible through refusal and disables gestures until retry settles', async (dictionary) => {
+    let finishImport!: (result: RemoteResult<{ imported: true }>) => void
+    let finishOpen!: (result: RemoteResult<{ opened: true }>) => void
+    const importDraft = vi.fn(() => new Promise<RemoteResult<{ imported: true }>>((resolve) => { finishImport = resolve }))
+    const openDocument = vi.fn()
+      .mockResolvedValueOnce({ ok: true, value: { opened: true, draft: { id: 'review-copy', saveBehavior: 'explicit-import' } } })
+      .mockResolvedValueOnce({ ok: true, value: { opened: true, draft: { id: 'another-copy', saveBehavior: 'explicit-import' } } })
+      .mockImplementationOnce(() => new Promise<RemoteResult<{ opened: true }>>((resolve) => { finishOpen = resolve }))
+    const controller = derivedDocumentStore({ settings: {
+      describe: () => Promise.resolve({ ok: true, value: { writable: true, hasDocument: true, namespaces: [] } }),
+      openSettingsDocument: openDocument, importSettingsDocumentDraft: importDraft,
+    } })
+    const translate: TriggerContentProps['t'] = key => (dictionary as Record<string, string>)[key] ?? key
+    render(<SettingsDocumentAction {...kit} t={translate} controller={controller} useSnapshot={bindSnapshotSelector(controller.store)} />)
+    const open = await screen.findByRole('button', { name: dictionary.openDocument })
+    fireEvent.click(open)
+    const apply = await screen.findByRole('button', { name: dictionary.importDocument })
+    expect(screen.getByText(dictionary['importDocument.hint'])).toBeTruthy()
+    fireEvent.click(apply)
+    expect(apply.hasAttribute('disabled')).toBe(true)
+    expect(open.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(apply)
+    fireEvent.click(open)
+    expect(importDraft).toHaveBeenCalledExactlyOnceWith('review-copy')
+    expect(openDocument).toHaveBeenCalledOnce()
+    await act(async () => { finishImport({ ok: false, error: new RemoteError('settings/rejected', 'private host path: stale copy', { ns: '' }) }) })
+    expect(screen.getByRole('alert').textContent).toBe(dictionary['importDocument.error'])
+    expect(screen.queryByText('private host path: stale copy')).toBeNull()
+    expect(apply.hasAttribute('disabled')).toBe(false)
+    expect(open.hasAttribute('disabled')).toBe(false)
+
+    fireEvent.click(apply)
+    expect(screen.queryByRole('alert')).toBeNull()
+    await act(async () => { finishImport({ ok: true, value: { imported: true } }) })
+    expect(screen.queryByRole('button', { name: dictionary.importDocument })).toBeNull()
+    expect(screen.queryByText(dictionary['importDocument.hint'])).toBeNull()
+    expect(open.hasAttribute('disabled')).toBe(false)
+    expect(importDraft.mock.calls).toEqual([['review-copy'], ['review-copy']])
+
+    fireEvent.click(open)
+    await screen.findByRole('button', { name: dictionary.importDocument })
+    fireEvent.click(open)
+    expect(screen.getByRole('button', { name: dictionary.importDocument }).hasAttribute('disabled')).toBe(true)
+    expect(open.hasAttribute('disabled')).toBe(true)
+    await act(async () => { finishOpen({ ok: true, value: { opened: true } }) })
+    expect(screen.queryByRole('button', { name: dictionary.importDocument })).toBeNull()
+    expect(open.hasAttribute('disabled')).toBe(false)
+    controller.dispose()
   })
 
   it('keeps the action available and reports a native-open failure', async () => {

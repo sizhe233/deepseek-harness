@@ -12,7 +12,8 @@ import {
   type ProfileDocumentWrite, type ProfileDocumentSnapshot, type ProfileDocumentViewReference,
 } from '@deepseek-ai/dsh-app-boot'
 import yaml from 'js-yaml'
-import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
+import { isMap, Scalar, visit } from 'yaml'
+import { parseManagedPatch as parse } from './managed-patch.ts'
 import { reverseOwnedConfig } from './owned-fields.ts'
 
 type Raw = Record<string, unknown>
@@ -113,14 +114,6 @@ async function rawHistory(
     ? (await documents.readView(reference)).read(path) : documents.readDocumentVersion(reference, path)
 }
 
-function parse(source: string) {
-  const document = parseDocument(source, { customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value: string) => value }] })
-  if (document.errors[0] !== undefined) throw document.errors[0]
-  if (!isSeq(document.contents)) throw new Error('Profile patch must be a YAML sequence')
-  document.contents.flow = false
-  return document
-}
-
 function stringify(document: ReturnType<typeof parse>): string {
   visit(document, { Map(_key, node) {
     if (node.items.length !== 1 || typeof node.get('__jsExpr') !== 'string') return
@@ -171,7 +164,6 @@ function inherited(documents: ProfileDocuments, path: string, view: ProfileDocum
 
 function editText(source: string, selector: Selector, next: Raw, inherited: Raw): string {
   const document = parse(source)
-  if (!isSeq(document.contents)) throw new Error('Profile patch must be a YAML sequence')
   const rows = rawRows(source)
   const indexes = rows.flatMap((row, index) => matches(row, selector) ? [index] : [])
   if (isDeepStrictEqual(next, inherited)) {

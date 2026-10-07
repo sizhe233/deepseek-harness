@@ -249,7 +249,7 @@ export class SettingsForms extends Service {
     const task = Promise.resolve().then(() => this.importLegacyDocument())
     this.migrationTask = task
     void task.catch((error: unknown) => { this.ownerContext.logger.error(error) }).finally(() => {
-      if (this.migrationTask === task) this.migrationTask = undefined
+      this.migrationTask = undefined
     })
   }
 
@@ -291,7 +291,6 @@ export class SettingsForms extends Service {
           const input = cloneJsonShaped(values)
           const receipt = await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>,
             undefined, [], operationId)
-          if (receipt === undefined) throw new Error('Native Settings migration did not return its publication receipt')
           await documents.migrations.record(identity, { key: section, operationId, status: 'published', receipt })
         } catch (error) {
           // Publication can precede a Loader or ledger failure; never label that native operation unstarted or repeat it.
@@ -490,6 +489,16 @@ export class SettingsForms extends Service {
     }, current), expectedRevision, ops.map(op => op.path))
   }
 
+  private write(
+    ns: string,
+    change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,
+    expected: number | undefined, paths: readonly (readonly string[])[], operationId: ProfileDocumentOperationId,
+  ): Promise<ProfileDocumentReceipt>
+  private write(
+    ns: string,
+    change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,
+    expected?: number, paths?: readonly (readonly string[])[],
+  ): Promise<undefined>
   private async write(
     ns: string,
     change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,

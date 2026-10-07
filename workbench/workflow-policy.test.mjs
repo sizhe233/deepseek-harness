@@ -284,9 +284,50 @@ test('candidate packaging depends on the complete same-source native prebuild ma
   assert.equal(upload.with.name, 'candidate-native-${{ matrix.package }}')
   assert.equal(upload.with.path, 'workbench-artifacts/native-output/')
   const download = workflow.jobs['linux-build-and-test'].steps.find(step => step.with?.pattern === 'candidate-native-*')
-  assert.equal(download.with.path, 'workbench-artifacts/native-candidate-inputs')
+  assert.equal(download.with.path, '${{ runner.temp }}/candidate-native-inputs')
   assert.match(readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'), /^workbench-artifacts\/$/mu)
   assert.equal(upload.with['if-no-files-found'], 'error')
   const pack = workflow.jobs['linux-build-and-test'].steps.find(step => step.name === 'Package candidate host and web artifacts')
-  assert.equal(pack.env.CANDIDATE_NATIVE_ARTIFACTS, 'workbench-artifacts/native-candidate-inputs')
+  assert.equal(pack.env.CANDIDATE_NATIVE_ARTIFACTS, download.with.path)
+})
+
+function assertCandidateUploadLayout(steps) {
+  const download = steps.find(step => step.with?.pattern === 'candidate-native-*')
+  const pack = steps.find(step => step.name === 'Package candidate host and web artifacts')
+  const stage = steps.find(step => step.name === 'Stage candidate artifacts outside the source tree')
+  const upload = steps.find(step => step.with?.name?.startsWith('host-candidate-'))
+  assert.equal(download.with.path, '${{ runner.temp }}/candidate-native-inputs', 'native inputs must stay outside the candidate upload root')
+  assert.equal(pack.env.CANDIDATE_NATIVE_ARTIFACTS, download.with.path, 'candidate packaging must consume the complete native input directory')
+  assert.ok(stage && steps.indexOf(stage) > steps.indexOf(pack) && steps.indexOf(stage) < steps.indexOf(upload), 'complete candidate staging must precede upload')
+  for (const command of ['pnpm run lint:contracts-ready', 'pnpm run doc-sync', 'pnpm run hygiene']) {
+    assert.ok(steps.findIndex(step => step.run === command) > steps.indexOf(stage), `source gate must follow artifact staging: ${command}`)
+  }
+  assert.equal(upload.with.path, '${{ runner.temp }}/host-candidate/', 'upload must preserve the commit directory and complete candidate inventory outside the source tree')
+  assert.equal(upload.with['if-no-files-found'], 'error', 'missing candidate files must fail the upload')
+}
+
+test('candidate upload preserves its commit root without including producer native inputs', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const steps = workflow.jobs['linux-build-and-test'].steps
+  assertCandidateUploadLayout(steps)
+  for (const path of ['workbench-artifacts/native-candidate-inputs', 'workbench-artifacts/']) {
+    const contaminated = structuredClone(steps)
+    contaminated.find(step => step.with?.pattern === 'candidate-native-*').with.path = path
+    assert.throws(() => assertCandidateUploadLayout(contaminated), /outside the candidate upload root/)
+  }
+  for (const path of ['workbench-artifacts/', '${{ runner.temp }}/host-candidate/${{ env.CANDIDATE_SHA }}/', '${{ runner.temp }}/host-candidate/**/*.tgz']) {
+    const narrowed = structuredClone(steps)
+    narrowed.find(step => step.with?.name?.startsWith('host-candidate-')).with.path = path
+    assert.throws(() => assertCandidateUploadLayout(narrowed), /preserve the commit directory and complete candidate inventory/)
+  }
+  const mismatched = structuredClone(steps)
+  mismatched.find(step => step.name === 'Package candidate host and web artifacts').env.CANDIDATE_NATIVE_ARTIFACTS = 'unrelated-inputs'
+  assert.throws(() => assertCandidateUploadLayout(mismatched), /consume the complete native input directory/)
+  const late = structuredClone(steps)
+  late.push(...late.splice(late.findIndex(step => step.name === 'Stage candidate artifacts outside the source tree'), 1))
+  assert.throws(() => assertCandidateUploadLayout(late), /staging must precede upload/)
+  const contaminated = structuredClone(steps)
+  const documentation = contaminated.splice(contaminated.findIndex(step => step.run === 'pnpm run doc-sync'), 1)
+  contaminated.splice(contaminated.findIndex(step => step.name === 'Stage candidate artifacts outside the source tree'), 0, ...documentation)
+  assert.throws(() => assertCandidateUploadLayout(contaminated), /source gate must follow artifact staging/)
 })

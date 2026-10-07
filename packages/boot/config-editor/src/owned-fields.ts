@@ -1,12 +1,15 @@
 /** Reverse only still-matching raw configuration fields, preserving concurrent unrelated edits. */
 import { isDeepStrictEqual } from 'node:util'
 
-type Field = { present: false } | { present: true; value: unknown }
+type PresentField = { present: true; value: unknown }
+type Field = { present: false } | PresentField
 const absent: Field = { present: false }
 const field = (record: Record<string, unknown>, key: string): Field =>
   Object.hasOwn(record, key) ? { present: true, value: record[key] } : absent
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
+function reverse(before: PresentField, after: PresentField, current: PresentField, path: string): PresentField
+function reverse(before: Field, after: Field, current: Field, path: string): Field
 function reverse(before: Field, after: Field, current: Field, path: string): Field {
   if (isDeepStrictEqual(before, after)) return current
   if (isDeepStrictEqual(current, after)) return structuredClone(before)
@@ -36,7 +39,7 @@ function reverse(before: Field, after: Field, current: Field, path: string): Fie
         }
       }
       const value = reverse({ present: true, value: b[index] }, { present: true, value: a[index] }, { present: true, value: c[index] }, `${path}[${index}]`)
-      result[index] = value.present ? value.value : undefined
+      result[index] = value.value
     }
     return { present: true, value: result }
   }

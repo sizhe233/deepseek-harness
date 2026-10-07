@@ -19,6 +19,7 @@ import * as profileOperations from '../src/profile.ts'
 import type { Profile, RuntimeResolution } from '../src/profile.ts'
 import { installRuntimeInterception } from '../src/profile-resolution/resolver.ts'
 import { documentProviderFixture } from './document-provider-fixture.ts'
+import { admitRuntimeCarrier, installRuntimeAdmissionProvider, type ManagedRuntimeAdmission } from '../src/runtime-admission.ts'
 
 const dispose = vi.hoisted(() => vi.fn())
 vi.mock('node:fs/promises', { spy: true })
@@ -69,6 +70,30 @@ function validates(dump: ConfigSchemaDump, value: unknown, definition = 'entryLi
 }
 
 describe('generateConfigSchema', () => {
+  it('requires the exact admitted Profile and installation and collects without a second resolver', async () => {
+    const installAnchor = join(dir, 'package.json')
+    const context = { name: profile.name, dir, patchPath: profile.patchPath, home: dir, cwd: dir, installAnchor,
+      startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
+    const provider = documentProviderFixture(context, [])
+    const request = { carrier: 'cli' as const, entryUrl: pathToFileURL(join(dir, 'cli.mjs')).href,
+      home: dir, profile: profile.name, mode: 'inspection' as const }
+    const managed: ManagedRuntimeAdmission = { status: 'managed', bindingId: provider.documents.selection.codeBinding,
+      request, profile, installAnchor, documents: provider.documents, packages: { resolution, packageOf: () => undefined },
+      installResolution: vi.fn(), provideServices() {}, ready: async () => {}, failed() {} }
+    await expect(generateConfigSchema(profile, [], installAnchor, managed)).rejects.toThrow('not admitted')
+    installRuntimeAdmissionProvider({ admit: async () => managed })
+    expect(await admitRuntimeCarrier(request)).toBe(managed)
+    for (const candidate of [{ ...profile, dir: join(dir, 'other') }, { ...profile, name: 'other' }]) {
+      await expect(generateConfigSchema(candidate, [], installAnchor, managed)).rejects.toThrow('does not match')
+    }
+    await expect(generateConfigSchema(profile, [], join(dir, 'other.json'), managed)).rejects.toThrow('does not match')
+    const result = await generateConfigSchema(profile, [[{ insert: [row('noop')] }]], installAnchor, managed)
+    expect(result['x-cordis'].entries.map(entry => entry.name)).toEqual(['noop'])
+    expect(result['x-cordis'].complete).toBe(true)
+    expect(installRuntimeInterception).not.toHaveBeenCalled()
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
   it('owns ordered composition, skipped-bundle diagnostics, and runtime resolution without mutating layers', async () => {
     profile.layers = [{ packageName: 'loaded', packageDir: dir, patchPaths: [join(dir, 'bundle.yml')], patches: [] }]
     profile.skippedBundles = [{ packageName: 'missing', reason: 'Error: cannot resolve profile bundle "missing"' }]
@@ -104,6 +129,20 @@ describe('generateConfigSchema', () => {
 })
 
 describe('collectConfigSchemas', () => {
+  it('uses initial entries only for recorded absent Includes and diagnoses absence without initial entries', async () => {
+    const filename = join(dir, 'absent.yml')
+    const context = { name: profile.name, dir, patchPath: profile.patchPath, home: dir, cwd: dir, installAnchor: join(dir, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
+    const provider = documentProviderFixture(context, [], { [filename]: undefined })
+    const result = await collectConfigSchemas(profile, [row('cordis:include', { path: './absent.yml', initial: [row('noop')] })], resolution, [], provider.documents.current())
+    expect(result['x-cordis'].complete).toBe(true)
+    expect(result['x-cordis'].entries.map(entry => entry.name)).toEqual(['cordis:include', 'noop'])
+    const missing = await collectConfigSchemas(profile, [row('cordis:include', { path: './absent.yml' })], resolution, [], provider.documents.current())
+    expect(missing['x-cordis'].diagnostics).toContainEqual({ level: 'error', path: '/0', message: `include file not found: ${filename}` })
+    expect(fs.readFile).not.toHaveBeenCalled()
+    expect(fs.realpath).not.toHaveBeenCalled()
+    expect(provider.receipts.size).toBe(0)
+  })
+
   it('collects nested admitted documents without reading or canonicalizing their poisoned original paths', async () => {
     const filename = join(dir, 'managed.yml')
     writeFileSync(filename, 'invalid: [')

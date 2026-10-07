@@ -1,5 +1,5 @@
 /** Post-gate semantic validation imports native Configs without mounting plugins or reopening logical sources. */
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import Schema from '@deepseek-ai/schemastery'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
@@ -8,8 +8,9 @@ import { createProfileDocumentSemantics, bindProfileDocuments, boot, type Profil
 import { documentProviderFixture } from './document-provider-fixture.ts'
 
 function fixture(include = false, dynamic = false) {
-  const profile: ProfileContext = { name: 'web', home: '/native/home', dir: '/native/home/profiles/web', patchPath: '/native/home/profiles/web/cordis.patch.yml',
-    installAnchor: '/native/g/profile/package.json', cwd: '/native/home', startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
+  const home = resolve('/native/home'), dir = join(home, 'profiles', 'web'), generation = resolve('/native/g')
+  const profile: ProfileContext = { name: 'web', home, dir, patchPath: join(dir, 'cordis.patch.yml'),
+    installAnchor: join(generation, 'profile/package.json'), cwd: home, startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
   const nested = join(profile.dir, 'nested.yml')
   const provider = documentProviderFixture(profile, [], { [join(profile.dir, 'package.json')]: '{"dsh":{"profile":{"bundles":["bundle"]}}}',
     [nested]: '- id: child\n  name: probe\n  config: { count: 2 }\n' })
@@ -17,10 +18,10 @@ function fixture(include = false, dynamic = false) {
   const loader = ModuleLoader.fromInternal()
   if (loader === undefined) throw new Error('Test requires the supported native module-loader seam')
   vi.spyOn(ModuleLoader, 'fromInternal').mockReturnValue({ ...loader, import: vi.fn(async () => plugin) })
-  const packages = { resolution: { profilesDir: '/native/home/profiles', profileDir: profile.dir, localPackageNames: [], entries: [], linkedRoots: [] },
-    packageOf: (name: string) => name === 'probe' ? { name: 'probe', version: '1.0.0', dir: '/native/g/probe', manifestPath: '/native/g/probe/package.json', manifest: {} } : undefined }
-  const bundleSources = [{ packageName: 'bundle', packageDir: '/native/g/bundle', manifest: { dsh: { bundle: { patch: './cordis.patch.yml' } } },
-    patches: [{ logicalPath: '/native/g/bundle/cordis.patch.yml', text: include
+  const packages = { resolution: { profilesDir: join(profile.home, 'profiles'), profileDir: profile.dir, localPackageNames: [], entries: [], linkedRoots: [] },
+    packageOf: (name: string) => name === 'probe' ? { name: 'probe', version: '1.0.0', dir: join(generation, 'probe'), manifestPath: join(generation, 'probe', 'package.json'), manifest: {} } : undefined }
+  const bundleSources = [{ packageName: 'bundle', packageDir: join(generation, 'bundle'), manifest: { dsh: { bundle: { patch: './cordis.patch.yml' } } },
+    patches: [{ logicalPath: join(generation, 'bundle', 'cordis.patch.yml'), text: include
       ? '- insert:\n    - id: nested\n      name: cordis:include\n      config: { path: ./nested.yml }\n'
       : '- insert:\n    - id: probe\n      name: probe\n      config: { count: ' + (dynamic ? '!!js 2' : '2') + ' }\n' }] }]
   const options = { profile, packages, bundleSources }

@@ -102,7 +102,9 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
   const metadata = [...files.keys()].filter(path => path.endsWith(`${sep}package.json`))
   const inspectMetadata = (): void => { for (const path of metadata) inspect(path) }
   inspectMetadata()
-  const mappedURL = (value: string | undefined): string | undefined => {
+  function mappedURL(value: string): string
+  function mappedURL(value: string | undefined): string | undefined
+  function mappedURL(value: string | undefined): string | undefined {
     if (!value?.startsWith('file:')) return value
     const parsed = new URL(value), result = pathToFileURL(mapped(fileURLToPath(parsed)))
     result.search = parsed.search; result.hash = parsed.hash
@@ -157,7 +159,7 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
         const direct = specifier.startsWith('file:') ? fileURLToPath(specifier) : isAbsolute(specifier) ? resolve(specifier) : undefined
         if (!(parent !== undefined && managed(parent)) && !(direct !== undefined && managed(direct))) return nextResolve(specifier, context)
         inspectMetadata()
-        const target = specifier.startsWith('file:') ? (mappedURL(specifier) ?? specifier) : direct === undefined ? specifier : mapped(direct)
+        const target = specifier.startsWith('file:') ? mappedURL(specifier) : direct === undefined ? specifier : mapped(direct)
         const result = nextResolve(target, { ...context, parentURL: mappedURL(context.parentURL) })
         if (!result.url.startsWith('file:')) throw new Error('Runtime import has an unadmitted URL scheme')
         const original = fileURLToPath(result.url), selected = sharedPath(original)

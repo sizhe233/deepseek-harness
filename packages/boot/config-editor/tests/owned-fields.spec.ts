@@ -33,3 +33,25 @@ it('restores a literal prototype-named field without changing the detached objec
     expect(Object.hasOwn(result.value, '__proto__')).toBe(true)
   }
 })
+
+it('restores a deleted object while preserving fields concurrently reintroduced by another writer', () => {
+  expect(reverseOwnedConfig(value({ owned: 1 }), { present: false }, value({ unrelated: 2 })))
+    .toEqual(value({ owned: 1, unrelated: 2 }))
+  expect(() => reverseOwnedConfig(value({ owned: 1 }), value({ owned: 2 }), { present: false }))
+    .toThrow('owned field changed')
+})
+
+it('preserves untouched array slots and refuses identity replacement by a scalar', () => {
+  const before = [{ id: 'fixed', value: 1 }, { id: 'edited', value: 2 }]
+  const after = [{ id: 'fixed', value: 1 }, { id: 'edited', value: 3 }]
+  expect(reverseOwnedConfig(value(before), value(after), value([{ id: 'fixed', value: 4 }, { id: 'edited', value: 3 }])))
+    .toEqual(value([{ id: 'fixed', value: 4 }, { id: 'edited', value: 2 }]))
+  expect(() => reverseOwnedConfig(value(before), value(after), value([before[0], 'replacement'])))
+    .toThrow('identity changed')
+})
+
+it('restores absence after removing the last owned key from a prototype-free raw object', () => {
+  const current = { owned: 1 }
+  Object.setPrototypeOf(current, null)
+  expect(reverseOwnedConfig({ present: false }, value({ owned: 1 }), value(current))).toEqual({ present: false })
+})

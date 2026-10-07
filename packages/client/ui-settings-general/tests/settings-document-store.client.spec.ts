@@ -113,3 +113,83 @@ it('retains a native draft on stale import and clears it only after successful a
   await controller.importSaved()
   expect(controller.store.getSnapshot().draftId).toBeUndefined()
 })
+
+
+it('ignores imports without a draft and collapses gestures throughout open and import requests', async () => {
+  type OpenValue = { opened: true; draft?: { id: string; saveBehavior: 'explicit-import' } }
+  let finishOpen!: (result: RemoteResult<OpenValue>) => void
+  let finishImport!: (result: RemoteResult<{ imported: true }>) => void
+  const openDocument = vi.fn(() => new Promise<RemoteResult<OpenValue>>((resolve) => { finishOpen = resolve }))
+  const importDraft = vi.fn(() => new Promise<RemoteResult<{ imported: true }>>((resolve) => { finishImport = resolve }))
+  const controller = derivedDocumentStore({ settings: {
+    describe: () => Promise.resolve(response(true)), openSettingsDocument: openDocument,
+    importSettingsDocumentDraft: importDraft,
+  } })
+  await controller.importSaved()
+  await controller.load()
+  await controller.importSaved()
+  expect(importDraft).not.toHaveBeenCalled()
+  const opening = controller.open()
+  finishOpen({ ok: true, value: { opened: true, draft: { id: 'saved-copy', saveBehavior: 'explicit-import' } } })
+  await opening
+
+  const reopening = controller.open()
+  await controller.importSaved()
+  expect(importDraft).not.toHaveBeenCalled()
+  finishOpen({ ok: true, value: { opened: true, draft: { id: 'replacement-copy', saveBehavior: 'explicit-import' } } })
+  await reopening
+  const importing = controller.importSaved()
+  await controller.importSaved()
+  await controller.open()
+  expect(importDraft).toHaveBeenCalledExactlyOnceWith('replacement-copy')
+  expect(openDocument).toHaveBeenCalledTimes(2)
+  expect(controller.store.getSnapshot()).toMatchObject({ importing: true, error: null, importError: false })
+  finishImport({ ok: true, value: { imported: true } })
+  await importing
+  expect(controller.store.getSnapshot()).toMatchObject({ importing: false, error: null, importError: false })
+  expect(controller.store.getSnapshot().draftId).toBeUndefined()
+  await controller.importSaved()
+  expect(importDraft).toHaveBeenCalledOnce()
+})
+
+it.each([
+  [new Error('connection lost'), 'connection lost'],
+  ['transport closed', 'Settings draft import did not complete'],
+])('retains a saved copy after a thrown import failure and accepts an explicit retry: %s', async (failure, message) => {
+  const importDraft = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce({ ok: true, value: { imported: true } })
+  const controller = derivedDocumentStore({ settings: {
+    describe: () => Promise.resolve(response(true)),
+    openSettingsDocument: () => Promise.resolve({ ok: true, value: { opened: true, draft: { id: 'retry-copy', saveBehavior: 'explicit-import' } } }),
+    importSettingsDocumentDraft: importDraft,
+  } })
+  await controller.load()
+  await controller.open()
+  await controller.importSaved()
+  expect(controller.store.getSnapshot()).toMatchObject({ draftId: 'retry-copy', importing: false, importError: true, error: message })
+  await controller.importSaved()
+  expect(importDraft.mock.calls).toEqual([['retry-copy'], ['retry-copy']])
+  expect(controller.store.getSnapshot()).toMatchObject({ importing: false, importError: false, error: null })
+  expect(controller.store.getSnapshot().draftId).toBeUndefined()
+})
+
+it('stops following metadata after disposal and can resume with one subscription', async () => {
+  const describe = vi.fn().mockResolvedValue(response(true))
+  const ctx = { remote: { settings: { describe } } } as never
+  const mirror = new SettingsDescribeMirror(ctx)
+  const subscribe = vi.spyOn(mirror, 'subscribe')
+  const controller = new SettingsDocumentStore(ctx, mirror)
+  controller.dispose()
+  await controller.load()
+  await controller.load()
+  expect(subscribe).toHaveBeenCalledOnce()
+  controller.dispose()
+  controller.dispose()
+  const stopped = controller.store.getSnapshot()
+  describe.mockResolvedValue(response(false))
+  await mirror.load()
+  expect(controller.store.getSnapshot()).toBe(stopped)
+  await controller.load()
+  expect(subscribe).toHaveBeenCalledTimes(2)
+  expect(controller.store.getSnapshot().status).toBe('unavailable')
+  controller.dispose()
+})

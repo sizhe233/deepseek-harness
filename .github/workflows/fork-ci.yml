@@ -144,16 +144,24 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: candidate-native-*
-          path: workbench-artifacts/native-candidate-inputs
+          # Producer inputs must not become unlisted members of the candidate ZIP.
+          path: ${{ runner.temp }}/candidate-native-inputs
       - name: Package candidate host and web artifacts
         env:
-          CANDIDATE_NATIVE_ARTIFACTS: workbench-artifacts/native-candidate-inputs
+          CANDIDATE_NATIVE_ARTIFACTS: ${{ runner.temp }}/candidate-native-inputs
         run: |
           node workbench/package-candidate.mjs
+      - name: Stage candidate artifacts outside the source tree
+        run: |
+          test ! -e "$RUNNER_TEMP/host-candidate"
+          test ! -L "$RUNNER_TEMP/host-candidate"
+          mv -- workbench-artifacts "$RUNNER_TEMP/host-candidate"
       - uses: actions/upload-artifact@v4
         with:
           name: host-candidate-${{ env.CANDIDATE_SHA }}
-          path: workbench-artifacts/
+          # Upload the parent directory so the ZIP retains its exact commit prefix.
+          path: ${{ runner.temp }}/host-candidate/
+          if-no-files-found: error
           retention-days: 14
       - run: pnpm run lint:contracts-ready
       - run: pnpm run doc-sync

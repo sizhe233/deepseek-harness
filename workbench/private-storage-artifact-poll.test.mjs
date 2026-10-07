@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
 import yaml from 'js-yaml'
@@ -106,7 +109,7 @@ test('rejects outer ZIP symlinks and special types', async () => {
   }
 })
 
-test('checks the complete ZIP inventory and all hashes before emitting the artifact ID', async () => {
+function completeInventory() {
   const record = structuredClone(manifest)
   const entries = {}
   const ordinary = (file, content) => {
@@ -115,12 +118,20 @@ test('checks the complete ZIP inventory and all hashes before emitting the artif
     return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
   }
   record.packages.push(ordinary('storage.tgz', 'synthetic package'))
+  for (const suffix of ['', '-darwin-arm64', '-darwin-x64', '-linux-arm64', '-linux-x64', '-win32-x64']) {
+    record.packages.push({ name: `@deepseek-ai/node-addon-system${suffix}`, ...ordinary(`native${suffix}.tgz`, `synthetic native archive ${suffix}`) })
+  }
   const patch = ordinary('dependency-patches/@name__pkg@1.0.0.patch', 'synthetic patch')
   record.dependencyPatches.push({ patchFile: patch.file, patchBytes: patch.bytes, patchSha256: patch.sha256 })
   record.privateStorageAcceptance.nativeClosure.packages.push(ordinary('private-storage-native/koffi.tgz', 'synthetic native'))
   record.privateStorageAcceptance.ordinaryDependencies.push(ordinary('support.tgz', 'synthetic support'))
   const toolkit = ordinary('private-storage-tests/runner.mjs', 'synthetic inert fixture')
   record.privateStorageAcceptance.toolkit.files.push({ path: toolkit.file, bytes: toolkit.bytes, sha256: toolkit.sha256 })
+  return { entries, record }
+}
+
+test('checks the complete ZIP inventory and all hashes before emitting the artifact ID', async () => {
+  const { entries, record } = completeInventory()
   const success = await executeZip(zipFor(entries, record))
   assert.equal(success.outputs['artifact-id'], String(artifact.id))
   for (const name of Object.keys(entries)) {
@@ -128,6 +139,73 @@ test('checks the complete ZIP inventory and all hashes before emitting the artif
   }
   const missing = { ...entries }; delete missing[Object.keys(missing)[0]]
   await assert.rejects(executeZip(zipFor(missing, record)), /complete hashed file inventory/)
+})
+
+test('producer uploads a complete commit-prefixed candidate while keeping native build inputs outside it', async t => {
+  const scratch = mkdtempSync(join(tmpdir(), 'candidate-upload-layout-'))
+  t.after(() => rmSync(scratch, { recursive: true, force: true }))
+  const workspace = join(scratch, 'workspace'), runnerTemp = join(scratch, 'runner-temp')
+  const steps = workflow.jobs['linux-build-and-test'].steps
+  const download = steps.find(step => step.with?.pattern === 'candidate-native-*')
+  const pack = steps.find(step => step.name === 'Package candidate host and web artifacts')
+  const stage = steps.find(step => step.name === 'Stage candidate artifacts outside the source tree')
+  const upload = steps.find(step => step.with?.name?.startsWith('host-candidate-'))
+  const runnerPath = value => resolve(workspace, value.replace('${{ runner.temp }}', runnerTemp))
+  const nativeInputs = runnerPath(download.with.path), uploadRoot = runnerPath(upload.with.path)
+  assert.equal(runnerPath(pack.env.CANDIDATE_NATIVE_ARTIFACTS), nativeInputs)
+  const write = (path, bytes) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, bytes) }
+  for (const platform of ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64']) {
+    write(join(nativeInputs, `candidate-native-${platform}/native-build.json`), JSON.stringify({ commit: source }))
+    write(join(nativeInputs, `candidate-native-${platform}/bin/system.node`), 'synthetic non-executable build input')
+  }
+  const { entries, record } = completeInventory()
+  const documents = ['README.md', 'README.zh.md', 'README.i18n.yaml'].map(name => `packages/storage/private-storage/tests/native/${name}`)
+  for (const path of documents) {
+    const bytes = readFileSync(new URL(`../${path}`, import.meta.url))
+    write(join(workspace, path), bytes)
+    const copied = `private-storage-tests/${path}`
+    entries[`${source}/${copied}`] = bytes
+    record.privateStorageAcceptance.toolkit.files.push({ path: copied, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
+  }
+  entries[`${source}/candidate.json`] = strToU8(JSON.stringify(record))
+  for (const [name, bytes] of Object.entries(entries)) write(join(workspace, 'workbench-artifacts', name), bytes)
+  const stageCandidate = () => spawnSync('bash', ['-e', '-c', stage.run], {
+    cwd: workspace, env: { PATH: process.env.PATH, RUNNER_TEMP: runnerTemp }, encoding: 'utf8', timeout: 10_000,
+  })
+  assert.equal(globSync('**/README.i18n.yaml', { cwd: workspace }).length, 2)
+  const staged = stageCandidate()
+  assert.ifError(staged.error); assert.equal(staged.signal, null); assert.equal(staged.status, 0, staged.stderr)
+  assert.equal(existsSync(join(workspace, 'workbench-artifacts')), false)
+  assert.deepEqual(globSync('**/README*', { cwd: workspace }).sort(), [...documents].sort(), 'source gates only discover the original documentation trio')
+  for (const path of documents) assert.deepEqual(readFileSync(join(workspace, path)), readFileSync(join(uploadRoot, source, 'private-storage-tests', path)))
+  const uploadedFiles = (directory = uploadRoot, prefix = '') => Object.fromEntries(readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const name = prefix + entry.name, path = join(directory, entry.name)
+    return entry.isDirectory() ? Object.entries(uploadedFiles(path, `${name}/`)) : [[name, readFileSync(path)]]
+  }))
+  const uploaded = uploadedFiles()
+  assert.deepEqual(Object.keys(uploaded).sort(), Object.keys(entries).sort())
+  assert.equal(record.packages.filter(item => item.name?.startsWith('@deepseek-ai/node-addon-system')).length, 6)
+  const success = await executeZip(Buffer.from(zipSync(uploaded, { level: 0 })))
+  assert.equal(success.outputs['artifact-id'], String(artifact.id))
+  assert.equal(success.outputs['manifest-sha256'], createHash('sha256').update(entries[`${source}/candidate.json`]).digest('hex'))
+  assert.equal(readdirSync(nativeInputs).length, 5, 'all platform inputs remain available to the packager')
+  for (const [name, message] of [
+    ['native-candidate-inputs/candidate-native-linux-x64/native-build.json', /outside candidate root/],
+    [`${source}/unlisted.txt`, /complete hashed file inventory/],
+  ]) {
+    const path = join(uploadRoot, name)
+    write(path, 'synthetic unexpected upload member')
+    await assert.rejects(executeZip(Buffer.from(zipSync(uploadedFiles(), { level: 0 }))), message)
+    rmSync(path)
+  }
+  const stripped = Object.fromEntries(Object.entries(uploaded).map(([name, bytes]) => [name.slice(source.length + 1), bytes]))
+  await assert.rejects(executeZip(Buffer.from(zipSync(stripped, { level: 0 }))), /outside candidate root/)
+  const retryFile = join(workspace, 'workbench-artifacts/retry.txt')
+  write(retryFile, 'synthetic retry must not replace the completed candidate')
+  const collision = stageCandidate()
+  assert.ifError(collision.error); assert.equal(collision.signal, null); assert.notEqual(collision.status, 0)
+  assert.equal(readFileSync(retryFile, 'utf8'), 'synthetic retry must not replace the completed candidate')
+  assert.deepEqual(Object.keys(uploadedFiles()).sort(), Object.keys(entries).sort())
 })
 
 test('bounds outer ZIP entry count, per-file size and aggregate expansion before reading members', async () => {

@@ -254,23 +254,30 @@ describe('HMR exact config paths', () => {
     onTestFinished(() => { configWatch.create = previousFactory })
     configWatch.create = (options) => {
       watcher = new FSWatcher(options)
+      // Discovery must not add native watches beside the injected events.
+      vi.spyOn(watcher, 'add').mockReturnValue(watcher)
       // Use Chokidar's real normalization with deterministic event delivery.
       Reflect.set(watcher, '_readyEmitted', true)
       queueMicrotask(() => { watcher.emit('ready') })
       return watcher
     }
     const observed: string[] = []
-    await watchConfig(ctx, filename, {}, async () => {
+    const applied = Promise.withResolvers<undefined>()
+    const dispose = await watchConfig(ctx, filename, {}, async () => {
       const value = readFileSync(filename, 'utf8')
       observed.push(value)
       if (value === 'enabled') {
         writeFileSync(filename, 'disabled')
         await watcher._emit('change', filename)
+      } else {
+        applied.resolve(undefined)
       }
     })
     writeFileSync(filename, 'enabled')
     await watcher._emit('change', filename)
-    await vi.waitFor(() => { expect(observed).toEqual(['enabled', 'disabled']) }, { timeout: 6_000 })
+    await applied.promise
+    await dispose()
+    expect(observed).toEqual(['enabled', 'disabled'])
   }, 10_000)
 
   it('rejects a patch path whose parent is a regular file', async () => {

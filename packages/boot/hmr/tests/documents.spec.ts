@@ -77,3 +77,58 @@ it('unsubscribes before its own removal without awaiting the active HMR operatio
   expect(f.listeners.size).toBe(0)
   expect(f.ctx.get('hmr')).toBeUndefined()
 })
+
+it('ignores retained notification callbacks after native subscription disposal', async () => {
+  const f = await fixture(); f.ready(); await f.drain()
+  const retained = [...f.listeners][0]!
+  const refresh = vi.spyOn(f.documents, 'refresh')
+  onTestFinished(() => { refresh.mockRestore() })
+  await f.ctx.fiber.dispose()
+  retained()
+  expect(refresh).not.toHaveBeenCalled()
+  expect(f.listeners.size).toBe(0)
+})
+
+it('cancels an admitted notification when its subscription is disposed before execution', async () => {
+  const f = await fixture(); f.ready(); await f.drain()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  const hmr = f.ctx.hmr, original = hmr.runExclusive.bind(hmr)
+  const held = vi.spyOn(hmr, 'runExclusive').mockImplementation(operation => original(async () => {
+    entered.resolve(undefined); await release.promise; return operation()
+  }))
+  const refresh = vi.spyOn(f.documents, 'refresh')
+  onTestFinished(() => { held.mockRestore(); refresh.mockRestore() })
+  f.notify(); await entered.promise
+  const closing = f.ctx.fiber.dispose()
+  await expect.poll(() => f.listeners.size).toBe(0)
+  release.resolve(undefined); await closing
+  expect(refresh).not.toHaveBeenCalled()
+})
+
+it('reports retained inactive-entry diagnostics while applying a valid native revision', async () => {
+  const f = await fixture(); f.ready(); await f.drain()
+  const warn = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+  onTestFinished(() => { warn.mockRestore() })
+  const source = '- insert:\n    - id: missing\n      name: ./missing.mjs\n'
+  f.external({ [f.profile.patchPath]: source }); await f.drain()
+  warn.mockClear()
+  f.external({ [f.profile.patchPath]: source + '- id: probe\n  config: { value: edited }\n' }); await f.drain()
+  expect(f.applications).toEqual(['initial', 'edited'])
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('missing ('))
+})
+
+it('ignores original Include file notifications when native document revisions own its configuration', async () => {
+  const f = await fixture(); f.ready(); await f.drain()
+  const notified = Promise.withResolvers<undefined>(), hmr = f.ctx.hmr, original = hmr.runExclusive.bind(hmr)
+  const run = vi.spyOn(hmr, 'runExclusive').mockImplementation(operation => original(async () => {
+    try { return await operation() } finally { notified.resolve(undefined) }
+  }))
+  onTestFinished(() => { run.mockRestore() })
+  const changed = vi.fn()
+  f.ctx.on('hmr/change', changed)
+  f.watchers[0]!.emit('change', f.nested)
+  await notified.promise
+  expect(f.ctx.get('childValue')).toBe('first')
+  expect(changed).not.toHaveBeenCalled()
+})

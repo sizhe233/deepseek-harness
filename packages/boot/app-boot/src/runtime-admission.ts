@@ -89,9 +89,9 @@ export function installRuntimeAdmissionProvider(value: RuntimeAdmissionProvider)
  * Establish absence without reading an enrollment, following a reparse object, or creating Home state.
  * A present management root requires the native provider even when its index is missing or inaccessible.
  * @param home Literal Home selected by the existing application-free grammar.
- * @returns Positive absence, or a diagnostic requiring native discovery.
+ * @returns Positive absence or a diagnostic requiring native discovery; never a managed capability.
  */
-export function inspectUnenrolledRuntime(home: string): RuntimeAdmission {
+export function inspectUnenrolledRuntime(home: string): Exclude<RuntimeAdmission, { status: 'managed' }> {
   try {
     lstatSync(join(home, 'runtime-management'))
     return Object.freeze({ status: 'blocked', reason: 'Runtime management exists; the fixed native admission provider is required' })
@@ -346,6 +346,5 @@ export async function qualifyRuntimeProfile(request: RuntimeProfileRequest): Pro
       prepare: qualified.prepare.bind(qualified), disableThirdParty: qualified.disableThirdParty.bind(qualified),
     }) : Object.freeze({ ...qualified })
   }
-  const qualification = inspectUnenrolledRuntime(request.home)
-  return qualification.status === 'managed' ? { status: 'blocked', reason: 'Outer Profile authority is unavailable' } : qualification
+  return inspectUnenrolledRuntime(request.home)
 }

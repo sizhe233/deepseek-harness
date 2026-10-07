@@ -23,7 +23,7 @@ vi.mock('chokidar', async (original) => {
   } }
 })
 
-async function fixture(beforeWatch?: (profile: ProfileContext) => void) {
+async function fixture(beforeWatch?: (profile: ProfileContext) => void, debounce?: number) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'hmr-profile-')))
   const dir = join(home, 'profiles', 'test')
   initProfile(dir, [])
@@ -34,7 +34,7 @@ async function fixture(beforeWatch?: (profile: ProfileContext) => void) {
   }
   const rows = [{ insert: [
     { id: 'timer', name: 'cordis:timer' },
-    { id: 'hmr', name: 'cordis:hmr', config: { root: [] } },
+    { id: 'hmr', name: 'cordis:hmr', config: { root: [], ...debounce === undefined ? {} : { debounce } } },
     { id: 'probe', name: 'cordis:probe', config: { value: 'initial' } },
   ] }]
   writeFileSync(profile.patchPath, JSON.stringify(rows))
@@ -164,7 +164,9 @@ it('rejects a profile launcher that omits application readiness', async () => {
 })
 
 it('cancels a queued module notification when startup is interrupted', async () => {
-  const f = await fixture()
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  onTestFinished(() => { vi.useRealTimers() })
+  const f = await fixture(undefined, 0)
   const entered = Promise.withResolvers<undefined>()
   const hmr = f.ctx.hmr
   const run = hmr.runExclusive.bind(hmr)
@@ -176,6 +178,7 @@ it('cancels a queued module notification when startup is interrupted', async () 
   const changed = vi.fn()
   f.ctx.on('hmr/change', changed)
   watchers.at(-1)!.emit('change', 'pending.mjs')
+  await vi.advanceTimersByTimeAsync(0)
   // The operation must reach the readiness barrier before disposal; enqueueing
   // alone races runExclusive's earlier closing check and misses this path.
   await entered.promise

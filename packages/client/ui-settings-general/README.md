@@ -79,7 +79,7 @@ The shell is an explicit recovery consumer, so it injects Connection directly ra
 
 On a loopback page, the Client loads the provider's `hasDocument` capability through `settings/describe` and renders **Open configuration file** only when the Host confirms that a provider-owned local document can be prepared. The action calls the pathless, browser-authenticated `settings/openSettingsDocument` Remote; the Host resolves the provider path again, materializes an absent document, and hands it to a native text editor (`open -t` on macOS, bypassing a browser file association; the desktop file association on Linux and Windows; Windows association after `wslpath -w` translation on WSL). Open failures keep the action available and render a localized error. Reopening the dialog or reconnecting refreshes availability after a transient read failure or Host topology change. Non-loopback pages retain the Client policy that withholds this native action and its settings read.
 
-Managed editing copies expose **Apply saved copy** after opening. Save in the native editor, then apply; a stale base or rejected save stays visible for review. The Client sends only the native draft id, and the Host reobserves its bytes before import.
+Managed editing copies expose **Apply saved copy** after opening. Save in the native editor, then apply; a stale base or rejected save stays visible for review. The Client sends only the native draft id, and the Host reobserves its bytes before import. Opening or applying disables both actions until the request settles. An import failure shows localized feedback and retains the copy for explicit retry; successful application removes the saved-copy controls.
 
 ### Host half
 

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { expect, it, onTestFinished } from 'vitest'
-import { bindProfileDocuments, boot, readProfilePatchesFromView, withProfileDocumentView, type ProfileContext } from '../src/index.ts'
+import { bindProfileDocuments, boot, readProfilePatchesFromView, reconcileProfilePatches, withProfileDocumentView, type ProfileContext } from '../src/index.ts'
 import { documentProviderFixture } from './document-provider-fixture.ts'
 
 async function fixture(initial?: string, absent = false) {
@@ -103,5 +103,15 @@ it('derives source-owned nested edits without baking patches or losing YAML comm
   expect(f.contents.get(f.nested)).toContain('!!js ctx.baseUrl')
   expect(f.contents.get(f.nested)).toContain('disabled: true')
   expect(f.contents.get(f.nested)).not.toContain('overlay')
+  expect(readFileSync(f.nested, 'utf8')).toBe('nested poison: [')
+})
+
+it('refreshes nested native Includes when root reconciliation requests the complete desired document view', async () => {
+  const f = await fixture('- id: probe\n  name: ./probe.mjs\n  config: { value: before }\n')
+  f.external({ [f.nested]: '- id: probe\n  name: ./probe.mjs\n  config: { value: after }\n' })
+  const view = f.documents.current()
+  const patches = readProfilePatchesFromView('fixture', f.profile, view, f.documents.bundleLayers(view))
+  expect(await reconcileProfilePatches(f.ctx, patches, 'fixture', [], true)).toEqual([])
+  expect(f.ctx.get('includedProbe')).toEqual({ value: 'after' })
   expect(readFileSync(f.nested, 'utf8')).toBe('nested poison: [')
 })
