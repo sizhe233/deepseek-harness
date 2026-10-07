@@ -2,13 +2,81 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { join, resolve } from 'node:path'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as wait } from 'node:timers/promises'
-import { fixtureEnvironment, options, startChild, summary, nativeFaultMapping, decodeFileIdentity,
+import { createFixtureRoot, diagnoseFixtureAncestors, fixtureEnvironment, options, startChild, summary, nativeFaultMapping, decodeFileIdentity,
   decodeHandleSnapshot, selectOwnedSnapshot, assertSnapshotReleased, sdkInheritanceBinding, digest } from './boundary-support.mjs'
+
+test('fixture roots resolve aliased parents without reusing an existing directory', t => {
+  const temporary = mkdtempSync(join(tmpdir(), 'fixture-parent-'))
+  const target = join(temporary, 'literal-parent'), alias = join(temporary, 'alias-parent')
+  t.after(() => {
+    const entry = lstatSync(alias, { throwIfNoEntry: false })
+    if (entry) {
+      assert.ok(entry.isSymbolicLink(), 'Owned alias must remain a link before cleanup')
+      unlinkSync(alias)
+    }
+    rmSync(temporary, { recursive: true, force: true })
+  })
+  mkdirSync(target)
+  symlinkSync(target, alias, 'junction')
+  const first = createFixtureRoot('owned-', alias), second = createFixtureRoot('owned-', alias)
+  assert.equal(first.requestedParent, alias)
+  assert.equal(dirname(first.requestedPath), alias)
+  assert.equal(dirname(first.path), realpathSync.native(target))
+  assert.equal(first.path, realpathSync.native(first.requestedPath))
+  assert.notEqual(first.requestedPath, first.path)
+  assert.notEqual(first.path, second.path)
+  assert.equal(readdirSync(target).length, 2)
+})
+
+test('fixture ancestor diagnostics retain the first name refusal and close admitted prefixes', () => {
+  const calls = [], closed = []
+  const storage = { openPrivateDirectory(path, options) {
+    calls.push({ path, options })
+    if (path === 'C:\\Users') throw Object.assign(new Error('public ancestor'), { code: 'privacy' })
+    if (path === 'C:\\Users\\literal\\SHORT~1') throw Object.assign(new Error('literal long-name binding required'), { code: 'name' })
+    return { close() { closed.push(path) } }
+  } }
+  const result = diagnoseFixtureAncestors(storage, 'C:\\Users\\literal\\SHORT~1\\private')
+  assert.equal(result.diagnosticOnly, true)
+  assert.equal(result.create, false)
+  assert.equal(result.cleanupUncertain, false)
+  assert.deepEqual(calls.map(call => call.path), ['C:\\Users', 'C:\\Users\\literal', 'C:\\Users\\literal\\SHORT~1'])
+  assert.ok(calls.every(call => call.options.create === false))
+  assert.deepEqual(closed, ['C:\\Users\\literal'])
+  assert.equal(result.observations[0].code, 'privacy')
+  assert.deepEqual(result.observations.at(-1), { path: 'C:\\Users\\literal\\SHORT~1', component: 'SHORT~1',
+    outcome: 'refused', code: 'name', reason: 'literal long-name binding required' })
+})
+
+test('fixture ancestor diagnostics stop after unconfirmed native cleanup without retrying close', () => {
+  let opened = 0, closed = 0
+  const storage = { openPrivateDirectory() {
+    opened++
+    return { close() { closed++; throw new Error('release unconfirmed') } }
+  } }
+  const result = diagnoseFixtureAncestors(storage, 'C:\\parent\\child')
+  assert.equal(result.cleanupUncertain, true)
+  assert.equal(opened, 1)
+  assert.equal(closed, 1)
+  assert.equal(result.observations[0].reason, 'release unconfirmed')
+})
+
+test('fixture ancestor diagnostics stop when opening a prefix reports unconfirmed cleanup', () => {
+  let opened = 0
+  const storage = { openPrivateDirectory() {
+    opened++
+    throw Object.assign(new Error('open cleanup unconfirmed'), { code: 'privacy', cleanupFailed: true })
+  } }
+  const result = diagnoseFixtureAncestors(storage, 'C:\\parent\\child')
+  assert.equal(result.cleanupUncertain, true)
+  assert.equal(opened, 1)
+  assert.equal(result.observations[0].reason, 'open cleanup unconfirmed')
+})
 
 function sdkBindingFixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-sdk-binding-'))

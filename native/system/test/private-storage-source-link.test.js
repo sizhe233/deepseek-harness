@@ -1,5 +1,6 @@
 /** Real retained symbolic-link observations on small owned fixtures; no destination or platform acceptance inference. */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, lstatSync, statSync, rmSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -32,6 +33,22 @@ test('retained link bytes, identities and parent facts remain distinct from thei
       assert.throws(() => native.inspectSourceLink(cap, 'regular', 32768), error => error.code === 'EINVAL');
       symlinkSync('../absent-target', join(root, 'source', 'dangling'));
       assert.equal(Buffer.from(native.inspectSourceLink(cap, 'dangling', 32768).targetBytes).toString(), '../absent-target');
+      symlinkSync('cycle', join(root, 'source', 'cycle'));
+      assert.equal(Buffer.from(native.inspectSourceLink(cap, 'cycle', 32768).targetBytes).toString(), 'cycle');
+      symlinkSync('bin', join(root, 'source', 'chain'));
+      assert.equal(Buffer.from(native.inspectSourceLink(cap, 'chain', 32768).targetBytes).toString(), 'bin');
+      const fifo = spawnSync('mkfifo', [join(root, 'source', 'fifo')], { encoding: 'utf8', timeout: 5000 });
+      assert.ifError(fifo.error); assert.equal(fifo.signal, null); assert.equal(fifo.status, 0, fifo.stderr);
+      // A non-link replacement must refuse without blocking the calling process.
+      const refused = spawnSync(process.execPath, ['--input-type=module', '-e', `
+        import assert from 'node:assert/strict';
+        import { createRequire } from 'node:module';
+        const native = createRequire(import.meta.url)(process.argv[1]);
+        const parent = native.openDirectory(process.argv[2], 'source', false);
+        try { assert.throws(() => native.inspectSourceLink(parent, 'fifo', 32768), error => error.code === 'EINVAL'); }
+        finally { native.close(parent); }
+      `, resolve(binary), join(root, 'source')], { encoding: 'utf8', timeout: 5000 });
+      assert.ifError(refused.error); assert.equal(refused.signal, null); assert.equal(refused.status, 0, refused.stderr);
       for (let index = 0; index < 100; index++) native.inspectSourceLink(cap, 'bin', 32768);
     } finally { if (cap) native.close(cap); rmSync(root, { recursive: true }); }
   });

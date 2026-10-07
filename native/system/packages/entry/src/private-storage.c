@@ -1305,7 +1305,8 @@ static napi_value inspect_source_link(napi_env env, napi_callback_info info) {
 #ifdef __APPLE__
   ssize_t (*read_retained_link)(int, char *, size_t) = (ssize_t (*)(int, char *, size_t))dlsym(RTLD_DEFAULT, "freadlink");
   if (read_retained_link == NULL) { fail(&error, ENOTSUP, "freadlink", "Retained symbolic-link reads require macOS 13 or later"); goto failed; }
-  fd = openat(parent->fd, name, O_RDONLY | O_SYMLINK | O_NOFOLLOW | O_CLOEXEC);
+  /* O_SYMLINK retains the link itself; Darwin's O_NOFOLLOW instead rejects it. */
+  fd = openat(parent->fd, name, O_RDONLY | O_SYMLINK | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
 #else
   fd = openat(parent->fd, name, O_PATH | O_NOFOLLOW | O_CLOEXEC);
 #endif

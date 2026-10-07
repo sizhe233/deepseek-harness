@@ -139,8 +139,9 @@ static int token_facts(void) {
   owner = (TOKEN_OWNER *)token_information(token, TokenOwner);
   if (!owner) { error = GetLastError(); free(user); CloseHandle(token); return failure("TokenOwner", error, FALSE); }
   if (!GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &bytes) ||
-      !GetTokenInformation(token, TokenType, &type, sizeof(type), &bytes) || !GetProcessHandleCount(GetCurrentProcess(), &handles)) error = GetLastError();
-  if (error) { free(user); free(owner); CloseHandle(token); return failure("GetTokenInformation", error, FALSE); }
+      !GetTokenInformation(token, TokenType, &type, sizeof(type), &bytes) || !GetProcessHandleCount(GetCurrentProcess(), &handles)) {
+    error = GetLastError(); free(user); free(owner); CloseHandle(token); return failure("token-facts", error, FALSE);
+  }
   printf("{\"complete\":true,\"userSid\":"); hex(user->User.Sid, GetLengthSid(user->User.Sid));
   printf(",\"defaultOwnerSid\":"); hex(owner->Owner, GetLengthSid(owner->Owner));
   printf(",\"restricted\":%s,\"elevated\":%s,\"tokenType\":%u,\"threadTokenPresent\":%s,\"threadTokenError\":%lu,"

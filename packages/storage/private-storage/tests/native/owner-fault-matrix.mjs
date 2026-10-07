@@ -1,11 +1,10 @@
 /** Test-only internal-fault matrix. Packed Worker/security/sharing/inheritance acceptance remains separate. */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { Blocked, fixtureEnvironment, oracle, startChild } from './boundary-support.mjs'
+import { createFixtureRoot, Blocked, fixtureEnvironment, oracle, startChild } from './boundary-support.mjs'
 import { oracleBinding } from './directory-boundary-support.mjs'
 import { ownerBinding } from './owner-observer.mjs'
 import { ownerFaultCases, ownerFaultBlockedCases, ownerFaultBinding, ownerSourceBinding, ownerOrdinalCases,
@@ -90,7 +89,8 @@ try {
     compilerLogSha256: fixture.compilerLogSha256, compilerSha256: fixture.compilerSha256, entrySha256: ownerFileDigest(values.entry),
     productionBinarySha256: packed.sha256, packedInventorySha256: packed.inventorySha256 }, oracleBinding(values.oracle))
   report.nativeExecution = true
-  temporary = mkdtempSync(join(tmpdir(), 'dsh-owner-fault-'))
+  report.temporaryRoot = createFixtureRoot('dsh-owner-fault-')
+  temporary = report.temporaryRoot.path
   const home = join(temporary, 'home'); mkdirSync(home); env = fixtureEnvironment(home, temporary)
   token = oracle(values.oracle, env, 'token')
   for (const name of ownerFaultCases.filter(value => !value.endsWith('-allocation-fault-inventory'))) {

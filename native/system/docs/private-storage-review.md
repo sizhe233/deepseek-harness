@@ -8,7 +8,7 @@ The additive `./private-storage` candidate requires independent native source re
 
 ## Review inputs
 
-The native implementation is [private-storage.c](../packages/entry/src/private-storage.c), SHA256 `32b981b7f155a6fe66007ab1be2cd08072672df8434f9e7f388ee39daa3998f5`. The [typed lazy entry](../packages/entry/src/private-storage.ts) describes its opaque operations. [Native tests](../test/private-storage.test.js) use the [Worker fixture](../test/private-storage-worker.js), a [synthetic read-failure shim](../test/private-storage-read-fault.c), and an [independent syscall oracle](../test/private-storage-syscall-oracle.c). The syscall oracle never reports provider or persistence acceptance. Its Darwin deny-only ancestor fixture uses the public SDK permission `ACL_CHANGE_OWNER`; private leaves still require empty ACLs, and grant or mixed ancestor ACLs remain refused.
+The native implementation is [private-storage.c](../packages/entry/src/private-storage.c), SHA256 `072847e2fadade42506b2857e180441a31cae9131e236a554f1bfc5b56db7906`. The [typed lazy entry](../packages/entry/src/private-storage.ts) describes its opaque operations. [Native tests](../test/private-storage.test.js) use the [Worker fixture](../test/private-storage-worker.js), a [synthetic read-failure shim](../test/private-storage-read-fault.c), and an [independent syscall oracle](../test/private-storage-syscall-oracle.c). The syscall oracle never reports provider or persistence acceptance. Its Darwin deny-only ancestor fixture uses the public SDK permission `ACL_CHANGE_OWNER`; private leaves still require empty ACLs, and grant or mixed ancestor ACLs remain refused.
 
 Independent review remains required for these areas:
 

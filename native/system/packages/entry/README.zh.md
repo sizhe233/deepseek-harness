@@ -14,6 +14,6 @@ kind: "package-library"
 
 声明的原生 C 源文件随包分发以供审计。参见工作区[架构](../../docs/architecture.md)、[支持矩阵](../../docs/support-matrix.md)和 [CLI 约定](../../docs/cli-contract.md)。
 
-独立的 `./private-storage` 入口导出 `loadPosixStoragePrimitives()` 及不透明目录/文件类型。导入按需进行；显式加载器要求新的平台专用 `private-storage.node`，绝不以 `system.node` 替代。[审查交接](../../docs/private-storage-review.md)说明源文件准入、私有策略、环境持有的描述符释放及未完成的原生验收。该能力不接受或返回原始描述符。在 macOS 上，ACL 准入要求保留描述符上的文件安全信息检查成功。私有目标要求空 ACL；可信祖先通过所有权和权限检查后可保留仅拒绝条目的 ACL。任何授权、未知标签或检查失败都会拒绝。
+独立的 `./private-storage` 入口导出 `loadPosixStoragePrimitives()` 及不透明目录/文件类型。导入按需进行；显式加载器要求新的平台专用 `private-storage.node`，绝不以 `system.node` 替代。[审查交接](../../docs/private-storage-review.md)说明源文件准入、私有策略、环境持有的描述符释放及未完成的原生验收。该能力不接受或返回原始描述符。在 macOS 上，ACL 准入要求保留描述符上的文件安全信息检查成功。私有目标要求空 ACL；可信祖先通过所有权和权限检查后可保留仅拒绝条目的 ACL。任何授权、未知标签或检查失败都会拒绝。只读链接检查使用 Darwin 的 `O_SYMLINK` 保留链接本身，采用非阻塞打开并校验保留的身份与绑定；不会打开尚未解析的目标。
 
 新增的 `./windows-private-owner` 入口导出 `loadWindowsPrivateOwner()` 和 `inspectWindowsPrivateOwnerRuntime()`。其 Windows x64 后继版本在向 JavaScript 暴露结果前持有所有原生文件、令牌、安全描述符及 I/O 资源，并负责 Worker 环境清理。返回的文件是不透明能力，不提供 HANDLE 访问器。仅导入入口不会加载二进制。运行时身份观察不等同于原生验收；缺少或不匹配的后继版本字节会被拒绝。

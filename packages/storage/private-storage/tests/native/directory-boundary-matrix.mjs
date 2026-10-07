@@ -1,10 +1,10 @@
 /** Supplemental packed-entry directory/cleanup matrix; never a replacement for full candidate acceptance. */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir, release } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Blocked, digest, fixtureEnvironment, options, oracle, startChild, summary } from './boundary-support.mjs'
+import { createFixtureRoot, Blocked, digest, fixtureEnvironment, options, oracle, startChild, summary } from './boundary-support.mjs'
 import { blockedCases, cases, installedBinding, oracleBinding, queryBudget, sourceBinding, validateReport, validateResult } from './directory-boundary-support.mjs'
 
 const args = options(process.argv.slice(2))
@@ -111,7 +111,8 @@ try {
   binding = installedBinding(entry)
   Object.assign(report, binding, oracleBinding(sdk))
   report.nativeExecution = true
-  temporary = mkdtempSync(join(tmpdir(), 'dsh-directory-boundary-'))
+  report.temporaryRoot = createFixtureRoot('dsh-directory-boundary-')
+  temporary = report.temporaryRoot.path
   const home = join(temporary, 'home'); mkdirSync(home)
   env = fixtureEnvironment(home, temporary)
   token = oracle(sdk, env, 'token')

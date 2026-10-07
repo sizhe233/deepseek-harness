@@ -1,10 +1,10 @@
 /** Supplemental native stream/source matrix. Portable runs retain every obligation with zero native passes. */
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir, release } from 'node:os'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Blocked, fixtureEnvironment, options, oracle, startChild, summary } from './boundary-support.mjs'
+import { createFixtureRoot, Blocked, fixtureEnvironment, options, oracle, startChild, summary } from './boundary-support.mjs'
 import { blockedCases, cases, diskPreflight, hashFile, installedBinding, largeCases, oracleBinding,
   sourceBinding, sourceFiles, validateReport, validateResult, validateSdk } from './stream-support.mjs'
 import { validateAccessProbe } from './stream-support.mjs'
@@ -139,7 +139,8 @@ try {
   assert.match(report.sourceSha ?? '', /^[0-9a-f]{40}$/u, 'Artifact runner must supply the fixed verified CANDIDATE_SHA')
   binding = installedBinding(entry)
   Object.assign(report, binding, oracleBinding(sdk))
-  temporary = mkdtempSync(join(tmpdir(), 'dsh-native-stream-'))
+  report.temporaryRoot = createFixtureRoot('dsh-native-stream-')
+  temporary = report.temporaryRoot.path
   const home = join(temporary, 'home'); mkdirSync(home)
   env = fixtureEnvironment(home, temporary)
   oracle(sdk, env, 'token')

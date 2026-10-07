@@ -1,12 +1,12 @@
 /** Deterministic native races and process death against one independently packed storage entry. */
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir, release } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ownerBinding } from './owner-observer.mjs'
-import { Blocked, digest, fileDigest, fixtureEnvironment, options, oracle, startChild, summary, nativeFaultMapping } from './boundary-support.mjs'
+import { createFixtureRoot, Blocked, digest, fileDigest, fixtureEnvironment, options, oracle, startChild, summary, nativeFaultMapping } from './boundary-support.mjs'
 
 const args = options(process.argv.slice(2))
 const entry = args.get('--entry')
@@ -172,7 +172,8 @@ function privateFileFacts(path, expectedIdentity) {
 try {
   if (!report.nativeExecution) throw new Blocked('Requires actual Windows x64, never a mocked platform or Wine substitute')
   assert.match(report.sourceSha ?? '', /^[0-9a-f]{40}$/, 'Verified runner must supply CANDIDATE_SHA')
-  temporary = mkdtempSync(join(tmpdir(), 'dsh-storage-boundaries-'))
+  report.temporaryRoot = createFixtureRoot('dsh-storage-boundaries-')
+  temporary = report.temporaryRoot.path
   const home = join(temporary, 'home')
   mkdirSync(home)
   env = fixtureEnvironment(home, temporary)

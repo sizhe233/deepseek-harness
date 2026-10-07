@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-These fixtures are test-only, generic and synthetic. They never enable privileges, change system security settings, create accounts, register services, compile a runtime addon or claim a power-cut test. Run them only in a unique temporary root. `acceptance.mjs` allocates its own root and isolated Home; the individual oracle and worker commands require caller-owned synthetic paths.
+These fixtures are test-only, generic and synthetic. They never enable privileges, change system security settings, create accounts, register services, compile a runtime addon or claim a power-cut test. Run them only in a unique temporary root. Matrix setup resolves only its newly allocated temporary root with native `realpath` and records both spellings; the product still rejects short-name and case aliases. A failed admission name check retains read-only ancestor-prefix diagnostics without discharging the failed row. `acceptance.mjs` allocates its own root and isolated Home; the individual oracle and worker commands require caller-owned synthetic paths.
 
 ## Build the SDK oracle
 

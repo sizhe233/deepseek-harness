@@ -4,10 +4,11 @@
  * This standalone supplemental matrix does not replace the full packed-candidate acceptance gate.
  */
 import assert from 'node:assert/strict'
+import { createFixtureRoot, diagnoseFixtureAncestors } from './boundary-support.mjs'
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir, release } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startAdmissionProcess } from './admission-process.mjs'
@@ -121,7 +122,8 @@ try {
   report.oracleSourceSha256 = sha256(fileURLToPath(new URL('windows-admission-oracle.c', import.meta.url)))
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Blocked('Requires actual Windows x64; no native cases ran')
   assert.match(entry, /\.js$/i, 'Pass the packed JavaScript export')
-  sandbox = mkdtempSync(join(tmpdir(), 'private-storage-admission-'))
+  report.temporaryRoot = createFixtureRoot('private-storage-admission-')
+  sandbox = report.temporaryRoot.path
   report.diagnostics.inventory = oracle('inventory')
   report.diagnostics.driveBootstrap = oracle('bootstrap', sandbox)
   const inventory = report.diagnostics.inventory
@@ -159,10 +161,18 @@ try {
   })
   rootPath = join(sandbox, 'private')
   await check('private-root-prerequisite', () => {
-    root = storage.openPrivateDirectory(rootPath, { create: true })
+    try { root = storage.openPrivateDirectory(rootPath, { create: true }) }
+    catch (error) {
+      if (error.cleanupFailed === true) processCleanupUncertain = true
+      throw error
+    }
     assert.deepEqual(root.identity, snapshot(rootPath).identity)
     return { identity: root.identity }
   })
+  if (!processCleanupUncertain && report.results.find(row => row.name === 'private-root-prerequisite')?.code === 'name') {
+    report.diagnostics.rootAncestors = diagnoseFixtureAncestors(storage, rootPath)
+    if (report.diagnostics.rootAncestors.cleanupUncertain) processCleanupUncertain = true
+  }
 
   await check('conditional-acl-admission', () => {
     requireRoot()

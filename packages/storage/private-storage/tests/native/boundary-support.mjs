@@ -1,12 +1,45 @@
-/** Bounded subprocess protocol for synthetic packed-artifact native fixtures. */
+/** Synthetic fixture paths and bounded subprocess protocol for packed native artifacts. */
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { lstatSync, readFileSync } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
+import { lstatSync, mkdtempSync, readFileSync, realpathSync, rmdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, win32 } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
+
+/** Resolve only a newly allocated fixture root; product paths retain literal-name checks. */
+export function createFixtureRoot(prefix, requestedParent = tmpdir()) {
+  const requestedPath = mkdtempSync(join(requestedParent, prefix))
+  try { return { requestedParent, requestedPath, path: realpathSync.native(requestedPath) } }
+  catch (error) {
+    try { rmdirSync(requestedPath) }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Fixture path resolution and cleanup failed') }
+    throw error
+  }
+}
+
+/** Read-only prefix diagnostics retain the first literal-name refusal without changing acceptance. */
+export function diagnoseFixtureAncestors(storage, path) {
+  const root = win32.parse(path).root, components = path.slice(root.length).split('\\').filter(Boolean)
+  const observations = []
+  let cleanupUncertain = false
+  for (let index = 0; index < components.length; index++) {
+    const prefix = win32.join(root, ...components.slice(0, index + 1))
+    let directory
+    try {
+      directory = storage.openPrivateDirectory(prefix, { create: false })
+      directory.close()
+      observations.push({ path: prefix, component: components[index], outcome: 'opened-and-closed' })
+    } catch (error) {
+      observations.push({ path: prefix, component: components[index], outcome: 'refused', code: error.code ?? null, reason: error.message })
+      cleanupUncertain = directory !== undefined || error.cleanupFailed === true
+      if (cleanupUncertain || error.code === 'name') break
+    }
+  }
+  return { diagnosticOnly: true, create: false, cleanupUncertain, observations }
+}
 
 export function options(argv) {
   assert.equal(argv.length % 2, 0, 'Expected option/value pairs')

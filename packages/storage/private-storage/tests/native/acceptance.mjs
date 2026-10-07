@@ -1,9 +1,10 @@
 /** Native, synthetic, built-artifact acceptance. Blocked rows are evidence gaps, never passes. */
 import assert from 'node:assert/strict'
+import { createFixtureRoot } from './boundary-support.mjs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir, release } from 'node:os'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { release } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startPrimaryProcess } from './primary-process.mjs'
@@ -141,7 +142,8 @@ try {
     assert.match(entry, /\.js$/i, 'Behavior acceptance requires the built JavaScript artifact')
   })
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Blocked('Native environment unavailable')
-  sandbox = mkdtempSync(join(tmpdir(), 'dsh-private-storage-native-'))
+  report.temporaryRoot = createFixtureRoot('dsh-private-storage-native-')
+  sandbox = report.temporaryRoot.path
   const home = join(sandbox, 'home')
   mkdirSync(home)
   for (const key of ['HOME', 'USERPROFILE']) { childEnv[key] = home; process.env[key] = home }

@@ -8,7 +8,7 @@
 
 ## Review inputs
 
-原生实现为 [private-storage.c](../packages/entry/src/private-storage.c)，SHA256 为 `32b981b7f155a6fe66007ab1be2cd08072672df8434f9e7f388ee39daa3998f5`。[带类型的按需入口](../packages/entry/src/private-storage.ts)描述其不透明操作。[原生测试](../test/private-storage.test.js)使用 [Worker 夹具](../test/private-storage-worker.js)、[模拟读取失败的动态库](../test/private-storage-read-fault.c)及[独立系统调用校验器](../test/private-storage-syscall-oracle.c)。系统调用校验器绝不报告提供方或持久性验收通过。 其 Darwin 仅含拒绝条目的祖先 fixture 使用公开 SDK 权限 `ACL_CHANGE_OWNER`；私有叶子的 ACL 仍须为空，授予权限或混合类型的祖先 ACL 仍会被拒绝。
+原生实现为 [private-storage.c](../packages/entry/src/private-storage.c)，SHA256 为 `072847e2fadade42506b2857e180441a31cae9131e236a554f1bfc5b56db7906`。[带类型的按需入口](../packages/entry/src/private-storage.ts)描述其不透明操作。[原生测试](../test/private-storage.test.js)使用 [Worker 夹具](../test/private-storage-worker.js)、[模拟读取失败的动态库](../test/private-storage-read-fault.c)及[独立系统调用校验器](../test/private-storage-syscall-oracle.c)。系统调用校验器绝不报告提供方或持久性验收通过。 其 Darwin 仅含拒绝条目的祖先 fixture 使用公开 SDK 权限 `ACL_CHANGE_OWNER`；私有叶子的 ACL 仍须为空，授予权限或混合类型的祖先 ACL 仍会被拒绝。
 
 以下方面仍需独立审查：
 

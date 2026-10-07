@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/storage/private-storage/tests/native/README.md
 /windows-native-private-storage-acceptance:
-  en: a8d0f70481f2c3a8
-  zh: 9e48a4caaaac40b6
+  en: a8505e5e0017a986
+  zh: 6405b44823d12d3c
 /windows-native-private-storage-acceptance/build-the-sdk-oracle:
   en: 8c7c40ddff75bb3b
   zh: 1c5be3d5e61dcb4a
