@@ -1,7 +1,7 @@
 /** Availability shape checks do not establish destination or native-platform acceptance. */
 import { expect, it, vi } from 'vitest'
 import { posixStreamCapabilities } from '../src/native-posix.ts'
-const fixture = vi.hoisted(() => ({ error: undefined as unknown }))
+const fixture = vi.hoisted((): { error: unknown } => ({ error: undefined }))
 vi.mock('@deepseek-ai/node-addon-system/private-storage', () => ({
   inspectPosixStorageRuntime: () => { if (fixture.error !== undefined) throw fixture.error; return { platform: 'linux', architecture: 'x64', nodeApi: 8 } },
   loadPosixStoragePrimitives: () => { throw new Error('Destination open is not part of availability') },

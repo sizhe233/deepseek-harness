@@ -26,3 +26,15 @@ ssize_t read(int fd, void *buffer, size_t length) {
   if ((strcmp(mode, "short") == 0 || strcmp(mode, "partial-error") == 0) && length > 2) length = 2;
   return original(fd, buffer, length);
 }
+
+#ifdef __GLIBC__
+/* Fortified callers keep libc's bounds check before the same inode-scoped fault. */
+ssize_t __read_chk(int fd, void *buffer, size_t length, size_t buffer_length) {
+  if (length > buffer_length) {
+    static ssize_t (*original)(int, void *, size_t, size_t);
+    if (original == NULL) original = dlsym(RTLD_NEXT, "__read_chk");
+    return original(fd, buffer, length, buffer_length);
+  }
+  return read(fd, buffer, length);
+}
+#endif

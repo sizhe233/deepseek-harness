@@ -1,14 +1,21 @@
 /** Instrumented admission lifecycle tests; doubles make no native storage qualification claim. */
 import { ChildProcess, type SpawnOptions } from 'node:child_process'
 import { join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createProfileDocumentView, type ProfileDocumentSelection, type ProfileDocumentViewReference } from '../src/profile-document-view.ts'
 import type { ManagedRuntimeAdmission, RuntimeAdmissionRequest, RuntimeChildLaunchRequest, RuntimeProfileQualification } from '../src/runtime-admission.ts'
 import type { ProfileDocuments } from '../src/profile-documents.ts'
 
-const native = vi.hoisted(() => ({
-  stat: vi.fn(), spawn: vi.fn(), worker: vi.fn(), main: true, data: undefined as unknown,
+const native = vi.hoisted((): {
+  stat: Mock<(...args: unknown[]) => unknown>
+  spawn: Mock<(...args: unknown[]) => unknown>
+  worker: Mock<(...args: unknown[]) => unknown>
+  main: boolean
+  data: unknown
+  slots: Map<symbol, object>
+} => ({
+  stat: vi.fn(), spawn: vi.fn(), worker: vi.fn(), main: true, data: undefined,
   slots: new Map<symbol, object>(),
 }))
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>(), lstatSync: native.stat }))

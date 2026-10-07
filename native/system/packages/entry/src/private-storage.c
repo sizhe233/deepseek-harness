@@ -632,8 +632,30 @@ static bool inspect_acl(int fd, bool directory, acl_facts *facts, failure *error
   facts->default_entries = 0;
 #ifdef __APPLE__
   (void)directory;
-  acl_t acl = acl_get_fd_np(fd, ACL_TYPE_EXTENDED);
-  if (acl == NULL) return fail(error, errno, "acl_get_fd_np", "Cannot inspect the retained extended ACL");
+  filesec_t security = filesec_init();
+  if (security == NULL) return fail(error, errno, "filesec_init", "Cannot allocate retained ACL observations");
+  struct stat observed;
+  if (fstatx_np(fd, &observed, security) != 0) {
+    int number = errno;
+    filesec_free(security);
+    return fail(error, number, "fstatx_np", "Cannot inspect the retained extended ACL");
+  }
+  int present = 0;
+  if (filesec_query_property(security, FILESEC_ACL, &present) != 0) {
+    int number = errno;
+    filesec_free(security);
+    return fail(error, number, "filesec_query_property", "Cannot determine retained extended ACL presence");
+  }
+  /* A successful fd observation can have no ACL property; errno alone cannot establish absence. */
+  if (!present) { filesec_free(security); return true; }
+  acl_t acl = NULL;
+  if (filesec_get_property(security, FILESEC_ACL, &acl) != 0) {
+    int number = errno;
+    filesec_free(security);
+    return fail(error, number, "filesec_get_property", "Cannot copy the retained extended ACL");
+  }
+  filesec_free(security);
+  if (acl == NULL) return fail(error, EIO, "filesec_get_property", "Retained extended ACL observation is missing");
   if (acl_valid(acl) != 0) { int number = errno; (void)acl_free(acl); return fail(error, number, "acl_valid", "Unsupported retained extended ACL"); }
   acl_entry_t entry;
   int status = acl_get_entry(acl, ACL_FIRST_ENTRY, &entry);

@@ -245,16 +245,23 @@ describe('PluginInventoryGateway', () => {
     expect(await inventory.list()).not.toHaveProperty('managementAvailable')
   })
 
-  it('hides standalone and legacy MCP control rows while retaining dormant bridge declarations', async () => {
+  it.each([
+    { label: 'text IDs', thirdId: 'transport-c', expected: ['transport-a', 'transport-b', 'transport-c', 'transport-d', 'transport-e'] },
+    { label: 'integer-like ID', thirdId: '64421216', expected: ['64421216', 'transport-a', 'transport-b', 'transport-d', 'transport-e'] },
+  ])('hides standalone and legacy MCP control rows while retaining dormant bridge declarations ($label)', async ({ thirdId, expected }) => {
     const { ctx, inventory } = await harness()
-    const transportIds = await Promise.all([
-      undefined, null, [], {}, { transport: 'stdio', command: 'echo' },
-    ].map(config => ctx.loader.create({ name: '@deepseek-ai/dsh-mcp-client', disabled: true, config })))
-    await ctx.loader.create({ name: '@deepseek-ai/dsh-mcp-client/configuration', disabled: true })
-    await ctx.loader.create({ name: '@deepseek-ai/dsh-mcp-client', disabled: true, config: { mode: 'configuration' } })
+    const ids = ['transport-a', 'transport-b', thirdId, 'transport-d', 'transport-e']
+    // Loader order puts integer-like store keys first, independently of configuration insertion order.
+    await ctx.loader.root.update([
+      ...[undefined, null, [], {}, { transport: 'stdio', command: 'echo' }].map((config, index) => ({
+        id: ids[index]!, name: '@deepseek-ai/dsh-mcp-client', disabled: true, config,
+      })),
+      { id: 'standalone-control', name: '@deepseek-ai/dsh-mcp-client/configuration', disabled: true },
+      { id: 'legacy-control', name: '@deepseek-ai/dsh-mcp-client', disabled: true, config: { mode: 'configuration' } },
+    ])
 
     const snapshot = await inventory.list()
-    expect(snapshot.entries.map(entry => entry.entryId)).toEqual(transportIds)
+    expect(snapshot.entries.map(entry => entry.entryId)).toEqual(expected)
     expect(snapshot.entries.every(entry => entry.moduleName === '@deepseek-ai/dsh-mcp-client'
       && !entry.enabled && entry.fiberPhase === null)).toBe(true)
   })

@@ -8,7 +8,7 @@ import { openWindowsSourceDirectory, inspectWindowsSourceFile, openWindowsSource
   openWindowsSourceChild, listWindowsSourceDirectory, inspectWindowsSourceLink, inspectWindowsSourceDirectory } from '../src/windows-source-reader.ts'
 import type { SourceLinkObservation } from '../src/source-link.ts'
 
-const selected = vi.hoisted(() => ({ api: undefined as unknown as NativeStorage }))
+const selected = vi.hoisted((): { api: NativeStorage | undefined } => ({ api: undefined }))
 vi.mock('../src/native.ts', async original => ({ ...await original<object>(), loadNativeStorage: () => selected.api }))
 class SourceFakeNative extends FakeNative {
   security = 'a'.repeat(64)
@@ -311,7 +311,7 @@ it.each(['unchanged', 'changed', 'native-error'] as const)('keeps no-follow link
   const facts = { identity: { backend: 'windows-ntfs' as const, volumeSerial: '0000000000000001', fileId: '3'.padStart(32, '0') },
     links: 1, changeToken: 'a'.repeat(64), observations: {} }
   const result: SourceLinkObservation = { kind: 'symbolic-link', literalTarget: '../bin.js', relative: true, before: facts, after: facts }
-  selected.api.observeLink = (parent, name, maximum) => {
+  native.asNative().observeLink = (parent, name, maximum) => {
     expect(native.id(parent)).toBe(2n); expect(name).toBe('bin'); expect(maximum).toBe(32768)
     if (mode === 'native-error') throw new PrivateStorageError('unsupported', 'not a supported link')
     if (mode === 'changed') { const entry = native.entry(parent); entry.facts = { ...entry.facts, changeTime: 99n } }

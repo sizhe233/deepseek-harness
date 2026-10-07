@@ -1,7 +1,7 @@
 /** Public process observation routing; synthetic native results never establish platform acceptance. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { observeProcessBirth } from '../src/process-observation.ts'
-const fixture = vi.hoisted(() => ({ calls: [] as number[], error: undefined as unknown }))
+const fixture = vi.hoisted((): { calls: number[]; error: unknown } => ({ calls: [], error: undefined }))
 vi.mock('@deepseek-ai/node-addon-system/windows-private-owner', () => ({ loadWindowsPrivateOwner: () => ({ observeProcess(pid: number) {
   fixture.calls.push(pid); if (fixture.error !== undefined) throw fixture.error
   return { platform: 'win32', pid, creationTime100ns: '18446744073709551608', state: 'running',

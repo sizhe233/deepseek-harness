@@ -7,7 +7,7 @@ import type { NativeStorageBackend as NativeStorage } from '../src/native.ts'
 import type { PrivateStreamOperationId } from '../src/stream-types.ts'
 import { FakeNative } from './fake-native.ts'
 
-const selected = vi.hoisted(() => ({ api: undefined as unknown as NativeStorage }))
+const selected = vi.hoisted((): { api: NativeStorage | undefined } => ({ api: undefined }))
 vi.mock('../src/native.ts', async original => ({ ...await original<object>(), loadNativeStorage: () => selected.api }))
 
 it('the existing root directory is accepted by its stream facade after its caller closes it', async () => {

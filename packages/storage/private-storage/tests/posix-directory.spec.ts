@@ -14,9 +14,18 @@ function fixture() {
   const state = { synced: true, changed: false, closed: 0, afterList: false, failClose: false, emptyOnly: -1 }
   const unavailable = (): never => { throw new Error('Unrequested native operation') }
   provider.native = {
-    observeProcessBirth: unavailable, openDirectory: () => parent, openChild: unavailable,
-    createPrivateChild: () => ({ capability: child, facts: { ...facts, ino: '2' }, parentBeforeFacts: facts, parentAfterFacts: facts,
-      published: true, mechanism: 'mkdirat', creationSync: { directory: state.synced, parent: state.synced } }),
+    inspectSourceLink: unavailable, listSourceDirectory: unavailable, observeProcessBirth: unavailable,
+    openDirectory: () => parent, openChild: unavailable,
+    createPrivateChild: () => {
+      const result: ReturnType<PosixStoragePrimitives['createPrivateChild']> = {
+        capability: child, facts: { ...facts, ino: '2' }, parentBeforeFacts: facts, parentAfterFacts: facts,
+        published: true, mechanism: 'mkdirat', creationSync: { directory: true, parent: true },
+      }
+      // Native return data is a boundary: inject malformed synchronization facts after constructing the typed result.
+      Reflect.set(result.creationSync, 'directory', state.synced)
+      Reflect.set(result.creationSync, 'parent', state.synced)
+      return result
+    },
     openPrivateOutput: unavailable,
     listDirectory: (_parent: PosixStorageDirectory, max: number) => { state.emptyOnly = max; state.afterList = true
       return { entries: [], parentBeforeFacts: facts, parentAfterFacts: facts, complete: true } },
@@ -28,7 +37,7 @@ function fixture() {
     inspectBinding: unavailable, inspectFileBinding: unavailable, read: unavailable, write: unavailable, setExecutable: unavailable,
     syncFile: unavailable, syncDirectory: unavailable, publish: unavailable, removeUnpublished: unavailable,
     close: () => { state.closed++; if (state.failClose) throw new Error('Unconfirmed native release'); return { closed: true } },
-  } as unknown as PosixStoragePrimitives
+  }
   return { state, directory: openPosixPrivateDirectory('/model-private', { create: false }) }
 }
 it('preserves admitted directory identity and distinct successful child/parent sync', () => {

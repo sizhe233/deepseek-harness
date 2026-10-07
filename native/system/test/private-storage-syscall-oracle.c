@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #ifdef __APPLE__
+#include <membership.h>
+#include <sys/acl.h>
 #include <sys/mount.h>
 #else
 #include <sys/syscall.h>
@@ -45,6 +47,75 @@ static int replace_record(int parent, const char *source, const char *target) {
   return -1;
 #endif
 }
+
+#ifdef __APPLE__
+static void observe_acl(int fd, bool expected_present) {
+  filesec_t security = filesec_init();
+  require(security != NULL, "allocate ACL observation");
+  struct stat observed;
+  require(fstatx_np(fd, &observed, security) == 0, "observe retained ACL property");
+  int present = 0;
+  require(filesec_query_property(security, FILESEC_ACL, &present) == 0, "query retained ACL property");
+  require((present != 0) == expected_present, "expected retained ACL presence");
+  if (present) {
+    acl_t acl = NULL;
+    require(filesec_get_property(security, FILESEC_ACL, &acl) == 0 && acl != NULL, "copy present ACL");
+    filesec_free(security);
+    require(acl_valid(acl) == 0, "validate present ACL");
+    acl_entry_t entry;
+    require(acl_get_entry(acl, ACL_FIRST_ENTRY, &entry) == 0, "observe one ACL entry");
+    errno = 0;
+    require(acl_get_entry(acl, ACL_NEXT_ENTRY, &entry) < 0 && errno == EINVAL, "observe ACL enumeration end");
+    require(acl_free(acl) == 0, "release copied ACL");
+  } else {
+    filesec_free(security);
+  }
+}
+
+static void darwin_acl_probe(int parent) {
+  uuid_t owner;
+  require(mbr_uid_to_uuid(geteuid(), owner) == 0, "resolve fixture owner UUID");
+  acl_t acl = acl_init(1);
+  require(acl != NULL, "allocate owned fixture ACL");
+  acl_entry_t entry;
+  acl_permset_t permissions;
+  require(acl_create_entry(&acl, &entry) == 0, "create owned fixture ACL entry");
+  require(acl_set_tag_type(entry, ACL_EXTENDED_ALLOW) == 0, "set owned fixture ACL tag");
+  require(acl_set_qualifier(entry, owner) == 0, "set owned fixture ACL owner");
+  require(acl_get_permset(entry, &permissions) == 0 && acl_add_perm(permissions, ACL_READ_DATA) == 0,
+          "set owned fixture ACL read permission");
+  require(acl_valid(acl) == 0, "validate owned fixture ACL");
+  const char *names[] = {"oracle-no-acl", "oracle-with-acl", "oracle-no-acl-directory", "oracle-with-acl-directory"};
+  for (size_t index = 0; index < sizeof(names) / sizeof(names[0]); ++index) {
+    bool directory = index >= 2;
+    bool present = (index % 2) != 0;
+    if (directory) require(mkdirat(parent, names[index], 0700) == 0, "create owned ACL fixture directory");
+    int fd = openat(parent, names[index], O_NOFOLLOW | O_CLOEXEC |
+                    (directory ? O_RDONLY | O_DIRECTORY : O_RDWR | O_CREAT | O_EXCL), 0600);
+    require(fd >= 0, "open owned ACL fixture");
+    if (!directory) require(write(fd, "acl", 3) == 3, "write owned ACL fixture");
+    if (present) {
+      require(acl_set_fd_np(fd, acl, ACL_TYPE_EXTENDED) == 0, "set owned fixture extended ACL");
+    } else {
+      filesec_t removal = filesec_init();
+      require(removal != NULL, "allocate owned fixture ACL removal");
+      require(filesec_set_property(removal, FILESEC_ACL, _FILESEC_REMOVE_ACL) == 0,
+              "request removal of owned fixture ACL");
+      require(fchmodx_np(fd, removal) == 0, "remove owned fixture ACL");
+      filesec_free(removal);
+    }
+    observe_acl(fd, present);
+    require(close(fd) == 0, "close owned ACL fixture");
+  }
+  require(acl_free(acl) == 0, "release owned fixture ACL");
+  filesec_t security = filesec_init();
+  require(security != NULL, "allocate invalid-fd ACL observation");
+  struct stat observed;
+  errno = 0;
+  require(fstatx_np(-1, &observed, security) < 0 && errno == EBADF, "refuse invalid-fd ACL observation");
+  filesec_free(security);
+}
+#endif
 
 int main(int argc, char **argv) {
   require(argc == 2, "owned fixture directory argument");
@@ -115,7 +186,13 @@ int main(int argc, char **argv) {
   require(close(old_record) == 0 && close(new_record) == 0, "close control records");
   require(close(first) == 0, "close first");
   require(close(second) == 0, "close second");
+#ifdef __APPLE__
+  darwin_acl_probe(parent);
+  const char *darwin_acl = "{\"absentFileObserved\":true,\"absentDirectoryObserved\":true,\"presentFileObserved\":true,\"presentDirectoryObserved\":true,\"invalidDescriptorRefused\":true}";
+#else
+  const char *darwin_acl = "null";
+#endif
   require(close(parent) == 0, "close parent");
-  printf("{\"kind\":\"independent-syscall-diagnostic\",\"filesystemType\":\"%" PRIuMAX "\",\"exclusivePublication\":true,\"collisionPreserved\":true,\"sameFdFinalBinding\":true,\"fileSyncObserved\":true,\"directorySyncObserved\":true,\"nonblockingLeaseObserved\":true,\"retainedRecordReplacement\":true,\"providerAcceptance\":false,\"persistentLocalAcceptance\":false,\"nativeDurabilityClaimed\":false}\n", (uintmax_t)filesystem.f_type);
+  printf("{\"kind\":\"independent-syscall-diagnostic\",\"filesystemType\":\"%" PRIuMAX "\",\"exclusivePublication\":true,\"collisionPreserved\":true,\"sameFdFinalBinding\":true,\"fileSyncObserved\":true,\"directorySyncObserved\":true,\"nonblockingLeaseObserved\":true,\"retainedRecordReplacement\":true,\"providerAcceptance\":false,\"persistentLocalAcceptance\":false,\"nativeDurabilityClaimed\":false,\"darwinAcl\":%s}\n", (uintmax_t)filesystem.f_type, darwin_acl);
   return 0;
 }

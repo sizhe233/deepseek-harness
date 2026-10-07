@@ -969,7 +969,8 @@ it.each(['cli', 'service'] as const)('looks up exact archive metadata through th
   expect(await viewProfilePackageArchive(dir, '@scope/native@1.2.3', { execution, command: '/app/node', args: ['/app/pnpm.js'],
     env: { DSH_ARCHIVE_LOOKUP_FIXTURE: 'preserved' }, registry: 'https://registry.example/', timeoutMs: 500, signal }))
     .toMatchObject({ exitCode: 0, stdout: body, timedOut: false })
+  const expectedEnvironment: unknown = expect.objectContaining({ DSH_ARCHIVE_LOOKUP_FIXTURE: 'preserved' })
   expect(command.run).toHaveBeenLastCalledWith('/app/node', ['/app/pnpm.js', 'view', '@scope/native@1.2.3', 'name', 'version', 'dist', '--json',
     '--registry=https://registry.example/', '--config.fetch-retries=0'], expect.objectContaining({ cwd: dir, timeout: 500, maxBuffer: 1024 * 1024,
-    cancelSignal: signal, extendEnv: false, stdin: 'ignore', env: expect.objectContaining({ DSH_ARCHIVE_LOOKUP_FIXTURE: 'preserved' }) as unknown }))
+    cancelSignal: signal, extendEnv: false, stdin: 'ignore', env: expectedEnvironment }))
 })

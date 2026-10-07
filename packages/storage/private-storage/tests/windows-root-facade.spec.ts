@@ -5,7 +5,7 @@ import { FakeNative } from './fake-native.ts'
 import type { NativeStorageBackend as NativeStorage } from '../src/native.ts'
 import type { PrivateStreamOperationId } from '../src/stream-types.ts'
 import * as storage from '../src/index.ts'
-const selected = vi.hoisted(() => ({ api: undefined as unknown as NativeStorage }))
+const selected = vi.hoisted((): { api: NativeStorage | undefined } => ({ api: undefined }))
 vi.mock('../src/native.ts', async original => ({ ...await original<object>(), loadNativeStorage: () => selected.api }))
 class FacadeNative extends FakeNative {
   readonly ownershipArtifact = { platform: 'win32' as const, architecture: 'x64' as const, nodeApi: 8 as const,
@@ -58,7 +58,7 @@ describe('canonical Windows stream/control root facade', () => {
     expect(storage.listSourceDirectory(child, 0)).toMatchObject({ complete: true, entries: [], admission: 'complete' })
     const facts = { identity: child.identity, links: 1, observations: {}, changeToken: 'a'.repeat(64) }
     const observation = { kind: 'symbolic-link' as const, literalTarget: '../bin.js', relative: true, before: facts, after: facts }
-    selected.api.observeLink = () => observation
+    native.asNative().observeLink = () => observation
     expect(storage.inspectSourceLink(root, 'bin', { maxBytes: 32768 })).toBe(observation)
     expect(storage.streamCapabilities()).toMatchObject({ available: true, backend: 'windows-ntfs', acceptance: 'unverified' })
     root.close(); child.close(); expect(native.handles.size).toBe(0)

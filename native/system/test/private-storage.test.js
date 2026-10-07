@@ -616,6 +616,30 @@ test('independent syscall oracle reports observations without provider acceptanc
   assert.equal(facts.retainedRecordReplacement, true);
   assert.equal(readFileSync(join(s.root, 'oracle-final'), 'utf8'), 'first');
   assert.equal(readFileSync(join(s.root, 'oracle-control'), 'utf8'), 'after');
+  if (process.platform === 'darwin') {
+    assert.deepEqual(facts.darwinAcl, {
+      absentFileObserved: true, absentDirectoryObserved: true, presentFileObserved: true,
+      presentDirectoryObserved: true, invalidDescriptorRefused: true,
+    });
+    const sourceParent = s.keep(native.openDirectory(s.root, 'source', false));
+    const privateParent = s.keep(native.openDirectory(s.root, 'private', false));
+    const absentFile = s.keep(native.openPrivateRecord(privateParent, 'oracle-no-acl'));
+    const absentDirectory = s.keep(native.openDirectory(join(s.root, 'oracle-no-acl-directory'), 'private', false));
+    for (const cap of [absentFile, absentDirectory]) {
+      assert.deepEqual(native.inspect(cap).acl, { model: 'darwin-extended', supported: true, entries: 0, defaultEntries: 0 });
+    }
+    assert.equal(native.read(absentFile, 3).toString(), 'acl');
+    const presentFile = s.keep(native.openSource(sourceParent, 'oracle-with-acl'));
+    const presentDirectory = s.keep(native.openDirectory(join(s.root, 'oracle-with-acl-directory'), 'source', false));
+    for (const cap of [presentFile, presentDirectory]) {
+      assert.deepEqual(native.inspect(cap).acl, { model: 'darwin-extended', supported: true, entries: 1, defaultEntries: 0 });
+    }
+    assert.equal(native.read(presentFile, 3).toString(), 'acl');
+    assert.throws(() => native.openPrivateRecord(privateParent, 'oracle-with-acl'), systemError(['EACCES']));
+    assert.throws(() => native.openDirectory(join(s.root, 'oracle-with-acl-directory'), 'private', false), systemError(['EACCES']));
+  } else {
+    assert.equal(facts.darwinAcl, null);
+  }
   t.diagnostic(JSON.stringify(facts));
 });
 

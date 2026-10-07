@@ -80,5 +80,5 @@
     "unsupported private destinations refuse admission and creation before namespace changes": "Must execute on overlayfs/tmpfs; may skip this refusal-specific test only when actual observed fixture volume is another filesystem."
   },
   "persistentDestinationRequired": true,
-  "sourceSha256": "5d48af2281cda69d1f072ab683ed97e9a103aaa894e5f670e6fc5ffe6e80e6bc"
+  "sourceSha256": "4501b9c377aff41523f34103f4506b7cff2f181556dcc76ee5b737b98325dca7"
 }

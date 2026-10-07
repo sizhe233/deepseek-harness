@@ -5,13 +5,28 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { gzipSync } from 'node:zlib'
+import { runInNewContext } from 'node:vm'
 import * as tar from 'tar'
 import yaml from 'js-yaml'
-import { collectPrivateStorageNativeClosure, inspectArchiveEntries, materializePrivateStorageConsumer, privateStorageClosurePlan, verifyArchiveIntegrity, verifyConsumerDependencies } from './private-storage-closure.mjs'
+import { collectPrivateStorageNativeClosure, inspectArchiveEntries, materializePrivateStorageConsumer, privateStorageClosurePlan, verifyArchiveIntegrity, verifyConsumerDependencies, verifyConsumerRuntimeIdentities } from './private-storage-closure.mjs'
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
 const integrity = bytes => `sha512-${createHash('sha512').update(bytes).digest('base64')}`
 const platforms = [['win32', 'x64'], ['darwin', 'arm64'], ['darwin', 'x64'], ['linux', 'x64']]
+
+test('Windows capability identities preserve distinct Koffi and candidate owner payloads', () => {
+  const verifyIdentities = runInNewContext(`(${verifyConsumerRuntimeIdentities.toString()})`)
+  const koffi = { package: '@koromix/koffi-win32-x64', sha256: hash('Koffi fixture') }
+  const owner = { platformPackage: { name: '@deepseek-ai/node-addon-system-win32-x64', binary: 'bin/windows-private-owner.node', sha256: hash('owner fixture'), bytes: 123 },
+    entry: { file: 'lib/windows-private-owner.js', sha256: hash('entry fixture') } }
+  const capabilities = { available: true, nativeArtifact: { koffiVersion: '3.1.1', platformPackage: koffi.package, nativeBinarySha256: koffi.sha256 }, ownershipArtifact: owner }
+  verifyIdentities(capabilities, koffi, owner, assert)
+  for (const [key, value] of [['koffiVersion', '3.1.2'], ['platformPackage', owner.platformPackage.name], ['nativeBinarySha256', owner.platformPackage.sha256]]) {
+    assert.throws(() => verifyIdentities({ ...capabilities, nativeArtifact: { ...capabilities.nativeArtifact, [key]: value } }, koffi, owner, assert))
+  }
+  assert.throws(() => verifyIdentities({ ...capabilities, ownershipArtifact: { ...owner, platformPackage: { ...owner.platformPackage, sha256: koffi.sha256 } } }, koffi, owner, assert))
+  assert.throws(() => verifyIdentities({ ...capabilities, ownershipArtifact: undefined }, koffi, owner, assert))
+})
 
 function fixtureRoot(t) {
   const root = mkdtempSync(join(tmpdir(), 'private-storage-closure-test-'))

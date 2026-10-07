@@ -231,7 +231,16 @@ export function materializePrivateStorageConsumer({ artifactDirectory, storagePa
   return inventory
 }
 
-/** Import the standalone package and verify the exact native binary selected by real Koffi. */
+/** Compare loaded capability identities with independently inspected Koffi and resource-owner payloads. */
+export function verifyConsumerRuntimeIdentities(capabilities, koffi, candidateNative, assertions) {
+  if (!capabilities.available) return
+  assertions.equal(capabilities.nativeArtifact.koffiVersion, '3.1.1')
+  assertions.equal(capabilities.nativeArtifact.platformPackage, koffi.package)
+  assertions.equal(capabilities.nativeArtifact.nativeBinarySha256, koffi.sha256)
+  if (candidateNative !== undefined) assertions.deepEqual(capabilities.ownershipArtifact, candidateNative)
+}
+
+/** Import the standalone package and verify the separately selected Koffi and resource-owner payloads. */
 export function smokePrivateStorageConsumer(consumer) {
   const probe = join(consumer.root, 'consumer-probe.mjs')
   const script = `import assert from 'node:assert/strict';
@@ -271,8 +280,8 @@ if (nativeEntry) {
   const entryFile = nativeEntry.verifiedCandidateFiles.find(item => item.path === candidateNative.entry.file);
   assert.ok(entryFile); assert.equal(entryFile.sha256, candidateNative.entry.sha256);
   assert.equal(storage.streamCapabilities().available, true, 'Candidate streaming backend must load on every supported runner');
-  if (capabilities.available) assert.equal(capabilities.nativeArtifact.nativeBinarySha256, payload.sha256);
-} else if (capabilities.available) assert.equal(capabilities.nativeArtifact.nativeBinarySha256, digest);
+}
+(${verifyConsumerRuntimeIdentities.toString()})(capabilities, { package: selected.name, sha256: digest }, candidateNative, assert);
 console.log(JSON.stringify({ complete: true, capabilities, candidateNative, nativeBinary: { package: selected.name, path: relative, sha256: digest }, lifecycleScriptsExecuted: false, checkoutIndependent: true }));
 `
   writeFileSync(probe, script, { flag: 'wx' })
