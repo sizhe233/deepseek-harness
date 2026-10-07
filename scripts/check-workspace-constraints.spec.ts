@@ -414,9 +414,28 @@ it('requires the standalone shortcut protocol and rejects unrelated runtime file
 it.each([
   { dir: 'apps/desktop-host', omitted: 'lib/*.js' },
   { dir: 'packages/boot/app-boot', omitted: 'lib/runtime-version.js' },
+  { dir: 'packages/boot/app-boot', omitted: 'lib/profile-documents.js' },
+  { dir: 'packages/boot/app-boot', omitted: 'lib/runtime-admission.js' },
+  { dir: 'packages/storage/private-storage', omitted: 'lib/streams.js' },
 ])('requires the carrier publication files in $dir', ({ dir, omitted }) => {
   const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
   expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
   expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(file => file !== omitted) } }))
     .toEqual([expect.stringContaining('package.json files must be')])
+})
+
+it('publishes the declared Windows x64 native package and rejects undeclared native platforms', () => {
+  const dir = 'native/system/packages/win32-x64'
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, name: '@deepseek-ai/node-addon-system-win32-arm64' } }))
+    .toEqual(expect.arrayContaining([expect.stringContaining('unexpected package in the public Landlock package family')]))
+})
+
+it('publishes only the native entry source audit allowlist', () => {
+  const dir = 'native/system/packages/entry'
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: [...manifest.files!, 'src/unapproved.c'] } }))
+    .toEqual([expect.stringContaining('files must not publish "src/unapproved.c"')])
 })

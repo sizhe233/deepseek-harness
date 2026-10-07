@@ -27,6 +27,31 @@ test('candidate CI is read-only and never runs in pull_request_target context', 
   assert.deepEqual(workflow.on.push.branches, ['workbench'])
 })
 
+function assertSdkDownloadTests(steps) {
+  const tests = steps.findIndex(step => step.run === 'node --test native/system/test/node-sdk-download.test.js')
+  const prepare = steps.findIndex(step => step.name === 'Prepare Windows compiler environment and verified Node SDK')
+  assert.ok(tests >= 0 && prepare > tests, 'bounded SDK download tests must precede SDK preparation')
+  assert.equal(steps[tests].if, undefined, 'SDK download tests must run on every native builder')
+  assert.equal(steps[tests]['continue-on-error'], undefined, 'SDK download tests must block failed builds')
+}
+test('native builders require bounded SDK download tests before SDK preparation', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const steps = workflow.jobs['native-prebuilds'].steps
+  assertSdkDownloadTests(steps)
+  const index = steps.findIndex(step => step.run === 'node --test native/system/test/node-sdk-download.test.js')
+  const missing = structuredClone(steps)
+  missing.splice(index, 1)
+  assert.throws(() => assertSdkDownloadTests(missing), /must precede SDK preparation/)
+  const late = structuredClone(steps)
+  late.push(...late.splice(index, 1))
+  assert.throws(() => assertSdkDownloadTests(late), /must precede SDK preparation/)
+  for (const change of [{ if: "runner.os == 'Windows'" }, { 'continue-on-error': true }]) {
+    const relaxed = structuredClone(steps)
+    Object.assign(relaxed[index], change)
+    assert.throws(() => assertSdkDownloadTests(relaxed), /SDK download tests must/)
+  }
+})
+
 const regressionPaths = [
   'packages/boot/hmr/tests/workbench-config.spec.ts',
   'packages/client/ui-sidebar-documentpreview/tests/pdf-smoke.client.spec.ts',

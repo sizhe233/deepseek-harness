@@ -42,8 +42,8 @@
     "lib/runtime-version.js",
     "lib/profile-documents.js",
     "lib/worker/profile-resolution-bootstrap.js",
-    "lib/types/**/*.d.ts",
-    "lib/runtime-admission.js"
+    "lib/runtime-admission.js",
+    "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "dependencies": {

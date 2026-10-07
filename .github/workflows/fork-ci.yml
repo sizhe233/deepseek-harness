@@ -55,6 +55,8 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -yq musl-tools
+      - name: Check bounded official SDK downloads
+        run: node --test native/system/test/node-sdk-download.test.js
       - name: Prepare Windows compiler environment and verified Node SDK
         if: runner.os == 'Windows'
         timeout-minutes: 5

@@ -44,10 +44,11 @@ const publicNativePackages = new Set([
   '@deepseek-ai/node-addon-system-darwin-x64',
   '@deepseek-ai/node-addon-system-linux-arm64',
   '@deepseek-ai/node-addon-system-linux-x64',
+  '@deepseek-ai/node-addon-system-win32-x64',
 ])
 /** Deliberate source payloads whose exact bytes are part of the package's audit surface. */
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/node-addon-system': ['src/main.c', 'src/flock.c'],
+  '@deepseek-ai/node-addon-system': ['src/main.c', 'src/flock.c', 'src/private-storage.c', 'src/windows-private-owner.c'],
 }
 /** Public source home recorded in maintained package manifests. */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
@@ -167,7 +168,11 @@ export function readWorkspaceManifests(repositoryRoot: string): WorkspaceManifes
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // Application-free carrier and Worker bootstraps have separate emitted entries.
-  '@deepseek-ai/dsh-app-boot': ['lib/runtime-version.js', 'lib/worker/profile-resolution-bootstrap.js'],
+  '@deepseek-ai/dsh-app-boot': [
+    'lib/runtime-version.js', 'lib/profile-documents.js', 'lib/worker/profile-resolution-bootstrap.js', 'lib/runtime-admission.js',
+  ],
+  // Bounded package-source streaming is an independent public entry.
+  '@deepseek-ai/dsh-private-storage': ['lib/streams.js'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.

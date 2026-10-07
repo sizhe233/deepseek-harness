@@ -48,3 +48,5 @@ Linux x64/arm64 包包含静态 Landlock 可执行文件，以及分别用于 gl
 `@deepseek-ai/node-addon-system/windows-private-owner` 按需加载精确的 Windows x64 Node-API8 平台包。它只暴露由原生环境持有的不透明能力，不暴露 HANDLE 或指针。缺少后继版本二进制时会拒绝，不会在安装时编译，也不会退回 0.1.2。原有 Landlock/flock 入口保持其行为。实际 Windows 编译和 Worker 生命周期验收仍为必需检查，源代码或格式检查不能替代。
 
 Windows 构建机通过 `node scripts/prepare-windows-node-sdk.mjs` 准备当前官方 Node 头文件与 `node.lib`，使用同一版本的官方 SHA256 清单验证两者，再在 x64 Windows SDK 编译环境中执行 `pnpm build:native --node-sdk <verified-directory>`。仅构建期使用的可选 `NATIVE_SYSTEM_NODE_SDK` 可提供同一目录。运行时二进制选择不会读取该变量。
+
+SDK 下载仅使用官方 HTTPS 地址，禁止重定向，每个文件须在 120 秒内完成。响应不能为空，并在流式读取期间遵守字节上限（校验和清单为 1 MiB，每个产物为 32 MiB）；若提供 `Content-Length`，其值必须有效且与接收字节数一致。未提供长度的响应也遵守相同上限和产物校验和检查。

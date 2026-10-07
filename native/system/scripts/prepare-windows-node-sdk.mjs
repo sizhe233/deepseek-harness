@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { downloadNodeSdk } from './download-node-sdk.mjs';
 
 assert.equal(process.platform, 'win32', 'The Windows SDK preparation runs only on its native builder');
 assert.equal(process.arch, 'x64');
@@ -13,14 +14,7 @@ const target = join(parent, process.version);
 const base = `https://nodejs.org/dist/${process.version}/`;
 await mkdir(target, { recursive: true });
 async function download(name, limit) {
-  const response = await fetch(new URL(name, base), { redirect: 'error', signal: AbortSignal.timeout(120000) });
-  assert.equal(response.status, 200, `Official SDK download failed for ${name}`);
-  const length = Number(response.headers.get('content-length'));
-  assert.ok(Number.isSafeInteger(length) && length > 0 && length <= limit, 'Official SDK size is missing or out of bounds');
-  const chunks = []; let bytes = 0;
-  for await (const chunk of response.body) { bytes += chunk.length; assert.ok(bytes <= length && bytes <= limit); chunks.push(chunk); }
-  assert.equal(bytes, length);
-  return Buffer.concat(chunks);
+  return downloadNodeSdk(new URL(name, base), limit);
 }
 const sums = await download('SHASUMS256.txt', 1024 * 1024);
 const records = new Map(sums.toString('utf8').trim().split('\n').map(line => {
