@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { PRIVATE_STORAGE_CLAIM, validatePrivateStorageClaim } from './private-storage-applicability.mjs'
 import { evaluatePrivateStorageNative, privateStorageNativeContract } from './private-storage-native-contract.mjs'
+import { syntheticOwnerReport, syntheticSpecifications, syntheticAbsentDescriptor } from './private-storage-native-test-fixture.mjs'
 
 const conditional = ['admission/unsupported-volume-admission', 'admission/real-storage-failure',
   'admission/volume-mount-point-admission', 'admission/cloud-reparse-admission',
@@ -14,27 +15,28 @@ const volume = () => ({ root: 'C:\\', driveType: 3, metadataAttempted: true, met
 
 function fixture() {
   const baselines = ['read', 'publish'].map(mode => ({ name: `native-${mode}-allocation-baseline`, status: 'passed',
-    detail: { allocationAttempts: 2, viewAttempts: 1 } }))
-  const contract = privateStorageNativeContract(new Map([['boundary', { results: baselines }]]))
-  const specifications = ['primary', 'admission', 'boundary', 'directory'].map(id => ({ id, sourceSha: 'a'.repeat(40),
-    entrySha256: 'b'.repeat(64), oracleSha256: 'c'.repeat(64), oracleSourceSha256: 'd'.repeat(64) }))
+    detail: { allocations: 2, exposures: 1 } }))
+  const contract = privateStorageNativeContract(new Map([['owner-faults', { results: baselines }]]))
+  const specifications = syntheticSpecifications()
   const reports = new Map(specifications.map(spec => [spec.id, { schemaVersion: 1, nativeExecution: true, platform: 'win32', architecture: 'x64',
     ...spec, results: [] }]))
   for (const requirement of contract.requirements) {
-    for (const ref of requirement.evidence) reports.get(ref.matrix).results.push({ name: ref.row,
+    for (const ref of requirement.evidence.filter(ref => ref.matrix !== 'owner-faults')) reports.get(ref.matrix).results.push({ name: ref.row,
       status: conditional.includes(requirement.id) || requirement.id === na ? 'blocked' : 'passed', reason: 'Synthetic case observation' })
   }
   for (const replacement of contract.replacements) reports.get(replacement.matrix).results.push({ name: replacement.row, status: 'blocked', reason: 'Original broad placeholder' })
-  for (const record of baselines) Object.assign(reports.get('boundary').results.find(row => row.name === record.name), record)
+  reports.set('owner-faults', syntheticOwnerReport(specifications.at(-1), { read: { allocations: 2, exposures: 1 }, publish: { allocations: 2, exposures: 1 } }))
+  reports.get('primary').results.find(row => row.name === 'reject-absent-dacl-without-repair').detail = syntheticAbsentDescriptor()
   reports.get('primary').filesystem = { name: 'NTFS', flags: 0x88, deviceType: 7, deviceCharacteristics: 0 }
   reports.get('admission').diagnostics = { inventory: { complete: true, readOnly: true,
     inventoryScope: 'mounted-drive-letters', privilegesEnabled: false, volumes: [volume()] } }
   const seal = (claim = PRIVATE_STORAGE_CLAIM) => ({ specifications, claim, runs: specifications.map(spec => {
     const report = reports.get(spec.id)
     report.summary = Object.fromEntries(['passed', 'failed', 'blocked'].map(status => [status, report.results.filter(row => row.status === status).length]))
+    if (spec.id === 'owner-faults') report.acceptance = report.summary.failed ? 'failed' : 'partial'
     return { matrix: spec.id, signal: null, timedOut: false, exitCode: report.summary.failed ? 1 : report.summary.blocked ? 2 : 0, rawReport: JSON.stringify(report) }
   }) })
-  const row = id => { const [matrix, name] = id.split('/'); return reports.get(matrix).results.find(row => row.name === name) }
+  const row = id => { const ref = contract.requirements.find(row => row.id === id).evidence[0]; return reports.get(ref.matrix).results.find(row => row.name === ref.row) }
   return { reports, seal, row, contract }
 }
 
@@ -50,7 +52,7 @@ test('ordinary profile preserves all expanded rows and raw facts without countin
   assert.equal(result.applicabilitySummary.notRequired, 8)
   assert.equal(result.subcases.length, f.contract.requirements.length)
   assert.equal(result.inactiveObservations.length, 8)
-  assert.equal(result.replacedPlaceholders.length, 9)
+  assert.equal(result.replacedPlaceholders.length, 36)
   assert.ok(result.replacedPlaceholders.every(row => row.original.status === 'blocked'))
   assert.ok(result.matrices.some(matrix => matrix.exitCode === 2))
   assert.equal(result.subcases.find(row => row.id === na).status, 'not-applicable')
@@ -59,7 +61,7 @@ test('ordinary profile preserves all expanded rows and raw facts without countin
 
 test('unestablished dynamic baselines retain 141 mandatory requirements, never a zero-fault inventory', () => {
   const f = fixture()
-  for (const row of f.reports.get('boundary').results) if (row.name.endsWith('allocation-baseline')) row.status = 'blocked'
+  for (const row of f.reports.get('owner-faults').results) if (row.name.endsWith('allocation-baseline')) { row.status = 'blocked'; row.reason = 'Synthetic blocked baseline' }
   const result = evaluatePrivateStorageNative(f.seal())
   assert.equal(result.complete, false)
   assert.equal(result.applicabilitySummary.mustPass, 141)
@@ -72,16 +74,25 @@ for (const id of conditional) test(`declaring ${id} activates its exact still-bl
   assert.equal(result.subcases.find(row => row.id === id).required, true)
   assert.equal(result.subcases.find(row => row.id === id).status, 'blocked')
   f.row(id).status = 'passed'
-  assert.equal(evaluatePrivateStorageNative(f.seal({ ...PRIVATE_STORAGE_CLAIM, requiredConditions: [id] })).complete, true)
+  const available = evaluatePrivateStorageNative(f.seal({ ...PRIVATE_STORAGE_CLAIM, requiredConditions: [id] }))
+  if (id.startsWith('directory/')) {
+    assert.equal(available.complete, false, 'No safe genuine cleanup-failure fixture exists; a passing label must be rejected')
+    assert.ok(available.errors.some(row => row.matrix === 'owner-faults'))
+  } else assert.equal(available.complete, true)
 })
 
 for (const id of conditional) test(`an actual failure remains fatal for otherwise conditional ${id}`, () => {
   const f = fixture(); f.row(id).status = 'failed'
   const result = evaluatePrivateStorageNative(f.seal())
   assert.equal(result.complete, false); assert.equal(result.acceptance, 'failed')
-  assert.equal(result.subcases.find(row => row.id === id).required, true)
-  assert.equal(result.applicabilitySummary.activatedConditional, 1)
-  assert.ok(result.unresolved.some(row => `${row.matrix}/${row.name}` === id && row.status === 'failed'))
+  if (id.startsWith('directory/')) {
+    assert.ok(result.errors.some(row => row.matrix === 'owner-faults'), 'An unsupported cleanup claim invalidates its report')
+    assert.equal(JSON.parse(f.seal().runs.at(-1).rawReport).results.find(row => row.name === id.split('/')[1]).status, 'failed')
+  } else {
+    assert.equal(result.subcases.find(row => row.id === id).required, true)
+    assert.equal(result.applicabilitySummary.activatedConditional, 1)
+    assert.ok(result.unresolved.some(row => `${row.matrix}/${row.name}` === id && row.status === 'failed'))
+  }
 })
 
 for (const change of [
@@ -147,7 +158,12 @@ for (const change of [
 test('every mandatory row, including each dynamic ordinal, independently remains blocking', () => {
   const original = fixture(), rows = evaluatePrivateStorageNative(original.seal()).subcases.filter(row => row.required)
   for (const { id } of rows) {
-    const f = fixture(); f.row(id).status = 'blocked'
+    const f = fixture(); f.row(id).status = 'blocked'; f.row(id).reason = 'Synthetic required case unavailable'
+    if (id.includes('native-one-shot-')) {
+      const inventory = f.row(`boundary/native-${id.includes('-publish-') ? 'publish' : 'read'}-allocation-baseline`)
+      const row = f.reports.get('owner-faults').results.find(row => row.name === inventory.name.replace('-baseline', '-fault-inventory'))
+      row.status = 'blocked'; row.reason = 'Synthetic ordinal unavailable'
+    }
     const result = evaluatePrivateStorageNative(f.seal())
     assert.equal(result.complete, false, id)
     assert.equal(result.subcases.find(row => row.id === id).required, true, id)
@@ -155,7 +171,7 @@ test('every mandatory row, including each dynamic ordinal, independently remains
 })
 
 for (const status of ['failed', 'blocked']) test(`an undeclared diagnostic ${status} row remains fatal or incomplete`, () => {
-  const f = fixture(); f.reports.get('directory').results.push({ name: 'unmapped-cleanup-obligation', status, reason: 'Original failure' })
+  const f = fixture(); f.reports.get('boundary').results.push({ name: 'unmapped-cleanup-obligation', status, reason: 'Original failure' })
   const result = evaluatePrivateStorageNative(f.seal())
   assert.equal(result.complete, false)
   assert.ok(result.unresolved.some(row => row.name === 'unmapped-cleanup-obligation' && row.status === status))
@@ -166,7 +182,8 @@ for (const status of ['passed', 'failed']) test(`N/A Koffi free-failure cannot s
   const result = evaluatePrivateStorageNative(f.seal())
   assert.equal(result.complete, false); assert.equal(result.acceptance, 'failed')
   assert.equal(result.subcases.find(row => row.id === na).status, 'not-applicable')
-  assert.equal(result.applicabilitySummary.passed, 145)
+  assert.ok(result.errors.some(row => row.matrix === 'owner-faults'))
+  assert.equal(result.subcases.find(row => row.id === 'directory/directory-enumeration-baseline').status, 'blocked')
 })
 
 for (const claim of [undefined, null, {}, { ...PRIVATE_STORAGE_CLAIM, schemaVersion: 2 },

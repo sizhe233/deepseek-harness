@@ -542,7 +542,7 @@ jobs:
           - os: windows-2025
             node: '24'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 135
     permissions:
       contents: read
     env:

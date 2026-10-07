@@ -85,9 +85,10 @@ try {
   if (!values.fixture || !values.entry || !values.oracle) throw new Blocked('Native execution requires --fixture, --entry, and --oracle from the same candidate')
   assert.match(report.sourceSha ?? '', /^[a-f0-9]{40}$/u)
   const fixture = ownerFaultBinding(values.fixture), packed = ownerBinding(values.entry)
-  Object.assign(report, { fixtureBinarySha256: fixture.fixtureBinarySha256, fixtureBuildSha256: fixture.fixtureBuildSha256,
+  const sdkBinding = oracleBinding(values.oracle)
+  Object.assign(report, sdkBinding, { fixtureBinarySha256: fixture.fixtureBinarySha256, fixtureBuildSha256: fixture.fixtureBuildSha256,
     compilerLogSha256: fixture.compilerLogSha256, compilerSha256: fixture.compilerSha256, entrySha256: ownerFileDigest(values.entry),
-    productionBinarySha256: packed.sha256, packedInventorySha256: packed.inventorySha256 }, oracleBinding(values.oracle))
+    productionBinarySha256: packed.sha256, packedInventorySha256: packed.inventorySha256, oracleCompilerLogSha256: sdkBinding.compilerLogSha256 })
   report.nativeExecution = true
   report.temporaryRoot = createFixtureRoot('dsh-owner-fault-')
   temporary = report.temporaryRoot.path

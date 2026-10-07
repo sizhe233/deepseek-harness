@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import test from 'node:test'
 import { privateStorageNativeContract } from './private-storage-native-contract.mjs'
+import { copySyntheticOwnerInputs, writeSyntheticOwnerBuild, writeSyntheticNodeSdk, syntheticOwnerReport, syntheticAbsentDescriptor } from './private-storage-native-test-fixture.mjs'
+import { bindNativeOwnerFault } from './private-storage-native-matrices.mjs'
+import { PRIVATE_STORAGE_CLAIM } from './private-storage-applicability.mjs'
 import { runPackedNativeSuite, validateNativePreflight } from './private-storage-native-suite.mjs'
 const hash = path => createHash('sha256').update(readFileSync(path)).digest('hex')
 const loader = () => ({ nativeExecution: true, platform: 'win32', architecture: 'x64', complete: true,
@@ -33,19 +36,22 @@ function fixture(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const input = { toolkit: join(root, 'toolkit'), fixtures: join(root, 'fixtures'), oracleDirectory: join(root, 'oracle'), evidence: join(root, 'evidence'),
     entry: join(root, 'entry.js'), abi: join(root, 'abi.json'), candidateArchive: join(root, 'candidate.tgz'), manifest: join(root, 'candidate.json'),
-    sourceSha: 'a'.repeat(40), consumerRoot: join(root, 'consumer') }
+    sourceSha: 'a'.repeat(40), claim: PRIVATE_STORAGE_CLAIM, productionBinarySha256: 'a'.repeat(64), consumerRoot: join(root, 'consumer') }
   for (const directory of [input.toolkit, input.fixtures, input.oracleDirectory, input.evidence]) mkdirSync(directory)
   for (const file of [input.entry, input.abi, input.candidateArchive, input.manifest,
     ...['windows-oracle.c', 'windows-admission-oracle.c', 'boundary-inheritance.c'].map(name => join(input.fixtures, name))]) writeFileSync(file, `synthetic ${basename(file)}`)
+  copySyntheticOwnerInputs(input.toolkit)
+  writeFileSync(input.manifest, JSON.stringify({ privateStorageAcceptance: { claim: PRIVATE_STORAGE_CLAIM } }))
   const calls = []
   let primary, supplemental
   const emit = (name, bytes = `synthetic ${name}`) => { const path = join(input.oracleDirectory, name); writeFileSync(path, bytes); return hash(path) }
-  const reports = new Map([['boundary', { results: ['read', 'publish'].map(mode => ({ name: `native-${mode}-allocation-baseline`, status: 'passed', detail: { allocationAttempts: 1, viewAttempts: 1 } })) }]])
+  const reports = new Map([['owner-faults', { results: ['read', 'publish'].map(mode => ({ name: `native-${mode}-allocation-baseline`, status: 'passed', detail: { allocations: 1, exposures: 1 } })) }]])
   const contract = privateStorageNativeContract(reports)
-  const rows = new Map(['primary', 'admission', 'boundary', 'directory'].map(name => [name, new Map()]))
+  const rows = new Map(['primary', 'admission', 'boundary', 'owner-faults'].map(name => [name, new Map()]))
   for (const requirement of contract.requirements) for (const ref of requirement.evidence) rows.get(ref.matrix).set(ref.row, { name: ref.row, status: 'passed' })
   for (const item of contract.replacements) rows.get(item.matrix).set(item.row, { name: item.row, status: 'blocked', reason: 'Retained hypothetical placeholder' })
-  for (const row of reports.get('boundary').results) rows.get('boundary').set(row.name, row)
+  for (const row of reports.get('owner-faults').results) rows.get('owner-faults').set(row.name, row)
+  rows.get('primary').get('reject-absent-dacl-without-repair').detail = syntheticAbsentDescriptor()
   async function invoke(command, args, options) {
     const file = command === 'pwsh' ? basename(args[args.indexOf('-File') + 1]) : basename(args[0])
     calls.push(file)
@@ -67,14 +73,27 @@ function fixture(t) {
       }) }
       writeFileSync(options.reportPath, JSON.stringify(supplemental)); return observation(supplemental)
     }
+    if (file === 'prepare-windows-node-sdk.mjs') return observation(writeSyntheticNodeSdk(join(input.evidence, 'node-sdk', process.version)))
+    if (file === 'private-storage-owner-fault.ps1') return observation(writeSyntheticOwnerBuild(input.toolkit, join(input.evidence, 'owner-fault'), join(input.evidence, 'node-sdk', process.version)))
+    if (file === 'owner-fault-matrix.mjs') {
+      assert.equal(args[args.indexOf('--report') + 1], options.reportPath); assert.ok(args.includes('--fixture')); assert.ok(args.includes('--source-sha'))
+      const binding = bindNativeOwnerFault(input.toolkit, join(input.evidence, 'owner-fault'), input.productionBinarySha256)
+      const report = syntheticOwnerReport({ ...binding.identity, sourceSha: input.sourceSha, entrySha256: hash(input.entry), oracleSha256: primary.binarySha256, oracleSourceSha256: primary.sourceSha256, oracleCompilerLogSha256: primary.compilerLogSha256 },
+        { read: { allocations: 1, exposures: 1 }, publish: { allocations: 1, exposures: 1 } })
+      return { ...observation(report), exitCode: 2 }
+    }
     if (file === 'abi-acceptance.mjs') return observation({ schemaVersion: 1, complete: true, status: 'passed', check: 'sdk-ffi-abi', nativeExecution: true,
       platform: 'win32', architecture: 'x64', sourceSha: input.sourceSha, oracleSha256: primary.binarySha256, oracleSourceSha256: primary.sourceSha256, abiSha256: hash(input.abi) })
     const id = file === 'acceptance.mjs' ? 'primary' : file === 'admission-matrix.mjs' ? 'admission' : file === 'boundary-matrix.mjs' ? 'boundary' : 'directory'
     if (id === 'boundary') rows.get(id).get('sdk-child-does-not-inherit-private-handles-with-positive-control').detail = {
       sdkDllSha256: supplemental.fixtures[1].binarySha256, sdkChildSha256: supplemental.fixtures[2].binarySha256 }
+    for (const name of id === 'admission' ? ['unsupported-volume-admission', 'real-storage-failure', 'volume-mount-point-admission', 'cloud-reparse-admission', 'authorized-remote-volume-admission'] : id === 'boundary' ? ['executing-target-publication'] : []) Object.assign(rows.get(id).get(name), { status: 'blocked', reason: 'Synthetic unavailable conditional fixture' })
     const results = [...rows.get(id).values()], summary = Object.fromEntries(['passed', 'failed', 'blocked'].map(status => [status, results.filter(row => row.status === status).length]))
     const binding = id === 'admission' ? supplemental.fixtures[0] : primary
     return { exitCode: summary.blocked ? 2 : 0, signal: null, timedOut: false, rawReport: JSON.stringify({ schemaVersion: 1,
+      evidence: id === 'primary' ? 'native-synthetic-acceptance-harness' : id === 'admission' ? 'native-sdk-admission-matrix' : 'packed-native-boundary-matrix',
+      ...(id === 'primary' ? { filesystem: { name: 'NTFS', flags: 0x88, deviceType: 7, deviceCharacteristics: 0 } } : {}),
+      ...(id === 'admission' ? { diagnostics: { inventory: { complete: true, readOnly: true, inventoryScope: 'mounted-drive-letters', privilegesEnabled: false, volumes: [{ root: 'C:\\', driveType: 3, metadataAttempted: true, metadataAvailable: true, win32Error: 0, filesystem: 'NTFS', flags: 0x88, readOnly: false, persistentAcls: true, reparsePoints: true, remote: false }] } } } : {}),
       nativeExecution: true, platform: 'win32', architecture: 'x64', sourceSha: input.sourceSha, entrySha256: hash(input.entry),
       oracleSha256: binding.binarySha256, oracleSourceSha256: binding.sourceSha256,
       inheritanceSourceSha256: hash(join(input.fixtures, 'boundary-inheritance.c')), results, summary }) }
@@ -85,8 +104,8 @@ function fixture(t) {
 test('hypothetically complete source-bound preflights and all matrices compose only after every invocation', async t => {
   const f = fixture(t), report = await runPackedNativeSuite(f.input, f.invoke)
   assert.equal(report.complete, true); assert.equal(report.acceptance, 'complete')
-  assert.deepEqual(f.calls, ['loader-negative.mjs', 'private-storage-native.ps1', 'private-storage-sdk-matrices.ps1', 'abi-acceptance.mjs',
-    'acceptance.mjs', 'admission-matrix.mjs', 'boundary-matrix.mjs', 'directory-boundary-matrix.mjs'])
+  assert.deepEqual(f.calls, ['loader-negative.mjs', 'private-storage-native.ps1', 'private-storage-sdk-matrices.ps1', 'prepare-windows-node-sdk.mjs', 'private-storage-owner-fault.ps1', 'abi-acceptance.mjs',
+    'acceptance.mjs', 'admission-matrix.mjs', 'boundary-matrix.mjs', 'owner-fault-matrix.mjs'])
 })
 
 test('a failing loader still runs SDK, ABI and every independent native matrix, then fails the suite', async t => {
@@ -97,7 +116,7 @@ test('a failing loader still runs SDK, ABI and every independent native matrix, 
     return run
   })
   assert.equal(report.complete, false); assert.equal(report.matrices.complete, true)
-  assert.equal(f.calls.length, 8); assert.equal(report.errors[0].stage, 'loader')
+  assert.equal(f.calls.length, 10); assert.equal(report.errors[0].stage, 'loader')
 })
 
 test('a missing primary compiler leaves admission independent and all other gaps explicit', async t => {
@@ -179,7 +198,7 @@ for (const name of ['abi', 'candidateArchive', 'manifest']) {
     })
     assert.equal(report.complete, false)
     assert.equal(f.calls.includes('acceptance.mjs'), true); assert.equal(f.calls.includes('admission-matrix.mjs'), false)
-    assert.equal(f.calls.includes('boundary-matrix.mjs'), false); assert.equal(f.calls.includes('directory-boundary-matrix.mjs'), false)
+    assert.equal(f.calls.includes('boundary-matrix.mjs'), false); assert.equal(f.calls.includes('owner-fault-matrix.mjs'), false)
     assert.equal(report.matrices.runs.length, 4)
   })
 }
@@ -201,4 +220,43 @@ test('a compiler-time rejected log cannot become eligible after a later compiler
   assert.equal(f.calls.includes('abi-acceptance.mjs'), false); assert.equal(f.calls.includes('acceptance.mjs'), false)
   assert.ok(f.calls.includes('admission-matrix.mjs'))
   assert.equal(report.matrices.sdkBindings.primary, undefined)
+})
+
+for (const file of ['prepare-windows-node-sdk.mjs', 'private-storage-owner-fault.ps1']) {
+  test(`missing ${file} retains independent packed matrices and cannot omit source-owner requirements`, async t => {
+    const f = fixture(t)
+    const report = await runPackedNativeSuite(f.input, async (command, args, options) => {
+      const current = command === 'pwsh' ? basename(args[args.indexOf('-File') + 1]) : basename(args[0])
+      if (current === file) throw new Error('Synthetic prerequisite unavailable')
+      return f.invoke(command, args, options)
+    })
+    assert.equal(report.complete, false)
+    assert.ok(f.calls.includes('acceptance.mjs')); assert.ok(f.calls.includes('admission-matrix.mjs')); assert.ok(f.calls.includes('boundary-matrix.mjs'))
+    assert.equal(f.calls.includes('owner-fault-matrix.mjs'), false)
+    assert.ok(report.matrices.runs.find(run => run.matrix === 'owner-faults').error)
+    assert.ok(report.matrices.evaluation.subcases.some(row => row.id === 'directory/directory-enumeration-baseline' && row.status === 'blocked'))
+  })
+}
+
+test('changed source-owner compiler output after admission prevents later execution', async t => {
+  const f = fixture(t)
+  const report = await runPackedNativeSuite(f.input, async (...args) => {
+    const run = await f.invoke(...args)
+    if (basename(args[1][0]) === 'abi-acceptance.mjs') writeFileSync(join(f.input.evidence, 'owner-fault/owner-fault-fixture.node'), 'changed fixture')
+    return run
+  })
+  assert.equal(report.complete, false); assert.equal(f.calls.includes('acceptance.mjs'), false)
+  assert.ok(report.errors.some(error => error.stage === 'immutable-inputs'))
+})
+
+test('SDK receipt from another Node version cannot authorize source-owner evidence', async t => {
+  const f = fixture(t)
+  const report = await runPackedNativeSuite(f.input, async (...args) => {
+    const run = await f.invoke(...args)
+    if (basename(args[1][0]) === 'prepare-windows-node-sdk.mjs') {
+      const receipt = JSON.parse(run.rawReport); receipt.version = 'v0.0.0'; run.rawReport = JSON.stringify(receipt)
+    }
+    return run
+  })
+  assert.equal(report.complete, false); assert.ok(report.errors.some(error => error.stage === 'node-sdk'))
 })

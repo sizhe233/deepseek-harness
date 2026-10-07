@@ -1,6 +1,6 @@
 /** Native, synthetic, built-artifact acceptance. Blocked rows are evidence gaps, never passes. */
 import assert from 'node:assert/strict'
-import { createFixtureRoot } from './boundary-support.mjs'
+import { createFixtureRoot, sdkInheritanceBinding } from './boundary-support.mjs'
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -23,6 +23,7 @@ const fixture = fileURLToPath(new URL('process-fixture.mjs', import.meta.url))
 const faultFixture = fileURLToPath(new URL('fault-worker.mjs', import.meta.url))
 const gcFixture = fileURLToPath(new URL('gc-worker.mjs', import.meta.url))
 const tokenFixture = fileURLToPath(new URL('token-worker.mjs', import.meta.url))
+const descriptorFixture = fileURLToPath(new URL('descriptor-buffer-worker.mjs', import.meta.url))
 const sha256 = file => createHash('sha256').update(readFileSync(file)).digest('hex')
 const report = {
   schemaVersion: 1,
@@ -237,6 +238,7 @@ try {
     await check(name, () => {
       requireRoot()
       const before = snapshot(join(rootPath, 'record.bin'))
+      const parentBefore = snapshot(rootPath)
       const result = oracle('token-access', rootPath, 'record.bin', tokenControlName, mode)
       assert.equal(result.ownerSid, token.userSid)
       assert.equal(result.ordinaryPrivateReadable, true)
@@ -244,6 +246,9 @@ try {
       assert.equal(result.controlReadBytes, 1)
       assert.equal(result.threadRestored, true)
       assert.equal(result.privilegesEnabled, false)
+      assert.equal(result.parentTraversalAdjusted, mode === 'anonymous')
+      assert.equal(result.parentTraversalMask, mode === 'anonymous' ? 0x20 : 0)
+      assert.equal(result.parentDescriptorRestored, true)
       if (mode === 'ordinary') {
         assert.equal(result.privateStatus, 0)
         assert.equal(result.privateReadError, 0)
@@ -263,6 +268,7 @@ try {
         assert.equal(result.restricted, mode === 'restricted')
       }
       assert.deepEqual(snapshot(join(rootPath, 'record.bin')), before)
+      assert.deepEqual(snapshot(rootPath), parentBefore)
       return { ...result, distinctInteractiveAccountCreated: false }
     })
   }
@@ -378,31 +384,75 @@ try {
     reject(() => storage.createPrivateFileExclusive(root, 'exactcase.bin', new Uint8Array()), ['name', 'identity', 'collision'])
   })
   for (const policy of ['public', 'null', 'empty', 'absent', 'inherited', 'deny-first', 'object', 'callback']) {
-    await check(`reject-${policy}-dacl-without-repair`, () => {
+    await check(`reject-${policy}-dacl-without-repair`, async () => {
       requireRoot()
       const name = `descriptor-${policy}.bin`
       const path = join(rootPath, name)
-      oracle('create', path, 'file', policy)
-      const before = oracle('descriptor', path)
-      const materialized = {
-        public: before.aces.some(ace => ace.sid === '010100000000000100000000'),
-        null: before.daclPresent && before.daclNull,
-        empty: before.daclPresent && !before.daclNull && before.aces.length === 0,
-        absent: !before.daclPresent,
-        inherited: !before.daclProtected && before.aces.some(ace => (ace.flags & 16) !== 0),
-        'deny-first': before.aces[0]?.type === 1 && before.aces.some(ace => ace.type === 0),
-        object: before.aces.some(ace => ace.type === 5),
-        callback: before.aces.some(ace => ace.type === 9),
+      if (policy === 'absent') {
+        published(storage.createPrivateFileExclusive(root, name, Buffer.from('synthetic immutable descriptor sample')), root)
+        const observe = () => ({ bytesHex: readFileSync(path).toString('hex'), descriptor: oracle('descriptor', path),
+          identity: snapshot(path).identity, parentEntries: readdirSync(rootPath).sort() })
+        const original = observe()
+        const worker = startChild(process.execPath, [descriptorFixture, entry, rootPath, name])
+        try {
+          const result = await worker.next()
+          assert.equal(result.complete, true, result.reason)
+          assert.equal(result.closeFailure, undefined)
+          assert.equal(result.evidence, 'instrumented-descriptor-buffer')
+          assert.equal(result.actualDiskAbsentDacl, false)
+          assert.equal(result.filesystemSecurityModified, false)
+          assert.equal(result.nativeSecurityCallsForwarded, true)
+          assert.equal(result.nativeOwnerBinding.sha256, report.capabilities.ownershipArtifact.platformPackage.sha256)
+          assert.deepEqual(result.refusals, ['read', 'replace'].map(operation => ({ operation, name: 'PrivateStorageError', code: 'privacy' })))
+          assert.deepEqual(result.injections.map(event => event.operation), ['read', 'replace'])
+          for (const event of result.injections) {
+            assert.equal(event.forwarded, true)
+            assert.equal(event.originalControl & 4, 4); assert.equal(event.modifiedControl & 4, 0)
+            assert.ok(event.originalDaclOffset >= 20); assert.equal(event.modifiedDaclOffset, 0)
+            assert.notEqual(event.originalSha256, event.modifiedSha256)
+            assert.deepEqual(event.identity, original.identity)
+          }
+          await worker.close()
+          const after = observe()
+          assert.deepEqual(after, original, 'Injected descriptor refusal must preserve actual file bytes, security, identity and parent entries')
+          return { ...result, original, after, unperformed: 'A disk object with SE_DACL_PRESENT cleared cannot be created on Windows',
+            basis: 'https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/security-descriptor-control' }
+        } finally { await worker.kill() }
       }
-      if (!materialized[policy]) throw new Blocked(`Windows did not preserve the requested ${policy} descriptor fixture; a normalized descriptor is not this test`)
-      const expectDenied = operation => assert.throws(operation, error => {
-        assert.equal(error.name, 'PrivateStorageError')
-        assert.ok(error.code === 'privacy' || (error.code === 'native' && ((error.nativeStatus >>> 0) === 0xc0000022 || error.win32Code === 5)), 'Must reject privacy or report native access denial')
-        return true
-      })
-      expectDenied(() => storage.readPrivateFile(root, name, 1024))
-      expectDenied(() => storage.replacePrivateFile(root, name, Buffer.from('synthetic rejected')))
-      assert.deepEqual(oracle('descriptor', path), before)
+      const worker = startChild(oraclePath, ['hold-descriptor', path, policy])
+      try {
+        const before = await worker.next()
+        assert.equal(before.complete, true)
+        assert.equal(before.ownerSid, token.userSid)
+        assert.equal(before.sizeBytes, '0')
+        assert.equal(before.links, 1)
+        const names = readdirSync(rootPath).sort()
+        const materialized = {
+          public: before.aces.some(ace => ace.sid === '010100000000000100000000'),
+          null: before.daclPresent && before.daclNull,
+          empty: before.daclPresent && !before.daclNull && before.aces.length === 0,
+          absent: !before.daclPresent,
+          inherited: !before.daclProtected && before.aces.some(ace => (ace.flags & 16) !== 0),
+          'deny-first': before.aces[0]?.type === 1 && before.aces.some(ace => ace.type === 0),
+          object: before.aces.some(ace => ace.type === 5),
+          callback: before.aces.some(ace => ace.type === 9),
+        }
+        if (!materialized[policy]) throw new Blocked(`Windows did not preserve the requested ${policy} descriptor fixture; a normalized descriptor is not this test`)
+        const expectDenied = operation => assert.throws(operation, error => {
+          assert.equal(error.name, 'PrivateStorageError')
+          assert.ok(error.code === 'privacy' || (error.code === 'native' && ((error.nativeStatus >>> 0) === 0xc0000022 || error.win32Code === 5)), 'Must reject privacy or report native access denial')
+          return true
+        })
+        expectDenied(() => storage.readPrivateFile(root, name, 1024))
+        expectDenied(() => storage.replacePrivateFile(root, name, Buffer.from('synthetic rejected')))
+        worker.child.stdin.write('inspect\n')
+        assert.deepEqual(await worker.next(), before)
+        assert.deepEqual(readdirSync(rootPath).sort(), names)
+        return { evidence: 'retained-native-descriptor', retainedAccessIncludesDelete: false, identity: before.identity }
+      } finally {
+        try { await worker.close() }
+        finally { await worker.kill() }
+      }
     })
   }
   await check('private-child-directory-and-file-policy', () => {
@@ -646,7 +696,7 @@ try {
       const gcRoot = join(sandbox, `gc-${kind}-root`)
       oracle('create', gcRoot, 'directory', 'private')
       const before = oracle('inspect', gcRoot)
-      const worker = startChild(process.execPath, ['--expose-gc', gcFixture, entry, gcRoot, kind])
+      const worker = startChild(process.execPath, ['--expose-gc', gcFixture, entry, gcRoot, kind, dirname(oraclePath)])
       try {
         // Lease setup performs 100 real durable publications, including both regular-file flushes.
         const result = await worker.next(120_000)
@@ -654,6 +704,10 @@ try {
         assert.equal(result.closeFailure, undefined)
         assert.equal(result.sampleCount, 100)
         assert.equal(result.realNativeCalls, true)
+        assert.equal(result.nativeOwnerBinding.sha256, report.capabilities.ownershipArtifact.platformPackage.sha256)
+        assert.equal(result.sdkDllSha256, sdkInheritanceBinding(dirname(oraclePath)).binarySha256)
+        assert.ok(result.independentlyMatchedHandles.explicit >= result.sampleCount)
+        assert.ok(result.independentlyMatchedHandles.gc >= result.sampleCount)
         assert.equal(result.namespaceMutations, 0)
         assert.equal(result.remainingStorageHandles, 0)
         assert.equal(result.remainingBackingAllocations, 0)

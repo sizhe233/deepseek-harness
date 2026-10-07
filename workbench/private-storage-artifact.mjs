@@ -14,7 +14,7 @@ import { PRIVATE_STORAGE_CLAIM } from './private-storage-applicability.mjs'
 
 const NATIVE_TESTS = 'packages/storage/private-storage/tests/native'
 const TOOLKIT = 'private-storage-tests'
-const REQUIRED_FIXTURES = ['acceptance.mjs', 'verify-abi.mjs', 'abi-acceptance.mjs', 'process-fixture.mjs', 'primary-process.mjs', 'fault-worker.mjs', 'gc-worker.mjs', 'loader-negative.mjs', 'token-worker.mjs', 'windows-oracle.c', 'README.md', 'admission-matrix.mjs', 'admission-process.mjs', 'admission-volumes.mjs', 'admission-volume-worker.mjs', 'windows-admission-oracle.c', 'boundary-matrix.mjs', 'boundary-support.mjs', 'boundary-worker.mjs', 'boundary-capability-worker.mjs', 'boundary-live-worker.mjs', 'boundary-inheritance.c', 'directory-boundary-matrix.mjs', 'directory-boundary-support.mjs', 'directory-boundary-worker.mjs']
+const REQUIRED_FIXTURES = ['acceptance.mjs', 'verify-abi.mjs', 'abi-acceptance.mjs', 'process-fixture.mjs', 'primary-process.mjs', 'fault-worker.mjs', 'gc-worker.mjs', 'loader-negative.mjs', 'token-worker.mjs', 'windows-oracle.c', 'README.md', 'admission-matrix.mjs', 'admission-process.mjs', 'admission-volumes.mjs', 'admission-volume-worker.mjs', 'windows-admission-oracle.c', 'boundary-matrix.mjs', 'boundary-support.mjs', 'boundary-worker.mjs', 'boundary-capability-worker.mjs', 'boundary-live-worker.mjs', 'boundary-inheritance.c', 'directory-boundary-matrix.mjs', 'directory-boundary-support.mjs', 'directory-boundary-worker.mjs', 'owner-fault-fixture.c', 'owner-fault-support.mjs', 'owner-fault-worker.mjs', 'owner-fault-matrix.mjs', 'owner-observer.mjs', 'descriptor-buffer-support.mjs', 'descriptor-buffer-worker.mjs']
 const SUPPORT = { name: '@standard-schema/spec', version: '1.1.0', file: 'standard-schema-spec-1.1.0.tgz',
   tarball: 'https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz' }
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -142,10 +142,11 @@ export async function preparePrivateStorageAcceptance(root, stage, packages, { a
   assert.equal(ordinary.sourceLockSha256, nativeClosure.lockSha256, 'Lockfile changed while preparing the candidate closure')
   for (const name of REQUIRED_FIXTURES) assert.ok(lstatSync(join(root, NATIVE_TESTS, name)).isFile(), `Required generic fixture missing: ${name}`)
   const files = copyGenericFixtures(root, stage)
-  for (const name of ['private-storage-native.ps1', 'private-storage-sdk-matrices.ps1', 'private-storage-owner-fault.ps1']) {
-    const compilerFile = `${TOOLKIT}/workbench/${name}`
+  for (const path of ['workbench/private-storage-native.ps1', 'workbench/private-storage-sdk-matrices.ps1', 'workbench/private-storage-owner-fault.ps1',
+    'workbench/private-storage-owner-fault-evidence.mjs', 'native/system/scripts/prepare-windows-node-sdk.mjs', 'native/system/scripts/download-node-sdk.mjs']) {
+    const compilerFile = `${TOOLKIT}/${path}`
     mkdirSync(dirname(join(stage, compilerFile)), { recursive: true })
-    const compilerSource = join(root, 'workbench', name)
+    const compilerSource = join(root, path)
     assert.ok(lstatSync(compilerSource).isFile() && !lstatSync(compilerSource).isSymbolicLink(), 'Compiler fixture must be a regular file')
     copyFileSync(compilerSource, join(stage, compilerFile))
     files.push(recordFile(stage, compilerFile))

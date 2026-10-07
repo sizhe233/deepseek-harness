@@ -1,3 +1,5 @@
+import { privateStorageNativePreflightBudgets } from './private-storage-native-suite.mjs'
+import { privateStorageNativeMatrixBudgets } from './private-storage-native-matrices.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -183,6 +185,8 @@ test('candidate producer jobs check out the exact PR source and packed jobs cons
   }
   const packed = workflow.jobs['private-storage-packed']
   assert.deepEqual(packed.needs, ['private-storage-artifact'])
+  const executionMs = [...Object.values(privateStorageNativePreflightBudgets), ...Object.values(privateStorageNativeMatrixBudgets)].reduce((sum, budget) => sum + budget, 0)
+  assert.ok(packed['timeout-minutes'] >= Math.ceil(executionMs / 60_000) + 10, 'Packed job must contain all matrix/preflight deadlines and setup/teardown')
   assert.equal(packed['continue-on-error'], undefined)
   assert.equal(packed.if, undefined)
   assert.ok(!packed.steps.some(step => step.uses?.startsWith('actions/checkout@')))

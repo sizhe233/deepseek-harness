@@ -81,7 +81,7 @@ export const nativeFaultMapping = Object.freeze([
     name: `native-call-boundary-${kind}`,
     reason: `Original ${kind} requires C-internal Win32/NT return, buffer or completion injection; coarse owner result injection is distinct evidence`,
   })),
-].map(row => Object.freeze({ ...row, status: 'blocked', mappedEvidence: 'source-pinned synthetic C owner model only; actual Windows fault obligation remains unmet' })))
+].map(row => Object.freeze({ ...row, status: 'blocked', mappedEvidence: 'Separate source-instrumented-native-owner-faults report must establish this exact internal requirement; packed execution alone cannot observe it' })))
 
 /** Full identity encoding shared by the opaque owner and test-only SDK snapshot. */
 export function decodeFileIdentity(bytes) {

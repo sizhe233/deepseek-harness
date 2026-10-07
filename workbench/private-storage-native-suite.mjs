@@ -4,10 +4,13 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runNativeMatrixProcess } from './private-storage-matrix-process.mjs'
-import { bindNativeMatrixOracles, runPackedNativeMatrices } from './private-storage-native-matrices.mjs'
+import { bindNativeMatrixOracles, bindNativeOwnerFault, runPackedNativeMatrices } from './private-storage-native-matrices.mjs'
+import { ownerFaultSources } from './private-storage-owner-fault-evidence.mjs'
 
 const digestBytes = bytes => createHash('sha256').update(bytes).digest('hex')
 const digest = path => digestBytes(readFileSync(path))
+export const privateStorageNativePreflightBudgets = Object.freeze({ loader: 180_000, 'primary-compiler': 180_000,
+  'supplemental-compiler': 180_000, 'node-sdk': 7 * 60 * 1000, 'owner-compiler': 10 * 60 * 1000, abi: 60_000 })
 
 /** Reject contradictory, incomplete or unexecuted prerequisite reports. */
 export function validateNativePreflight(name, run, expected) {
@@ -29,6 +32,16 @@ export function validateNativePreflight(name, run, expected) {
     assert.equal(report.schemaVersion, 1); assert.equal(report.complete, true); assert.equal(report.architecture, 'x64')
     assert.deepEqual(report.fixtures.map(row => [row.name, row.complete, row.exitCode]),
       ['admission', 'inheritance-library', 'inheritance-child'].map(name => [name, true, 0]))
+  } else if (name === 'node-sdk') {
+    assert.equal(report.version, process.version); assert.equal(report.architecture, 'x64')
+    assert.equal(report.source, `https://nodejs.org/dist/${process.version}/`)
+    assert.deepEqual(report.files.map(file => file.name), [`node-${process.version}-headers.tar.gz`, 'win-x64/node.lib'])
+    for (const file of report.files) { assert.match(file.sha256, /^[a-f0-9]{64}$/u); assert.ok(Number.isSafeInteger(file.bytes) && file.bytes > 0 && file.bytes <= 32 * 1024 * 1024) }
+  } else if (name === 'owner-compiler') {
+    assert.equal(report.schemaVersion, 1); assert.equal(report.complete, true); assert.equal(report.sourceUnchanged, true)
+    assert.equal(report.compilerInputsComplete, true); assert.equal(report.exitCode, 0)
+    assert.equal(report.evidence, 'source-instrumented-native-owner-faults')
+    assert.equal(report.platform, 'win32'); assert.equal(report.architecture, 'x64'); assert.equal(report.nodeVersion, process.version)
   } else {
     assert.equal(name, 'abi')
     assert.equal(report.schemaVersion, 1); assert.equal(report.complete, true); assert.equal(report.status, 'passed'); assert.equal(report.check, 'sdk-ffi-abi')
@@ -40,18 +53,24 @@ export function validateNativePreflight(name, run, expected) {
 
 /** Run every independent preflight and usable matrix, retaining exact reports and strict final failure. */
 export async function runPackedNativeSuite(input, invoke = runNativeMatrixProcess) {
-  const { toolkit, fixtures, oracleDirectory, evidence, entry, consumerRoot, candidateArchive, manifest, sourceSha, abi, claim } = input
+  const { toolkit, fixtures, oracleDirectory, evidence, entry, consumerRoot, candidateArchive, manifest, sourceSha, abi, claim, productionBinarySha256 } = input
   assert.match(sourceSha, /^[0-9a-f]{40}$/u)
   const fixedInputs = [entry, abi, candidateArchive, manifest, ...['windows-oracle.c', 'windows-admission-oracle.c', 'boundary-inheritance.c'].map(name => join(fixtures, name))]
     .map(path => ({ path, sha256: digest(path) }))
+  for (const path of [...ownerFaultSources, 'native/system/packages/entry/src/windows-private-owner.c',
+    'native/system/scripts/prepare-windows-node-sdk.mjs', 'native/system/scripts/download-node-sdk.mjs']) {
+    fixedInputs.push({ path: join(toolkit, path), sha256: digest(join(toolkit, path)) })
+  }
   const entrySha256 = fixedInputs[0].sha256
   const preflights = [], errors = [], compilerBindingErrors = [], compilerBindings = {}
-  let changedInput = false
+  let changedInput = false, admittedOwnerFault
   function checkInputs() {
     try { for (const item of fixedInputs) assert.equal(digest(item.path), item.sha256, `Native suite input changed: ${item.path}`) }
     catch (error) { changedInput = true; errors.push({ stage: 'immutable-inputs', reason: error.message }) }
   }
-  async function attempt(name, command, args, reportPath, timeoutMs) {
+  async function attempt(name, command, args, reportPath) {
+    const timeoutMs = privateStorageNativePreflightBudgets[name]
+    assert.ok(Number.isSafeInteger(timeoutMs) && timeoutMs > 0, 'Preflight execution budget is missing')
     let run
     try {
       checkInputs()
@@ -93,19 +112,40 @@ export async function runPackedNativeSuite(input, invoke = runNativeMatrixProces
     } catch (error) { changedInput = true; errors.push({ stage: `${name}-output-binding`, reason: error.message }) }
   }
   await attempt('loader', process.execPath, [join(fixtures, 'loader-negative.mjs'), consumerRoot, join(evidence, 'loader-negative.json')],
-    join(evidence, 'loader-negative.json'), 180_000)
+    join(evidence, 'loader-negative.json'))
   const primaryCompilation = await attempt('primary-compiler', 'pwsh', ['-NoLogo', '-NoProfile', '-File', join(toolkit, 'workbench/private-storage-native.ps1'), '-OutputDirectory', oracleDirectory],
-    join(oracleDirectory, 'oracle-build.json'), 180_000)
+    join(oracleDirectory, 'oracle-build.json'))
   pinCompilerOutputs('primary-compiler', primaryCompilation)
   const supplementalCompilation = await attempt('supplemental-compiler', 'pwsh', ['-NoLogo', '-NoProfile', '-File', join(toolkit, 'workbench/private-storage-sdk-matrices.ps1'), '-OutputDirectory', oracleDirectory],
-    join(oracleDirectory, 'sdk-matrices-build.json'), 180_000)
+    join(oracleDirectory, 'sdk-matrices-build.json'))
   pinCompilerOutputs('supplemental-compiler', supplementalCompilation)
   const bindings = Object.freeze({ ...compilerBindings })
   errors.push(...compilerBindingErrors)
   const expected = { sourceSha, abiSha256: fixedInputs[1].sha256, oracleSha256: bindings.primary?.oracleSha256, oracleSourceSha256: bindings.primary?.oracleSourceSha256 }
+  const nodeSdk = join(evidence, 'node-sdk', process.version), ownerDirectory = join(evidence, 'owner-fault')
+  const sdk = await attempt('node-sdk', process.execPath, [join(toolkit, 'native/system/scripts/prepare-windows-node-sdk.mjs'), join(evidence, 'node-sdk')],
+    join(nodeSdk, 'verified.json'))
+  try {
+    const receipt = validateNativePreflight('node-sdk', sdk, expected)
+    assert.equal(digest(join(nodeSdk, 'verified.json')), digestBytes(sdk.rawReport), 'SDK receipt differs from its captured report')
+    fixedInputs.push({ path: join(nodeSdk, 'verified.json'), sha256: digestBytes(sdk.rawReport) })
+    for (const [index, name] of ['headers.tar.gz', 'node.lib'].entries()) {
+      const path = join(nodeSdk, name), file = receipt.files[index]
+      assert.equal(readFileSync(path).length, file.bytes); assert.equal(digest(path), file.sha256, 'Official Node SDK bytes differ from verified receipt')
+      fixedInputs.push({ path, sha256: file.sha256 })
+    }
+  } catch (error) { errors.push({ stage: 'node-sdk-output-binding', reason: error.message }) }
+  const ownerCompilation = await attempt('owner-compiler', 'pwsh', ['-NoLogo', '-NoProfile', '-File', join(toolkit, 'workbench/private-storage-owner-fault.ps1'),
+    '-OutputDirectory', ownerDirectory, '-NodeSdk', nodeSdk], join(ownerDirectory, 'owner-fault-build.json'))
+  try {
+    validateNativePreflight('owner-compiler', ownerCompilation, expected)
+    assert.equal(digest(join(ownerDirectory, 'owner-fault-build.json')), digestBytes(ownerCompilation.rawReport), 'Owner compiler record differs from its captured report')
+    admittedOwnerFault = bindNativeOwnerFault(toolkit, ownerDirectory, productionBinarySha256)
+    fixedInputs.push(...admittedOwnerFault.files)
+  } catch (error) { errors.push({ stage: 'owner-compiler-output-binding', reason: error.message }) }
   if (bindings.primary && !changedInput) {
     await attempt('abi', process.execPath, [join(fixtures, 'abi-acceptance.mjs'), bindings.primary.program, abi, join(evidence, 'sdk-abi-acceptance.json')],
-      join(evidence, 'sdk-abi-acceptance.json'), 60_000)
+      join(evidence, 'sdk-abi-acceptance.json'))
   } else preflights.push({ name: 'abi', exitCode: null, signal: null, timedOut: false, rawReport: null, error: 'SDK ABI oracle or immutable suite inputs were not admitted' })
   for (const run of preflights) {
     try { validateNativePreflight(run.name, run, expected) }
@@ -114,7 +154,7 @@ export async function runPackedNativeSuite(input, invoke = runNativeMatrixProces
   checkInputs()
   const matrices = changedInput ? { complete: false, acceptance: 'failed', error: 'Changed immutable inputs prevent native matrix execution' }
     : await runPackedNativeMatrices({ fixtures, oracleDirectory, evidence, entry, candidateArchive, manifest, sourceSha, claim,
-      admittedOracles: { bindings, errors: [...compilerBindingErrors] } }, async (...args) => {
+      admittedOracles: { bindings, errors: [...compilerBindingErrors] }, admittedOwnerFault }, async (...args) => {
       checkInputs()
       assert.equal(changedInput, false, 'Changed immutable suite inputs prevent matrix execution')
       const run = await invoke(...args)
@@ -124,7 +164,7 @@ export async function runPackedNativeSuite(input, invoke = runNativeMatrixProces
     })
   checkInputs()
   const complete = errors.length === 0 && matrices.complete
-  const report = { schemaVersion: 1, sourceSha, entrySha256, fixedInputs, complete,
+  const report = { schemaVersion: 1, sourceSha, entrySha256, fixedInputs, complete, preflightBudgets: privateStorageNativePreflightBudgets,
     ...(claim === undefined ? {} : { claim, expandedComplete: matrices.evaluation?.expandedComplete ?? false }),
     acceptance: complete ? 'complete' : errors.length || matrices.acceptance === 'failed' ? 'failed' : 'partial', preflights, errors, matrices }
   writeFileSync(join(evidence, 'windows-native-suite.json'), `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 })

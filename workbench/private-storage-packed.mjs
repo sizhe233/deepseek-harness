@@ -107,6 +107,7 @@ export async function runPackedPrivateStorage(directory, evidenceDirectory) {
       const oracleDirectory = join(evidence, 'oracle')
       stage = 'native-preflights-and-adversarial-matrices'
       const native = await runPackedNativeSuite({ toolkit, fixtures, oracleDirectory, evidence, entry: consumer.entry,
+        productionBinarySha256: smoke.candidateNative?.platformPackage.sha256,
         consumerRoot: consumer.root, candidateArchive: join(root, descriptor.sourcePackage.file), manifest: join(root, 'candidate.json'),
         sourceSha: candidate.commit, claim: descriptor.claim, abi: join(root, descriptor.toolkit.abi) })
       report = { ...report, nativeConformance: { status: native.complete ? 'passed-declared-profile' : native.acceptance,

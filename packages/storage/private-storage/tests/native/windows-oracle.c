@@ -193,9 +193,14 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
   BOOL restrictedMode = wcscmp(kind, L"restricted") == 0;
   BOOL ordinaryMode = wcscmp(kind, L"ordinary") == 0;
   BOOL impersonating = FALSE, restricted = FALSE, sameUser = FALSE, blocked = FALSE, restored = FALSE;
+  BOOL traversalAdjusted = FALSE, parentRestored = FALSE, fatalImpersonation = FALSE;
   HANDLE parent = INVALID_HANDLE_VALUE, processToken = NULL, duplicate = NULL, subject = NULL, thread = NULL;
   TOKEN_USER *owner = NULL, *subjectUser = NULL;
   TOKEN_GROUPS *restrictions = NULL;
+  PSECURITY_DESCRIPTOR parentDescriptor = NULL, afterParentDescriptor = NULL;
+  PACL parentAcl = NULL, traversalAcl = NULL;
+  SECURITY_DESCRIPTOR_CONTROL parentControl = 0;
+  DWORD parentRevision = 0;
   BYTE anonymous[SECURITY_MAX_SID_SIZE];
   DWORD anonymousBytes = sizeof(anonymous), error = ERROR_SUCCESS, threadError = ERROR_SUCCESS;
   DWORD privateError = 0, controlError = 0, privateBytes = 0, controlBytes = 0, ordinaryError = 0, ordinaryBytes = 0;
@@ -205,7 +210,7 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
   if (!anonymousMode && !restrictedMode && !ordinaryMode) return failure("token-access-kind", ERROR_INVALID_PARAMETER, FALSE);
   if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &thread)) { CloseHandle(thread); return failure("ordinary thread required", ERROR_BAD_IMPERSONATION_LEVEL, FALSE); }
   if (GetLastError() != ERROR_NO_TOKEN) return failure("initial OpenThreadToken", GetLastError(), FALSE);
-  parent = CreateFileW(parentPath, FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+  parent = CreateFileW(parentPath, FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | READ_CONTROL | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
     NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
   if (parent == INVALID_HANDLE_VALUE) return failure("token-access-parent", GetLastError(), FALSE);
   ordinaryPrivateStatus = relative_read(parent, privateName, &ordinaryError, &ordinaryBytes);
@@ -216,6 +221,26 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
   owner = (TOKEN_USER *)token_information(processToken, TokenUser);
   if (!owner) { error = GetLastError(); operation = "process TokenUser"; goto cleanup; }
   if (!CreateWellKnownSid(WinAnonymousSid, NULL, anonymous, &anonymousBytes)) { error = GetLastError(); operation = "anonymous SID"; goto cleanup; }
+  error = GetSecurityInfo(parent, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, NULL, NULL, &parentAcl, NULL, &parentDescriptor);
+  if (error || !parentDescriptor || !parentAcl || !GetSecurityDescriptorControl(parentDescriptor, &parentControl, &parentRevision)) {
+    if (!error) error = ERROR_INVALID_SECURITY_DESCR;
+    operation = "token parent descriptor"; goto cleanup;
+  }
+  if (anonymousMode) {
+    DWORD bytes = parentAcl->AclSize + (DWORD)offsetof(ACCESS_ALLOWED_ACE, SidStart) + anonymousBytes;
+    if (bytes > MAXWORD) { error = ERROR_INVALID_ACL; operation = "token traverse ACL bounds"; goto cleanup; }
+    traversalAcl = (PACL)calloc(1, bytes);
+    if (!traversalAcl) { error = ERROR_OUTOFMEMORY; operation = "token traverse ACL"; goto cleanup; }
+    memcpy(traversalAcl, parentAcl, parentAcl->AclSize);
+    traversalAcl->AclSize = (WORD)bytes;
+    if (!AddAccessAllowedAceEx(traversalAcl, ACL_REVISION, 0, FILE_TRAVERSE, anonymous)) {
+      error = GetLastError(); operation = "token traverse ACE"; goto cleanup;
+    }
+    /* An anonymous token lacks bypass-traverse privilege; isolate the leaf access check. */
+    traversalAdjusted = TRUE;
+    error = SetSecurityInfo(parent, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, traversalAcl, NULL);
+    if (error) { operation = "token parent traversal control"; goto cleanup; }
+  }
   if (restrictedMode) {
     if (IsTokenRestricted(processToken)) { error = ERROR_ACCESS_DENIED; operation = "unrestricted process prerequisite"; blocked = TRUE; goto cleanup; }
     if (!DuplicateTokenEx(processToken, TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE, NULL, SecurityImpersonation, TokenImpersonation, &duplicate)) { error = GetLastError(); operation = "DuplicateTokenEx"; blocked = token_fixture_unavailable(error); goto cleanup; }
@@ -250,16 +275,36 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
   privateStatus = relative_read(parent, privateName, &privateError, &privateBytes);
 cleanup:
   if (impersonating && !RevertToSelf()) {
-    fprintf(stderr, "RevertToSelf failed (%lu); terminating fixture\n", (unsigned long)GetLastError()); ExitProcess(86);
+    error = GetLastError(); operation = "RevertToSelf"; fatalImpersonation = TRUE; blocked = FALSE;
   }
-  if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &thread)) {
+  if (!fatalImpersonation && OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &thread)) {
     CloseHandle(thread); thread = NULL; error = ERROR_BAD_IMPERSONATION_LEVEL; operation = "thread token remained after reversion"; blocked = FALSE;
-  } else if (GetLastError() == ERROR_NO_TOKEN) restored = TRUE;
-  else { error = GetLastError(); operation = "reverted thread token query"; blocked = FALSE; }
+  } else if (!fatalImpersonation) {
+    if (GetLastError() == ERROR_NO_TOKEN) restored = TRUE;
+    else { error = GetLastError(); operation = "reverted thread token query"; blocked = FALSE; }
+  }
+  if (parentDescriptor) {
+    DWORD parentError = ERROR_SUCCESS;
+    if (traversalAdjusted) parentError = SetSecurityInfo(parent, SE_FILE_OBJECT,
+      DACL_SECURITY_INFORMATION | (parentControl & SE_DACL_PROTECTED ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION),
+      NULL, NULL, parentAcl, NULL);
+    if (!parentError) parentError = GetSecurityInfo(parent, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+      NULL, NULL, NULL, NULL, &afterParentDescriptor);
+    if (!parentError && afterParentDescriptor && GetSecurityDescriptorLength(parentDescriptor) == GetSecurityDescriptorLength(afterParentDescriptor)
+      && memcmp(parentDescriptor, afterParentDescriptor, GetSecurityDescriptorLength(parentDescriptor)) == 0) parentRestored = TRUE;
+    else { error = parentError ? parentError : ERROR_INVALID_SECURITY_DESCR; operation = "token parent descriptor restoration"; blocked = FALSE; }
+  }
+  if (afterParentDescriptor) LocalFree(afterParentDescriptor);
+  if (parentDescriptor) LocalFree(parentDescriptor);
+  free(traversalAcl);
   if (subject) CloseHandle(subject);
   if (duplicate) CloseHandle(duplicate);
   if (processToken) CloseHandle(processToken);
   if (parent != INVALID_HANDLE_VALUE) CloseHandle(parent);
+  if (fatalImpersonation) {
+    fprintf(stderr, "RevertToSelf failed; parent descriptor restored=%s; terminating fixture\n", json_boolean(parentRestored));
+    ExitProcess(86);
+  }
   if (error) { free(owner); free(subjectUser); free(restrictions); return failure(operation, error, blocked); }
   if (controlStatus != 0 || controlError || controlBytes != 1) {
     printf("{\"complete\":false,\"status\":\"blocked\",\"operation\":\"token readable-control prerequisite\",\"nativeStatus\":%ld,\"win32Error\":%lu,\"threadRestored\":%s}\n",
@@ -271,9 +316,11 @@ cleanup:
   printf(",\"subjectSid\":");
   if (anonymousMode) hex(anonymous, anonymousBytes); else hex(owner->User.Sid, GetLengthSid(owner->User.Sid));
   printf(",\"sameUser\":%s,\"restricted\":%s,\"threadTokenError\":%lu,\"ordinaryPrivateReadable\":true,\"controlStatus\":%ld,\"controlReadBytes\":%lu,"
-    "\"privateStatus\":%ld,\"privateReadError\":%lu,\"privateReadBytes\":%lu,\"threadRestored\":%s,\"privilegesEnabled\":false}\n",
+    "\"privateStatus\":%ld,\"privateReadError\":%lu,\"privateReadBytes\":%lu,\"threadRestored\":%s,\"privilegesEnabled\":false,"
+    "\"parentTraversalAdjusted\":%s,\"parentTraversalMask\":%lu,\"parentDescriptorRestored\":%s}\n",
     json_boolean(sameUser), json_boolean(restricted), (unsigned long)threadError, (long)controlStatus, (unsigned long)controlBytes,
-    (long)privateStatus, (unsigned long)privateError, (unsigned long)privateBytes, json_boolean(restored));
+    (long)privateStatus, (unsigned long)privateError, (unsigned long)privateBytes, json_boolean(restored),
+    json_boolean(traversalAdjusted), (unsigned long)(traversalAdjusted ? FILE_TRAVERSE : 0), json_boolean(parentRestored));
   free(owner); free(subjectUser); free(restrictions);
   return 0;
 }
@@ -303,8 +350,7 @@ static BOOL valid_aces(PACL acl) {
   return TRUE;
 }
 
-static int inspect(const wchar_t *path, BOOL descriptorOnly) {
-  HANDLE file;
+static int inspect_handle(HANDLE file, BOOL descriptorOnly) {
   FILE_ID_INFO id = {0};
   FILE_STANDARD_INFO standard = {0};
   FILE_BASIC_INFO basic = {0};
@@ -325,14 +371,11 @@ static int inspect(const wchar_t *path, BOOL descriptorOnly) {
   QueryFileFn query = (QueryFileFn)native_proc("NtQueryInformationFile");
   QueryVolumeFn volume = (QueryVolumeFn)native_proc("NtQueryVolumeInformationFile");
   if (!query || !volume) return failure("native-query-unavailable", ERROR_NOT_SUPPORTED, FALSE);
-  file = CreateFileW(path, READ_CONTROL | (descriptorOnly ? 0 : FILE_READ_ATTRIBUTES), FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-    NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-  if (file == INVALID_HANDLE_VALUE) return failure("CreateFileW-inspect", GetLastError(), FALSE);
   error = ERROR_SUCCESS;
   ZeroMemory(&mode, sizeof(mode)); ZeroMemory(&device, sizeof(device));
-  if (!descriptorOnly && (!GetFileInformationByHandleEx(file, FileIdInfo, &id, sizeof(id)) ||
-      !GetFileInformationByHandleEx(file, FileStandardInfo, &standard, sizeof(standard)) ||
-      !GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) ||
+  if (!GetFileInformationByHandleEx(file, FileIdInfo, &id, sizeof(id)) ||
+      !GetFileInformationByHandleEx(file, FileStandardInfo, &standard, sizeof(standard))) error = GetLastError();
+  if (!descriptorOnly && (!GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) ||
       !GetFileInformationByHandleEx(file, FileAttributeTagInfo, &tag, sizeof(tag)) ||
       !GetVolumeInformationByHandleW(file, NULL, 0, &serial, &maximumComponent, &flags, filesystem, 64))) error = GetLastError();
   fileType = GetFileType(file);
@@ -349,14 +392,12 @@ static int inspect(const wchar_t *path, BOOL descriptorOnly) {
       !GetSecurityDescriptorDacl(descriptor, &present, &acl, &defaulted) || !valid_aces(acl))) error = ERROR_INVALID_SECURITY_DESCR;
   if (!error && !ConvertSidToStringSidA(owner, &ownerText)) error = GetLastError();
   if (!error && !descriptorOnly && !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, filesystem, -1, filesystemAscii, sizeof(filesystemAscii), NULL, NULL)) error = GetLastError();
-  if (error) { if (ownerText) LocalFree(ownerText); if (descriptor) LocalFree(descriptor); CloseHandle(file); return failure("inspect-facts", error, FALSE); }
+  if (error) { if (ownerText) LocalFree(ownerText); if (descriptor) LocalFree(descriptor); return failure("inspect-facts", error, FALSE); }
   descriptorLength = GetSecurityDescriptorLength(descriptor);
   printf("{\"complete\":true,\"inspectionScope\":\"%s\",", descriptorOnly ? "security-descriptor" : "full-handle-facts");
-  if (!descriptorOnly) {
-    printf("\"identity\":{\"volumeSerial\":\"%016llx\",\"fileId\":", (unsigned long long)id.VolumeSerialNumber);
-    hex(id.FileId.Identifier, sizeof(id.FileId.Identifier));
-    printf("},");
-  }
+  printf("\"identity\":{\"volumeSerial\":\"%016llx\",\"fileId\":", (unsigned long long)id.VolumeSerialNumber);
+  hex(id.FileId.Identifier, sizeof(id.FileId.Identifier));
+  printf("},");
   printf("\"ownerSid\":"); hex(owner, GetLengthSid(owner));
   printf(",\"ownerSidText\":"); json_string(ownerText);
   printf(",\"descriptorHex\":"); hex(descriptor, descriptorLength);
@@ -376,8 +417,9 @@ static int inspect(const wchar_t *path, BOOL descriptorOnly) {
     putchar('}');
   }
   if (descriptorOnly) {
-    printf("]}\n"); LocalFree(ownerText); LocalFree(descriptor);
-    return CloseHandle(file) ? 0 : 1;
+    printf("],\"sizeBytes\":\"%lld\",\"links\":%lu}\n", (long long)standard.EndOfFile.QuadPart, (unsigned long)standard.NumberOfLinks);
+    LocalFree(ownerText); LocalFree(descriptor);
+    return 0;
   }
   printf("],\"directory\":%s,\"links\":%lu,\"sizeBytes\":\"%lld\",\"attributes\":%lu,\"reparseTag\":%lu,"
     "\"fileType\":%lu,\"mode\":%lu,\"modeScope\":\"independently-opened-oracle-handle\",\"modeStatus\":%ld,"
@@ -388,10 +430,20 @@ static int inspect(const wchar_t *path, BOOL descriptorOnly) {
     "\"remote\":%s,\"deviceStatus\":%ld}\n", (unsigned long)flags, (unsigned long)maximumComponent, (unsigned long)device.DeviceType,
     (unsigned long)device.Characteristics, json_boolean(device.Characteristics & 0x10), (long)deviceStatus);
   LocalFree(ownerText); LocalFree(descriptor);
-  return CloseHandle(file) ? 0 : 1;
+  return 0;
 }
 
-static int create_fixture(const wchar_t *path, BOOL directory, const wchar_t *policy) {
+static int inspect(const wchar_t *path, BOOL descriptorOnly) {
+  HANDLE file = CreateFileW(path, READ_CONTROL | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+    NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  int result;
+  if (file == INVALID_HANDLE_VALUE) return failure("CreateFileW-inspect", GetLastError(), FALSE);
+  result = inspect_handle(file, descriptorOnly);
+  if (!CloseHandle(file)) return 1;
+  return result;
+}
+
+static int create_fixture(const wchar_t *path, BOOL directory, const wchar_t *policy, HANDLE *retained) {
   HANDLE token = NULL, file = INVALID_HANDLE_VALUE;
   TOKEN_USER *user;
   SECURITY_DESCRIPTOR descriptor;
@@ -405,6 +457,7 @@ static int create_fixture(const wchar_t *path, BOOL directory, const wchar_t *po
   BOOL inherited = wcscmp(policy, L"inherited") == 0, denyFirst = wcscmp(policy, L"deny-first") == 0;
   BOOL objectAce = wcscmp(policy, L"object") == 0, callbackAce = wcscmp(policy, L"callback") == 0;
   BOOL anonymousPublic = wcscmp(policy, L"anonymous-public") == 0;
+  GUID objectType = { 0x2f4b5931, 0xa8d2, 0x40b4, { 0xa8, 0x57, 0x35, 0x78, 0x10, 0x90, 0x4f, 0xee } };
   DWORD aclRevision = objectAce || callbackAce ? ACL_REVISION_DS : ACL_REVISION;
   if (!isPublic && !isNull && !absent && !empty && !inherited && !denyFirst && !objectAce && !callbackAce && !anonymousPublic && wcscmp(policy, L"private") != 0)
     return failure("fixture-policy", ERROR_INVALID_PARAMETER, FALSE);
@@ -420,7 +473,7 @@ static int create_fixture(const wchar_t *path, BOOL directory, const wchar_t *po
       !InitializeAcl(acl, aclBytes, aclRevision))) error = GetLastError();
   if (!error && denyFirst && !AddAccessDeniedAceEx(acl, ACL_REVISION, flags, FILE_WRITE_DATA, world)) error = GetLastError();
   if (!error && !empty && !isNull && !absent && !objectAce && !callbackAce && !AddAccessAllowedAceEx(acl, ACL_REVISION, flags, FILE_ALL_ACCESS, user->User.Sid)) error = GetLastError();
-  if (!error && objectAce && !AddAccessAllowedObjectAce(acl, ACL_REVISION_DS, flags, FILE_ALL_ACCESS, NULL, NULL, user->User.Sid)) error = GetLastError();
+  if (!error && objectAce && !AddAccessAllowedObjectAce(acl, ACL_REVISION_DS, flags, FILE_ALL_ACCESS, &objectType, NULL, user->User.Sid)) error = GetLastError();
   if (!error && callbackAce) {
     BYTE buffer[sizeof(ACCESS_ALLOWED_ACE) + SECURITY_MAX_SID_SIZE];
     ACCESS_ALLOWED_ACE *ace = (ACCESS_ALLOWED_ACE *)buffer;
@@ -450,18 +503,58 @@ static int create_fixture(const wchar_t *path, BOOL directory, const wchar_t *po
   if (!error) {
     if (directory) { if (!CreateDirectoryW(path, &attributes)) error = GetLastError(); }
     else {
-      file = CreateFileW(path, READ_CONTROL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      file = CreateFileW(path, READ_CONTROL | (retained ? WRITE_DAC | FILE_READ_ATTRIBUTES : 0), FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         &attributes, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
       if (file == INVALID_HANDLE_VALUE) error = GetLastError();
+      else if (retained) *retained = file;
       else if (!CloseHandle(file)) error = GetLastError();
     }
   }
   free(acl); free(user); CloseHandle(token);
   if (error) return failure("create-fixture", error, unavailable(error) || ((objectAce || callbackAce) && (error == ERROR_INVALID_ACL || error == ERROR_INVALID_SECURITY_DESCR)));
-  printf("{\"complete\":true,\"created\":true}\n");
+  if (!retained) printf("{\"complete\":true,\"created\":true}\n");
   return 0;
 }
 
+/* Only this exclusively created fixture is restored, after both descriptor observations. */
+static DWORD restore_fixture_acl(HANDLE file) {
+  PSECURITY_DESCRIPTOR descriptor = NULL;
+  PSID owner = NULL;
+  PACL acl = NULL;
+  DWORD error = GetSecurityInfo(file, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION, &owner, NULL, NULL, NULL, &descriptor);
+  if (!error && (!owner || !IsValidSid(owner))) error = ERROR_INVALID_SID;
+  if (!error) {
+    DWORD bytes = (DWORD)sizeof(ACL) + (DWORD)offsetof(ACCESS_ALLOWED_ACE, SidStart) + GetLengthSid(owner);
+    acl = (PACL)calloc(1, bytes);
+    if (!acl) error = ERROR_OUTOFMEMORY;
+    else if (!InitializeAcl(acl, bytes, ACL_REVISION) || !AddAccessAllowedAceEx(acl, ACL_REVISION, 0, FILE_ALL_ACCESS, owner)) error = GetLastError();
+    else error = SetSecurityInfo(file, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, acl, NULL);
+  }
+  free(acl);
+  if (descriptor) LocalFree(descriptor);
+  return error;
+}
+
+/* No DELETE access is retained: the product's non-delete-shared opens still reach the ACL check. */
+static int hold_descriptor(const wchar_t *path, const wchar_t *policy) {
+  HANDLE file = INVALID_HANDLE_VALUE;
+  char command[32];
+  DWORD error;
+  int result = create_fixture(path, FALSE, policy, &file);
+  if (result) return result;
+  result = inspect_handle(file, TRUE);
+  fflush(stdout);
+  while (!result && fgets(command, sizeof(command), stdin)) {
+    if (strcmp(command, "close\n") == 0 || strcmp(command, "close\r\n") == 0) break;
+    if (strcmp(command, "inspect\n") != 0 && strcmp(command, "inspect\r\n") != 0) { result = failure("hold-descriptor-command", ERROR_INVALID_PARAMETER, FALSE); break; }
+    result = inspect_handle(file, TRUE);
+    fflush(stdout);
+  }
+  error = restore_fixture_acl(file);
+  if (!CloseHandle(file) && !error) error = GetLastError();
+  if (error) return failure("hold-descriptor-cleanup", error, FALSE);
+  return result;
+}
 
 static int print_retained_bytes(HANDLE file) {
   LARGE_INTEGER zero, size;
@@ -492,6 +585,7 @@ static int hold_reader(const wchar_t *path, BOOL shareDelete) {
 }
 
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 4 && wcscmp(argv[1], L"hold-descriptor") == 0) return hold_descriptor(argv[2], argv[3]);
   if (argc == 6 && wcscmp(argv[1], L"token-access") == 0) return token_access(argv[2], argv[3], argv[4], argv[5]);
   if (argc == 4 && wcscmp(argv[1], L"hold-reader") == 0) {
     if (wcscmp(argv[3], L"share-delete") != 0 && wcscmp(argv[3], L"deny-delete") != 0) return failure("hold-reader-sharing", ERROR_INVALID_PARAMETER, FALSE);
@@ -503,7 +597,7 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 3 && wcscmp(argv[1], L"descriptor") == 0) return inspect(argv[2], TRUE);
   if (argc == 5 && wcscmp(argv[1], L"create") == 0) {
     if (wcscmp(argv[3], L"file") != 0 && wcscmp(argv[3], L"directory") != 0) return failure("fixture-kind", ERROR_INVALID_PARAMETER, FALSE);
-    return create_fixture(argv[2], wcscmp(argv[3], L"directory") == 0, argv[4]);
+    return create_fixture(argv[2], wcscmp(argv[3], L"directory") == 0, argv[4], NULL);
   }
   if (argc == 4 && wcscmp(argv[1], L"hardlink") == 0) {
     if (!CreateHardLinkW(argv[2], argv[3], NULL)) { DWORD error = GetLastError(); return failure("CreateHardLinkW", error, unavailable(error)); }

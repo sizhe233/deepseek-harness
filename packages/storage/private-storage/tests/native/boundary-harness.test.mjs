@@ -138,7 +138,7 @@ test('opaque owner migration preserves every internal fault row as blocked and r
   ])
   for (const row of nativeFaultMapping) {
     assert.match(row.reason, /C-internal|C-owned/)
-    assert.match(row.mappedEvidence, /actual Windows fault obligation remains unmet/)
+    assert.match(row.mappedEvidence, /Separate source-instrumented-native-owner-faults report must establish this exact internal requirement/)
   }
 })
 

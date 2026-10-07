@@ -5,7 +5,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import test from 'node:test'
-import { bindNativeMatrixOracles, runPackedNativeMatrices } from './private-storage-native-matrices.mjs'
+import { bindNativeMatrixOracles, bindNativeOwnerFault, runPackedNativeMatrices } from './private-storage-native-matrices.mjs'
+
+import { copySyntheticOwnerInputs, writeSyntheticOwnerBuild, writeSyntheticNodeSdk } from './private-storage-native-test-fixture.mjs'
 
 import { PRIVATE_STORAGE_CLAIM } from './private-storage-applicability.mjs'
 
@@ -37,7 +39,10 @@ function fixture(t) {
   const entry = join(root, 'index.js'); writeFileSync(entry, 'export const synthetic=true')
   const candidateArchive = join(root, 'candidate.tgz'), manifest = join(root, 'candidate.json')
   writeFileSync(candidateArchive, 'synthetic'); writeFileSync(manifest, '{}')
-  return { fixtures, oracleDirectory, evidence, entry, candidateArchive, manifest, sourceSha: 'a'.repeat(40), primary, supplemental, seal }
+  const toolkit = join(root, 'toolkit'), ownerDirectory = join(root, 'owner-fault'), sdk = join(root, 'node-sdk')
+  copySyntheticOwnerInputs(toolkit); writeSyntheticNodeSdk(sdk); writeSyntheticOwnerBuild(toolkit, ownerDirectory, sdk)
+  const admittedOwnerFault = bindNativeOwnerFault(toolkit, ownerDirectory, 'a'.repeat(64))
+  return { toolkit, ownerDirectory, admittedOwnerFault, fixtures, oracleDirectory, evidence, entry, candidateArchive, manifest, sourceSha: 'a'.repeat(40), primary, supplemental, seal }
 }
 
 test('binds every SDK source, binary and compiler log to its exact build record', t => {
@@ -72,7 +77,7 @@ test('attempts all four matrices after failed, blocked, invalid and throwing sib
     if (name === 'admission-matrix.mjs') { assert.equal(args.at(-2), '--require-complete'); assert.equal(args.at(-1), 'true'); throw new Error('Owned launch failure') }
     return { exitCode: 1, signal: null, timedOut: false, rawReport: '{}' }
   })
-  assert.deepEqual(attempted, ['acceptance.mjs', 'admission-matrix.mjs', 'boundary-matrix.mjs', 'directory-boundary-matrix.mjs'])
+  assert.deepEqual(attempted, ['acceptance.mjs', 'admission-matrix.mjs', 'boundary-matrix.mjs', 'owner-fault-matrix.mjs'])
   assert.equal(result.complete, false); assert.equal(result.runs.length, 4)
   assert.equal(result.runs[1].error, 'Owned launch failure')
   assert.deepEqual(JSON.parse(readFileSync(join(f.evidence, 'windows-composite.json'), 'utf8')), result)
@@ -106,7 +111,7 @@ test('rejected inheritance artifacts never execute while other independent matri
   const result = await runPackedNativeMatrices(f, async (_command, args) => {
     attempted.push(args[0].split('/').at(-1)); return { exitCode: 2, signal: null, timedOut: false, rawReport: '{}' }
   })
-  assert.deepEqual(attempted, ['acceptance.mjs', 'admission-matrix.mjs', 'directory-boundary-matrix.mjs'])
+  assert.deepEqual(attempted, ['admission-matrix.mjs', 'owner-fault-matrix.mjs'])
   assert.equal(result.complete, false)
   assert.match(result.runs.find(run => run.matrix === 'boundary').error, /Unadmitted SDK helper/)
 })

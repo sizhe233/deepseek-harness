@@ -64,6 +64,9 @@ function fixture(t) {
   copyFileSync(join(repository, 'workbench/private-storage-closure.mjs'), (() => { const p = join(root, 'workbench/private-storage-closure.mjs'); mkdirSync(dirname(p), { recursive: true }); return p })())
   write(join(root, 'workbench/private-storage-packed.mjs'), "import { verifyConsumerDependencies, inspectArchiveEntries } from './private-storage-closure.mjs'\nverifyConsumerDependencies([{name:'synthetic',version:'1.0.0',dependencies:{library:'1.0.0'}},{name:'library',version:'1.0.0'}])\nconst entries=inspectArchiveEntries(process.argv[2]); if(entries.length<1) throw new Error('missing archive entries');\nconsole.log(JSON.stringify({complete:true,bundledDependencies:true}))\n")
   for (const name of ['private-storage-native.ps1', 'private-storage-sdk-matrices.ps1', 'private-storage-owner-fault.ps1']) write(join(root, 'workbench', name), '# Synthetic compiler-script fixture; never invoked by this test\n')
+  for (const path of ['workbench/private-storage-owner-fault-evidence.mjs', 'native/system/scripts/prepare-windows-node-sdk.mjs', 'native/system/scripts/download-node-sdk.mjs']) {
+    const target = join(root, path); mkdirSync(dirname(target), { recursive: true }); copyFileSync(join(repository, path), target)
+  }
   for (const name of readdirSync(join(repository, nativePath))) copyFileSync(join(repository, nativePath, name), (() => { const p = join(root, nativePath, name); mkdirSync(dirname(p), { recursive: true }); return p })())
   write(join(root, 'packages/storage/private-storage/lib/types/abi.js'), 'export const ABI = Object.freeze({pointer:8,objectAttributes:48})\n')
   const slices = [['win32', 'x64'], ['darwin', 'arm64'], ['darwin', 'x64'], ['linux', 'x64']]
@@ -108,7 +111,7 @@ test('artifact preparer hashes only generic toolkit files and bundles an import-
     assert.equal(hash(bytes), file.sha256)
     assert.equal(bytes.length, file.bytes)
     assert.ok(file.path === descriptor.toolkit.entry || file.path === descriptor.toolkit.abi
-      || file.path.startsWith(`private-storage-tests/${nativePath}/`) || ['private-storage-native.ps1', 'private-storage-sdk-matrices.ps1', 'private-storage-owner-fault.ps1'].some(name => file.path === `private-storage-tests/workbench/${name}`))
+      || file.path.startsWith(`private-storage-tests/${nativePath}/`) || ['workbench/private-storage-native.ps1', 'workbench/private-storage-sdk-matrices.ps1', 'workbench/private-storage-owner-fault.ps1', 'workbench/private-storage-owner-fault-evidence.mjs', 'native/system/scripts/prepare-windows-node-sdk.mjs', 'native/system/scripts/download-node-sdk.mjs'].some(path => file.path === `private-storage-tests/${path}`))
   }
   assert.deepEqual(listFiles(join(stage, 'private-storage-tests')).map(path => `private-storage-tests/${path}`).sort(), descriptor.toolkit.files.map(file => file.path).sort())
   assert.equal(existsSync(join(stage, 'private-storage-tests/node_modules')), false)
@@ -162,4 +165,39 @@ test('an allowed pairing filename never admits a symbolic link', async t => {
   symlinkSync(process.platform === 'win32' ? root : join(root, 'pnpm-lock.yaml'), record, process.platform === 'win32' ? 'junction' : 'file')
   assert.equal(lstatSync(record).isSymbolicLink(), true)
   await assert.rejects(preparePrivateStorageAcceptance(root, stage, packages, { archiveDirectory: cache }), /cannot be symlinks/)
+})
+
+test('extracted artifact resolves source-owner and SDK imports without the source checkout', async t => {
+  const { root, stage, cache, packages } = fixture(t)
+  // This archive carries the exact production source used by the test-only instrumentation include.
+  const production = readFileSync(join(repository, 'native/system/packages/entry/src/windows-private-owner.c'))
+  const native = packageArchive(stage, join(stage, 'native-entry.tgz'), '@deepseek-ai/node-addon-system', '0.1.3', {}, { 'src/windows-private-owner.c': production })
+  native.verifiedCandidateFiles = [{ path: 'src/windows-private-owner.c', sha256: hash(production), bytes: production.length }]
+  const candidateNative = { package: native, platformPackages: [] }
+  // These separate platform files are copied by the preparer but not executed by this Windows wiring test.
+  for (const path of ['native/system/scripts/build-test-oracle.mjs', 'native/system/test/private-storage.test.js',
+    'native/system/test/private-storage-worker.js', 'native/system/test/private-storage-fd-observer.js',
+    'native/system/test/private-storage-process-birth-child.js', 'native/system/test/private-storage-source-link.test.js',
+    'native/system/test/private-storage-syscall-oracle.c', 'native/system/test/private-storage-read-fault.c',
+    'native/system/test/private-storage-directory-fault.c', 'native/system/test/fixtures/flock-oracle.c', 'workbench/private-storage-posix-contract.json']) {
+    const target = join(root, path); mkdirSync(dirname(target), { recursive: true }); copyFileSync(join(repository, path), target)
+  }
+  const descriptor = await preparePrivateStorageAcceptance(root, stage, packages, { archiveDirectory: cache, candidateNative })
+  for (const path of ['workbench/private-storage-owner-fault-evidence.mjs', 'native/system/scripts/prepare-windows-node-sdk.mjs', 'native/system/scripts/download-node-sdk.mjs', 'native/system/packages/entry/src/windows-private-owner.c']) {
+    const record = descriptor.toolkit.files.find(file => file.path === `private-storage-tests/${path}`)
+    assert.ok(record); assert.equal(record.sha256, hash(readFileSync(join(stage, record.path))))
+  }
+  rmSync(root, { recursive: true, force: true })
+  const toolkit = join(stage, descriptor.toolkit.directory), reportPath = join(stage, 'source-owner-import-smoke.json')
+  const env = { ...process.env, NODE_PATH: '', NODE_OPTIONS: '' }
+  const child = spawnSync(process.execPath, [join(toolkit, nativePath, 'owner-fault-matrix.mjs'), '--report', reportPath],
+    { cwd: stage, env, encoding: 'utf8', timeout: 30_000 })
+  assert.ifError(child.error); assert.equal(child.signal, null); assert.equal(child.status, 2, child.stderr)
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'))
+  assert.equal(report.nativeExecution, false); assert.equal(report.packedProductionBinaryExecution, false)
+  assert.deepEqual(report.summary, { passed: 0, failed: 0, blocked: 53 })
+  const script = `import assert from 'node:assert/strict';const m=await import(${JSON.stringify(pathToFileURL(join(toolkit, 'native/system/scripts/download-node-sdk.mjs')).href)});assert.equal(typeof m.downloadNodeSdk,'function')`
+  const sdk = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: stage, env, encoding: 'utf8', timeout: 30_000 })
+  assert.ifError(sdk.error); assert.equal(sdk.signal, null); assert.equal(sdk.status, 0, sdk.stderr)
+  for (const file of descriptor.toolkit.files) assert.equal(hash(readFileSync(join(stage, file.path))), file.sha256)
 })

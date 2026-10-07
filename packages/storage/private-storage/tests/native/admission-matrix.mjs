@@ -254,7 +254,9 @@ try {
       rejected(() => storage.readPrivateFile(root, alias.alias, 3), ['name'])
       rejected(() => storage.replacePrivateFile(root, alias.alias, Uint8Array.of(1)), ['name'])
     })
-    assert.deepEqual(storage.readPrivateFile(root, name, 3), Uint8Array.of(7, 8, 9))
+    const bytes = storage.readPrivateFile(root, name, 3)
+    assert.ok(bytes instanceof Uint8Array)
+    assert.deepEqual(Buffer.from(bytes), Buffer.from([7, 8, 9]))
     return { alias: alias.alias, identity: alias.original.identity, shortNameConfigurationChanged: false }
   })
   await check('case-sensitive-directory-admission', () => {

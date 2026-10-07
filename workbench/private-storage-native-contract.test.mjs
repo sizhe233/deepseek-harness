@@ -3,20 +3,22 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { privateStorageNativeContract, evaluatePrivateStorageNative } from './private-storage-native-contract.mjs'
 import { evaluateNativeMatrices } from './private-storage-composite.mjs'
-import { cases, blockedCases } from '../packages/storage/private-storage/tests/native/directory-boundary-support.mjs'
+import { ownerDirectoryCases as cases, ownerFaultBlockedCases as blockedCases } from './private-storage-owner-fault-evidence.mjs'
+import { syntheticOwnerReport, syntheticSpecifications, syntheticAbsentDescriptor } from './private-storage-native-test-fixture.mjs'
 
-const baseline = (name, allocations, views) => ({ name, status: 'passed', detail: { allocationAttempts: allocations, viewAttempts: views } })
-const input = () => new Map([['boundary', { results: [baseline('native-read-allocation-baseline', 2, 1), baseline('native-publish-allocation-baseline', 1, 2)] }]])
+const baseline = (name, allocations, views) => ({ name, status: 'passed', detail: { allocations, exposures: views } })
+const input = () => new Map([['owner-faults', { results: [baseline('native-read-allocation-baseline', 2, 1), baseline('native-publish-allocation-baseline', 1, 2)] }]])
 function hypothetical() {
   const validated = input()
   const contract = privateStorageNativeContract(validated)
-  const specifications = ['primary', 'admission', 'boundary', 'directory'].map(id => ({ id, entrySha256: 'a'.repeat(64), sourceSha: 'b'.repeat(40),
-    oracleSha256: 'c'.repeat(64), oracleSourceSha256: 'd'.repeat(64) }))
+  const specifications = syntheticSpecifications()
   const rows = new Map(specifications.map(spec => [spec.id, new Map()]))
   for (const required of contract.requirements) for (const reference of required.evidence) rows.get(reference.matrix).set(reference.row, { name: reference.row, status: 'passed' })
   for (const replacement of contract.replacements) rows.get(replacement.matrix).set(replacement.row, { name: replacement.row, status: 'blocked', reason: 'Explicit placeholder' })
-  for (const record of validated.get('boundary').results) rows.get('boundary').set(record.name, record)
+  for (const record of validated.get('owner-faults').results) rows.get('owner-faults').set(record.name, record)
+  rows.get('primary').get('reject-absent-dacl-without-repair').detail = syntheticAbsentDescriptor()
   const runs = specifications.map(spec => {
+    if (spec.id === 'owner-faults') return { matrix: spec.id, exitCode: 2, signal: null, timedOut: false, rawReport: JSON.stringify(syntheticOwnerReport(spec)) }
     const results = [...rows.get(spec.id).values()]
     const summary = Object.fromEntries(['passed', 'failed', 'blocked'].map(status => [status, results.filter(row => row.status === status).length]))
     return { matrix: spec.id, exitCode: summary.blocked ? 2 : 0, signal: null, timedOut: false,
@@ -62,17 +64,18 @@ test('missing native baseline creates an explicit missing-inventory obligation r
 test('rejects malformed and unbounded baseline counts', () => {
   for (const count of [0, -1, 513, 1.5, '2', [2], null, undefined, Infinity]) {
     const reports = input()
-    reports.get('boundary').results[0].detail.allocationAttempts = count
+    reports.get('owner-faults').results[0].detail.allocations = count
     assert.throws(() => privateStorageNativeContract(reports), /reviewed bounds/)
   }
-  const reports = input(); reports.get('boundary').results[0].detail.viewAttempts = 1025
+  const reports = input(); reports.get('owner-faults').results[0].detail.exposures = 1025
   assert.throws(() => privateStorageNativeContract(reports), /reviewed bounds/)
 })
 
-test('a hypothetical complete row inventory composes, but one omitted ordinal does not', () => {
+test('source-owner expanded inventory retains genuine blocked cleanup; omitted ordinals remain mandatory', () => {
   const fixture = hypothetical()
-  assert.equal(evaluateNativeMatrices(fixture).complete, true)
-  const run = fixture.runs.find(item => item.matrix === 'boundary')
+  assert.equal(evaluateNativeMatrices(fixture).complete, false)
+  assert.equal(evaluateNativeMatrices(fixture).subcases.find(row => row.id === 'boundary/native-one-shot-publish-view:2').status, 'passed')
+  const run = fixture.runs.find(item => item.matrix === 'owner-faults')
   const report = JSON.parse(run.rawReport)
   report.results = report.results.filter(row => row.name !== 'native-one-shot-publish-view:2')
   report.summary.passed--
@@ -88,7 +91,7 @@ test('nearby implemented tests cannot substitute for live-worker or remote/cloud
     ['admission', 'cloud-reparse-admission'], ['admission', 'authorized-remote-volume-admission']]) {
     const fixture = hypothetical(), run = fixture.runs.find(item => item.matrix === matrix)
     const report = JSON.parse(run.rawReport)
-    report.results = report.results.filter(row => row.name !== name); report.summary.passed--
+    report.results = report.results.filter(row => row.name !== name); report.summary = Object.fromEntries(['passed', 'failed', 'blocked'].map(status => [status, report.results.filter(row => row.status === status).length]))
     run.rawReport = JSON.stringify(report)
     const result = evaluateNativeMatrices(fixture)
     assert.equal(result.complete, false)
@@ -99,15 +102,16 @@ test('nearby implemented tests cannot substitute for live-worker or remote/cloud
 
 test('final evaluator derives ordinals from the exact raw report it evaluates, rejecting a stale count map', () => {
   const fixture = hypothetical()
-  assert.equal(evaluatePrivateStorageNative(fixture).complete, true)
-  const run = fixture.runs.find(item => item.matrix === 'boundary')
+  assert.equal(evaluatePrivateStorageNative(fixture).subcases.find(row => row.id === 'boundary/native-one-shot-alloc:2').status, 'passed')
+  const run = fixture.runs.find(item => item.matrix === 'owner-faults')
   const report = JSON.parse(run.rawReport)
-  report.results.find(row => row.name === 'native-read-allocation-baseline').detail.allocationAttempts = 3
+  report.results.find(row => row.name === 'native-read-allocation-baseline').detail.allocations = 3
   run.rawReport = JSON.stringify(report)
   // fixture still contains the old count-2 contract; the final evaluator must not use it.
   const result = evaluatePrivateStorageNative(fixture)
   assert.equal(result.complete, false)
-  assert.equal(result.subcases.find(row => row.id === 'boundary/native-one-shot-alloc:3').status, 'blocked')
+  assert.ok(result.errors.some(row => row.matrix === 'owner-faults'))
+  assert.equal(result.subcases.find(row => row.id === 'boundary/native-read-allocation-fault-inventory-unestablished').status, 'blocked')
   assert.ok(result.unresolved.some(row => row.name === 'remaining-native-fault-boundaries'))
 })
 
@@ -116,7 +120,7 @@ test('a readonly/executing/publisher or ACL-drift gap remains mandatory', () => 
     'cooperating-publishers-serialize-through-fixed-native-lease', 'post-read-canonical-acl-drift-rejected-without-returning-bytes']) {
     const fixture = hypothetical(), run = fixture.runs.find(item => item.matrix === 'boundary')
     const report = JSON.parse(run.rawReport)
-    report.results = report.results.filter(row => row.name !== name); report.summary.passed--
+    report.results = report.results.filter(row => row.name !== name); report.summary = Object.fromEntries(['passed', 'failed', 'blocked'].map(status => [status, report.results.filter(row => row.status === status).length]))
     run.rawReport = JSON.stringify(report)
     const result = evaluatePrivateStorageNative(fixture)
     assert.equal(result.complete, false)
@@ -131,9 +135,9 @@ test('directory placeholder requires the complete executable and blocked directo
   assert.deepEqual(contract.replacements.find(row => row.matrix === 'boundary').requirements, expected)
   for (const id of expected) assert.ok(contract.replacements.find(row => row.row === 'remaining-native-fault-boundaries').requirements.includes(id))
   for (const name of ['directory-enumeration-total-query-ceiling', ...blockedCases.map(row => row.name)]) {
-    const fixture = hypothetical(), run = fixture.runs.find(item => item.matrix === 'directory')
+    const fixture = hypothetical(), run = fixture.runs.find(item => item.matrix === 'owner-faults')
     const report = JSON.parse(run.rawReport)
-    report.results = report.results.filter(row => row.name !== name); report.summary.passed--
+    report.results = report.results.filter(row => row.name !== name); report.summary = Object.fromEntries(['passed', 'failed', 'blocked'].map(status => [status, report.results.filter(row => row.status === status).length]))
     run.rawReport = JSON.stringify(report)
     const observed = evaluatePrivateStorageNative(fixture)
     assert.equal(observed.complete, false)
@@ -153,4 +157,59 @@ test('a failed-write staging publication gap cannot be substituted by successful
   assert.equal(result.complete, false)
   assert.equal(result.subcases.find(row => row.id === 'boundary/prewrite-failure-cannot-delete-externally-published-staging').status, 'blocked')
   assert.ok(result.unresolved.some(row => row.name === 'deterministic-race-and-crash-boundary-matrix'))
+})
+
+test('all original fixed requirement IDs remain present while only C-internal evidence moves', () => {
+  const contract = privateStorageNativeContract(new Map())
+  assert.equal(contract.requirements.length, 149)
+  for (const requirement of contract.requirements) {
+    const internal = requirement.id.startsWith('directory/') || /\/native-call-boundary-|\/native-(?:read|publish)-allocation-/u.test(requirement.id)
+    for (const ref of requirement.evidence) assert.equal(ref.matrix, internal ? 'owner-faults' : requirement.id.split('/')[0])
+  }
+  const result = evaluatePrivateStorageNative(hypothetical())
+  assert.equal(result.subcases.find(row => row.id === 'boundary/native-call-boundary-read-failure').observations[0].packedProductionBinaryExecution, false)
+  assert.equal(result.subcases.find(row => row.id === 'boundary/native-capability-lifetime-live-worker-terminate').observations[0].packedProductionBinaryExecution, true)
+})
+
+for (const matrix of ['primary', 'admission', 'boundary']) test(`source-only execution cannot satisfy packed ${matrix} requirements`, () => {
+  const input = hypothetical(), run = input.runs.find(run => run.matrix === matrix)
+  const report = JSON.parse(run.rawReport)
+  report.packedProductionBinaryExecution = false; report.evidence = 'source-instrumented-native-owner-faults'
+  run.rawReport = JSON.stringify(report)
+  const result = evaluatePrivateStorageNative(input)
+  assert.equal(result.complete, false); assert.equal(result.acceptance, 'failed')
+  assert.ok(result.errors.some(error => error.matrix === matrix && /packed production execution/u.test(error.reason)))
+})
+
+for (const change of [
+  report => { report.packedProductionBinaryExecution = true },
+  report => { report.fixtureBinarySha256 = '9'.repeat(64) },
+  report => { report.productionBinarySha256 = '9'.repeat(64) },
+  report => { report.fixtureBuildSha256 = '9'.repeat(64) },
+  report => { report.compilerLogSha256 = report.oracleCompilerLogSha256 },
+  report => { report.oracleCompilerLogSha256 = report.compilerLogSha256 },
+  report => { report.results[0].detail.trace.length = 0 },
+  report => { report.results[0].detail.leaseReacquiredAfterChildExit = false },
+  report => { report.results[0].status = 'failed'; report.results[0].reason = 'Real native failure'; report.summary.passed--; report.summary.failed++; report.acceptance = 'failed' },
+]) test('source-owner metadata and native forwarding failures remain blocking', () => {
+  const input = hypothetical(), run = input.runs.find(run => run.matrix === 'owner-faults')
+  const report = JSON.parse(run.rawReport); change(report); run.rawReport = JSON.stringify(report)
+  if (report.summary.failed) run.exitCode = 1
+  const result = evaluatePrivateStorageNative(input)
+  assert.equal(result.complete, false); assert.equal(result.acceptance, 'failed')
+  assert.equal(result.subcases.find(row => row.id === 'directory/directory-enumeration-baseline').status, 'blocked')
+})
+
+for (const change of [
+  detail => { detail.actualDiskAbsentDacl = true }, detail => { detail.nativeSecurityCallsForwarded = false },
+  detail => { detail.refusals.pop() }, detail => { detail.after.bytesHex = 'changed' },
+  detail => { detail.injections[1].identity = { fileId: 'foreign' } },
+  detail => { detail.injections[1].modifiedDaclOffset = 20 }, detail => { delete detail.evidence },
+]) test('absent-DACL requirement rejects wrong evidence plane, missing refusal and changed original state', () => {
+  const input = hypothetical(), run = input.runs.find(run => run.matrix === 'primary'), report = JSON.parse(run.rawReport)
+  change(report.results.find(row => row.name === 'reject-absent-dacl-without-repair').detail)
+  run.rawReport = JSON.stringify(report)
+  const result = evaluatePrivateStorageNative(input)
+  assert.equal(result.complete, false); assert.equal(result.acceptance, 'failed')
+  assert.equal(result.subcases.find(row => row.id === 'primary/reject-absent-dacl-without-repair').status, 'blocked')
 })

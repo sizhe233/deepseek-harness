@@ -51,14 +51,16 @@ test('installed observer admits only the exact declared offline native bytes', t
   writeFileSync(binary, bytes)
   const sha256 = createHash('sha256').update(bytes).digest('hex')
   const record = { name: '@deepseek-ai/node-addon-system-win32-x64', version: '0.1.3',
-    nativeBinaries: [{ path: 'bin/windows-private-owner.node', sha256 }] }
+    binaries: [{ path: 'bin/windows-private-owner.node', bytes: bytes.length, sha256 }] }
   const inventory = { root, entry, platform: 'win32', architecture: 'x64', checkoutDependencyLinks: false,
     lifecycleScriptsExecuted: false, packages: [record] }
   const save = value => writeFileSync(join(root, 'consumer-inventory.json'), JSON.stringify(value))
   save(inventory)
   assert.equal(ownerBinding(entry).sha256, sha256)
   for (const packages of [[], [record, record], [{ ...record, version: '0.1.2' }],
-    [{ ...record, nativeBinaries: [] }], [{ ...record, nativeBinaries: [...record.nativeBinaries, ...record.nativeBinaries] }]]) {
+    [{ ...record, binaries: undefined, nativeBinaries: record.binaries }],
+    [{ ...record, binaries: [] }], [{ ...record, binaries: [...record.binaries, ...record.binaries] }],
+    [{ ...record, binaries: [{ ...record.binaries[0], bytes: bytes.length + 1 }] }]]) {
     save({ ...inventory, packages }); assert.throws(() => ownerBinding(entry))
   }
   for (const changed of [{ checkoutDependencyLinks: true }, { lifecycleScriptsExecuted: true }, { platform: 'linux' }]) {

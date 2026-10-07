@@ -57,16 +57,16 @@ node packages/storage/private-storage/tests/native/acceptance.mjs `
 
 ## 组合的纯产物验收
 
-打包运行器调用 loader 检查、两次 SDK 构建、独立 ABI 断言和四个独立行为矩阵。它保留每份失败或受阻的报告；即使某个矩阵失败，也会尝试其他独立且已接纳的矩阵。编译阶段被拒绝的产物不能通过后续构建重新获得资格；同一个固定 SDK 二进制身份贯穿 ABI 和全部行为检查。每次调用前后都会检查输入。
+打包运行器调用 loader 检查、两次 Windows SDK 校验程序构建、匹配当前 Node 的官方 SDK 准备、源码所有者夹具编译、独立 ABI 断言和四个独立行为矩阵。哈希绑定的产物包含两个 Node SDK 辅助模块及独立源码所有者校验器，因此无需源码检出。它保留每份失败或受阻的报告；即使某个矩阵失败，也会尝试其他独立且已接纳的矩阵。编译阶段被拒绝的产物不能通过后续构建重新获得资格；同一个固定 SDK 二进制身份贯穿 ABI 和全部行为检查。每次调用前后都会检查输入。
 
 - `windows-primary.json`：原始字节/ACL/身份/锁/发布矩阵，始终使用 `--require-complete true`
 - `windows-admission.json`：真实条件 ACL、内核对畸形描述符的拒绝、联接点/未知重解析、别名/大小写、管道/设备与现有只读卷接纳用例
-- `windows-boundary.json`：确定性的保留句柄竞争、所属进程死亡阶段、真实分配/调用故障注入、SDK 继承对照与存活 Worker 的关闭/终止
-- `windows-directory.json`：有界目录解析/查询，以及明确标记的清理返回值失败
+- `windows-boundary.json`：确定性的保留句柄竞争、所属进程死亡阶段、SDK 继承对照与存活 Worker 的关闭/终止
+- `windows-owner-faults.json`：[源码插桩所有者故障](owner-fault-README.md)，保留每个原始目录、清理、内部调用及动态分配/结果暴露要求 ID，并明确记录 `packedProductionBinaryExecution: false`
 - `windows-composite.json`：确切子用例映射、保留的原始占位项、原始报告字节、退出码、信号、超时与缺失义务
 - `windows-native-suite.json`：全部前置结果和最终必需证据判定
 
-四个矩阵的预算分别为 20、10、30 和 10 分钟。即使退出码看似成功，超时仍是失败；被中断或进程尚未关闭的报告会保留在磁盘上，但不被接受。后代进程清理结果不确定时，不会递归清理合成根目录。实证断电、Windows ARM64 和私有插件组合保留各自声明的范围；任何跳过或缺失的原生行都不会计为通过。
+四个矩阵的预算分别为 20、10、30 和 30 分钟。前置检查预算合计 27 分钟；外层任务限制为 135 分钟，为准备和清理留出时间，避免提前截断这些有界步骤。即使退出码看似成功，超时仍是失败；被中断或进程尚未关闭的报告会保留在磁盘上，但不被接受。后代进程清理结果不确定时，不会递归清理合成根目录。实证断电、Windows ARM64 和私有插件组合保留各自声明的范围；任何跳过或缺失的原生行都不会计为通过。
 
 ## 声明的验收范围
 
@@ -86,8 +86,8 @@ node packages/storage/private-storage/tests/native/acceptance.mjs `
 node packages/storage/private-storage/tests/native/fault-worker.mjs $consumerEntry $syntheticRoot short-write record.bin
 node packages/storage/private-storage/tests/native/fault-worker.mjs $consumerEntry $syntheticRoot post-flush-failure record.bin
 node packages/storage/private-storage/tests/native/fault-worker.mjs $consumerEntry $syntheticRoot rename-return-lost-unqueryable record.bin
-node --expose-gc packages/storage/private-storage/tests/native/gc-worker.mjs $consumerEntry $syntheticRoot directories
-node --expose-gc packages/storage/private-storage/tests/native/gc-worker.mjs $consumerEntry $syntheticRoot leases
+node --expose-gc packages/storage/private-storage/tests/native/gc-worker.mjs $consumerEntry $syntheticRoot directories $oracleDirectory
+node --expose-gc packages/storage/private-storage/tests/native/gc-worker.mjs $consumerEntry $syntheticRoot leases $oracleDirectory
 ```
 
 故障 worker 在包首次延迟调用前包装同一个外部 Koffi 依赖。所有普通调用都到达真实 DLL；每个注入结果或异常都明确标注，并说明是否转发了原生调用。场景涵盖创建后首次写入前检查、短写入，以及写入/预刷新/重命名/后刷新/验证/关闭失败和重命名返回值丢失。只读协调区分已发布、未发布和真正不确定的结果。成功或可能成功的重命名绝不能收到删除处置请求。发布前清理报告 `delete-pending`，不保证对象已消失。最终源句柄关闭出错时，会保留已建立的 `published/synced` 事实，但报告 `cleanup: 'failed'` 与 `cleanupFailed: true`：释放未确认，而不是已知留下存活句柄。不会重试该源句柄。`close-failure` fixture 要求真实清理成功后才替换失败返回值，不能证明真实内核拒绝。
@@ -109,9 +109,9 @@ node packages/storage/private-storage/tests/native/loader-negative.mjs $consumer
 实现检查不等于检查已经执行。确切候选的结果 JSON 才是依据；须保留失败和受阻行。以下列出已实现的 fixture 与剩余缺口。所有新增 Windows fixture 的执行仍待完成；源码/可移植测试不能满足这些行：
 
 1. ABI：编译后的 SDK 与实际 FFI 偏移比较；真实源句柄模式与身份观察。合成的待完成状态测试仍与原生完成证据分开
-2. 身份/令牌：当前用户所有权、重启与 runner 分类；相对于匹配的可读对照，验证真实匿名外部令牌和同用户受限令牌被拒绝；验证同用户、匿名与受限线程模拟下公共 API 的拒绝。这些用例仍需原生执行。受限主进程接纳仍受阻
+2. 身份/令牌：当前用户所有权、重启与 runner 分类；相对于匹配的可读对照，验证真实匿名外部令牌和同用户受限令牌被拒绝。匿名比较仅临时授予保留的合成父目录遍历权限，随后验证描述符完全恢复；不会启用特权。公共 API 拒绝在同用户、匿名及受限线程模拟下执行。这些用例仍需原生执行。受限主进程接纳仍受阻
 3. 创建时私密性：在宽权限父目录下创建，并在原生创建后首次写入前独立检查；在该屏障执行同样的真实匿名/受限拒绝检查。备用令牌设置失败仍明确记录为受阻
-4. DACL：公开、null、空、缺失、继承、有序拒绝、对象及回调 fixture。若某种形式被 Windows 规范化，则该形式记为受阻；接纳矩阵已实现条件回调接纳，以及 OS 对无效 ACL/描述符提交的拒绝。仅解析畸形字节的测试仍单独记录
+4. DACL：真实公开、null、空、继承、有序拒绝、对象及回调 fixture 保留创建句柄，用于前后描述符和身份检查。该句柄不请求 DELETE 访问；仅在拒绝检查结束后恢复私有 ACL，以便清理。Windows 总会为[已关联对象设置 SE_DACL_PRESENT](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/security-descriptor-control)，因此必测的缺失 DACL 场景只修改真实原生安全查询返回值的副本。报告明确标注 `instrumented-descriptor-buffer`，验证读取/替换遭拒及磁盘字节、描述符、身份和父目录条目不变，并明确排除真实磁盘缺失 DACL 证据。其他被规范化的形式仍记为受阻。条件回调以及 OS 对无效 ACL/描述符提交的拒绝在接纳矩阵中执行
 5. 不跟随链接：最终/中间/悬空符号链接和内部/外部硬链接。无符号链接权限时记为受阻；联接点和未知标签接纳 fixture 已实现；已挂载卷和云重解析 fixture 仍缺失
 6. 竞争：确定性的空父目录保护与写入前屏障。边界矩阵实现叶节点替换、带重定位前后对照的保留中间父目录拒绝、阻止暂存名称替换并验证兼容的读取/SDK 检查、自身句柄发布及释放后的重命名对照、写入失败清理，以及规范 ACL 漂移
 7. 边界：空内容、精确调用方上限、完整 64 MiB 上限、超限与无效上限。边界矩阵在保留读取屏障处尝试真实增长/截断/同尺寸写入者，并单独检查现有写入者。写入者无法获得访问权不等于建立了可变快照保证。原生管道/设备接纳另行执行
@@ -120,7 +120,7 @@ node packages/storage/private-storage/tests/native/loader-negative.mjs $consumer
 10. 持久性：观察直写源、相对原生重命名、同一源身份和两次文件刷新；明确标记的真实调用故障注入。补充分配/查询/读取/待完成/锁/目录/清理返回值故障矩阵已实现。注入返回值明确标记，真实内核存储/释放失败仍未证实；这不是断电测试
 11. 目录：新建嵌套根目录、私有子目录发布与重新打开的身份。只有实际运行确切原生序列，才能接受 synced 回执
 12. 崩溃恢复：监控进程退出后进程持有的锁仍存活，写入者退出后释放。七个真实所属进程终止阶段覆盖创建、写入、刷新和发布前后；进程死亡不能证明断电持久性
-13. 资源：显式关闭、伪造能力拒绝、实际 GC 句柄/分配释放，以及不变的锁对象。实际跨 Worker 拒绝、存活 Worker 关闭/终止、带正向对照的 SDK 子进程继承和旧句柄复用已实现。真实 Windows 结果仍为必需；不会从源码测试推断生命周期保证
+13. 资源：显式关闭、伪造能力拒绝和实际 GC 释放使用 C owner 计数、独立匹配的 SDK HANDLE/完整身份快照、进程句柄计数及重新获得且保持不变的锁对象。原生元数据和临时分配必须恢复到受控基线。实际跨 Worker 拒绝、存活 Worker 关闭/终止、带正向对照的 SDK 子进程继承和旧句柄复用已实现。真实 Windows 结果仍为必需；不会从源码测试推断生命周期保证
 14. 不支持的环境：观察到的本地文件系统接纳。有界只读探测可使用已观察到且已挂载的本地不支持卷。环境用例不可用时保留其受阻原始证据，以及前述显式适用性判定
 15. 打包消费者：确切归档闭包、必需依赖/peer 验证、独立导入和实际选中二进制摘要。仅依赖产物的平台作业必须建立最终候选验收；源码测试不能替代
 

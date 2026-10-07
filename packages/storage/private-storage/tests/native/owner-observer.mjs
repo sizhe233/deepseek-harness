@@ -36,10 +36,12 @@ export function ownerBinding(entry) {
   const records = inventory.packages.filter(record => record.name === nativeName)
   assert.equal(records.length, 1); assert.equal(records[0].version, '0.1.3')
   const binary = realpathSync(join(dirname(manifestPath), 'bin/windows-private-owner.node'))
-  const expected = records[0].nativeBinaries.filter(record => record.path === 'bin/windows-private-owner.node')
+  assert.ok(Array.isArray(records[0].binaries), 'Native platform binary inventory is required')
+  const expected = records[0].binaries.filter(record => record.path === 'bin/windows-private-owner.node')
   assert.equal(expected.length, 1)
   const digest = bytes => createHash('sha256').update(bytes).digest('hex')
   const bytes = readFileSync(binary), sha256 = digest(bytes)
+  assert.equal(bytes.length, expected[0].bytes)
   assert.equal(sha256, expected[0].sha256)
   return Object.freeze({ binary, sha256, bytes: bytes.length, platformPackage: nativeName, version: '0.1.3',
     inventorySha256: digest(readFileSync(inventoryPath)) })

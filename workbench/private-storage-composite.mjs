@@ -1,6 +1,7 @@
 /** Test-only native evidence composition. This module never converts skipped or simulated work into a native pass. */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { validateOwnerFaultReport } from './private-storage-owner-fault-evidence.mjs'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const sha256 = value => typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value)
@@ -34,6 +35,13 @@ export function evaluateNativeMatrices({ specifications, runs, requirements, rep
     assert.ok(typeof item.id === 'string' && item.id.length > 0 && !specs.has(item.id), 'Invalid or duplicate matrix identity')
     assert.ok(sha256(item.entrySha256) && sha256(item.oracleSha256) && sha256(item.oracleSourceSha256), 'Expected native artifact identities are missing')
     assert.match(item.sourceSha, /^[0-9a-f]{40}$/u, 'Expected candidate source is missing')
+    assert.ok(item.evidencePlane === undefined || ['packed-production', 'source-instrumented-native-owner-faults'].includes(item.evidencePlane), 'Unknown native evidence plane')
+    if (item.evidencePlane === 'source-instrumented-native-owner-faults') {
+      for (const field of ['productionSourceSha256', 'fixtureSourceSha256', 'fixtureBinarySha256', 'fixtureBuildSha256', 'compilerLogSha256', 'productionBinarySha256', 'oracleCompilerLogSha256']) {
+        assert.ok(sha256(item[field]), `Expected source-owner identity is missing: ${field}`)
+      }
+      assert.ok(item.fixtureSources && typeof item.fixtureSources === 'object', 'Expected source-owner source inventory is missing')
+    }
     specs.set(item.id, item)
   }
   assert.equal(new Set(specifications.map(item => item.entrySha256)).size, 1, 'Matrices must share one packed entry')
@@ -89,6 +97,18 @@ export function evaluateNativeMatrices({ specifications, runs, requirements, rep
       assert.equal(report.oracleSha256, specification.oracleSha256, 'SDK oracle identity differs')
       assert.equal(report.sourceSha, specification.sourceSha, 'Candidate source differs')
       assert.equal(report.oracleSourceSha256, specification.oracleSourceSha256, 'SDK oracle source identity differs')
+      evidence.evidencePlane = specification.evidencePlane ?? 'packed-production'
+      if (evidence.evidencePlane === 'source-instrumented-native-owner-faults') {
+        const expected = Object.fromEntries(['productionSourceSha256', 'fixtureSourceSha256', 'fixtureBinarySha256', 'fixtureBuildSha256',
+          'compilerLogSha256', 'productionBinarySha256', 'oracleCompilerLogSha256', 'fixtureSources'].map(field => [field, specification[field]]))
+        assert.equal(validateOwnerFaultReport(report, expected), run.exitCode, 'Source-owner exit differs from its validated report')
+        evidence.packedProductionBinaryExecution = false
+      } else {
+        assert.notEqual(report.packedProductionBinaryExecution, false, 'Source instrumentation cannot satisfy packed production execution')
+        assert.notEqual(report.evidence, 'source-instrumented-native-owner-faults', 'Source instrumentation cannot satisfy packed production execution')
+        if (specification.reportEvidence !== undefined) assert.equal(report.evidence, specification.reportEvidence, 'Packed matrix evidence kind differs')
+        evidence.packedProductionBinaryExecution = true
+      }
       assert.ok(Array.isArray(report.results) && report.results.length > 0, 'Native row inventory is missing')
       const names = new Set(), counts = { passed: 0, failed: 0, blocked: 0 }
       for (const row of report.results) {
@@ -126,8 +146,10 @@ export function evaluateNativeMatrices({ specifications, runs, requirements, rep
   const subcases = requirements.map(requirement => {
     const observations = requirement.evidence.map(reference => {
       const observed = rows.get(key(reference))
-      return observed ? { matrix: reference.matrix, row: reference.row, status: observed.status, reason: observed.reason ?? null }
-        : { ...reference, status: 'missing', reason: 'Required row was not established by a valid native report' }
+      const evidencePlane = specs.get(reference.matrix).evidencePlane ?? 'packed-production'
+      const identity = { ...reference, evidencePlane, packedProductionBinaryExecution: evidencePlane === 'packed-production' }
+      return observed ? { ...identity, status: observed.status, reason: observed.reason ?? null }
+        : { ...identity, status: 'missing', reason: 'Required row was not established by a valid native report' }
     })
     return { id: requirement.id, status: observations.every(row => row.status === 'passed') ? 'passed' : 'blocked', observations }
   })
