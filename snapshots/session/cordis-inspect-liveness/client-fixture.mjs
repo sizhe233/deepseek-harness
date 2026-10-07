@@ -90,7 +90,7 @@ export function apply(ctx) {
     assert.notEqual(queries[0], request.requestId)
     const agent = ctx.agents.get(request.agentId)
     assert.ok(agent, 'Client inspect request has an owning Agent')
-    assert.deepEqual(ctx.cordisInspect.resolveClientQuery(agent, request.requestId, {
+    assert.deepEqual(ctx.cordisInspect.resolveClientQuery(agent.id, request.requestId, {
       ok: true,
       data: { service: 'remote' },
     }), { accepted: true })

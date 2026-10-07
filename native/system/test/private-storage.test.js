@@ -637,6 +637,33 @@ test('independent syscall oracle reports observations without provider acceptanc
     assert.equal(native.read(presentFile, 3).toString(), 'acl');
     assert.throws(() => native.openPrivateRecord(privateParent, 'oracle-with-acl'), systemError(['EACCES']));
     assert.throws(() => native.openDirectory(join(s.root, 'oracle-with-acl-directory'), 'private', false), systemError(['EACCES']));
+    for (const [name, entries, admitted] of [
+      ['oracle-deny-ancestor', 1, true], ['oracle-allow-ancestor', 1, false], ['oracle-mixed-ancestor', 2, false],
+    ]) {
+      const ancestorPath = join(s.root, name);
+      const before = statSync(ancestorPath, { bigint: true });
+      const sourceAncestor = s.keep(native.openDirectory(ancestorPath, 'source', false));
+      assert.equal(native.inspect(sourceAncestor).acl.entries, entries);
+      // A deny-only ACL is still refused on the private destination itself.
+      assert.throws(() => native.openDirectory(ancestorPath, 'private', false), systemError(['EACCES']));
+      const leaf = join(ancestorPath, 'private-leaf');
+      if (admitted) {
+        const privateLeaf = s.keep(native.openDirectory(leaf, 'private', false));
+        compareFacts(native.inspect(privateLeaf), leaf);
+        assert.equal(native.inspect(privateLeaf).acl.entries, 0);
+      } else {
+        assert.throws(() => native.openDirectory(leaf, 'private', false), (error) => {
+          systemError(['EACCES'])(error);
+          assert.match(error.message, /ancestor extended ACL/);
+          return true;
+        });
+      }
+      const after = statSync(ancestorPath, { bigint: true });
+      for (const field of ['dev', 'ino', 'uid', 'gid', 'mode', 'nlink', 'size', 'mtimeNs', 'ctimeNs']) {
+        assert.equal(after[field], before[field], field);
+      }
+      assert.equal(native.inspect(sourceAncestor).acl.entries, entries);
+    }
   } else {
     assert.equal(facts.darwinAcl, null);
   }

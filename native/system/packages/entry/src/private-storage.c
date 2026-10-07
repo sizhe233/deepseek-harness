@@ -62,6 +62,7 @@ typedef struct {
 
 typedef struct {
   bool supported;
+  bool deny_only;
   int entries;
   int default_entries;
 } acl_facts;
@@ -628,6 +629,7 @@ static bool linux_acl_count(int fd, const char *name, int *count, bool *supporte
 
 static bool inspect_acl(int fd, bool directory, acl_facts *facts, failure *error) {
   facts->supported = true;
+  facts->deny_only = true;
   facts->entries = 0;
   facts->default_entries = 0;
 #ifdef __APPLE__
@@ -661,6 +663,13 @@ static bool inspect_acl(int fd, bool directory, acl_facts *facts, failure *error
   int status = acl_get_entry(acl, ACL_FIRST_ENTRY, &entry);
   /* Darwin returns zero for an entry and EINVAL when enumeration ends. */
   while (status == 0) {
+    acl_tag_t tag;
+    if (acl_get_tag_type(entry, &tag) != 0) {
+      int number = errno;
+      (void)acl_free(acl);
+      return fail(error, number, "acl_get_tag_type", "Cannot classify the retained extended ACL entry");
+    }
+    if (tag != ACL_EXTENDED_DENY) facts->deny_only = false;
     ++facts->entries;
     status = acl_get_entry(acl, ACL_NEXT_ENTRY, &entry);
   }
@@ -703,7 +712,11 @@ static bool admit(resource *item, const struct stat *stat, failure *error) {
     if (fs.read_only) return fail(error, EROFS, "fstatvfs", "Private destination filesystem is read-only");
   }
 #ifdef __APPLE__
-  if (!acl.supported || acl.entries != 0) return fail(error, EACCES, "acl_get_fd_np", "Destination extended ACLs are not admitted");
+  if (item->policy == TRUSTED_ANCESTOR) {
+    if (!acl.supported || !acl.deny_only) return fail(error, EACCES, "acl_get_tag_type", "Destination ancestor extended ACL contains an untrusted grant or tag");
+  } else if (!acl.supported || acl.entries != 0) {
+    return fail(error, EACCES, "acl_get_fd_np", "Private destination extended ACLs are not admitted");
+  }
 #endif
   return true;
 }

@@ -8,7 +8,7 @@
 
 ## Review inputs
 
-原生实现为 [private-storage.c](../packages/entry/src/private-storage.c)，SHA256 为 `f0648994ab27e95d0496829f49d85f9012ef7529f749a794e9b94bcbda66e665`。[带类型的按需入口](../packages/entry/src/private-storage.ts)描述其不透明操作。[原生测试](../test/private-storage.test.js)使用 [Worker 夹具](../test/private-storage-worker.js)、[模拟读取失败的动态库](../test/private-storage-read-fault.c)及[独立系统调用校验器](../test/private-storage-syscall-oracle.c)。系统调用校验器绝不报告提供方或持久性验收通过。
+原生实现为 [private-storage.c](../packages/entry/src/private-storage.c)，SHA256 为 `32b981b7f155a6fe66007ab1be2cd08072672df8434f9e7f388ee39daa3998f5`。[带类型的按需入口](../packages/entry/src/private-storage.ts)描述其不透明操作。[原生测试](../test/private-storage.test.js)使用 [Worker 夹具](../test/private-storage-worker.js)、[模拟读取失败的动态库](../test/private-storage-read-fault.c)及[独立系统调用校验器](../test/private-storage-syscall-oracle.c)。系统调用校验器绝不报告提供方或持久性验收通过。
 
 以下方面仍需独立审查：
 
@@ -23,7 +23,7 @@
 
 目录能力保留每个已准入祖先。源文件以只读方式打开；源策略允许共享可读目录和普通源硬链接。私有目标要求当前用户所有权、精确的仅所有者权限、已准入 ACL 策略，以及受支持的可写持久文件系统。不会收紧或修复现有权限。`openPrivateRecord` 对只读当前记录句柄施加私有叶子准入；上层记录读取器保留独立的 64 MiB 上限并计算摘要。共享安装源文件流仍要求事先独立确定的预期摘要。
 
-Linux 目标观察报告 ext 文件系统族、XFS 或 Btrfs。`0xef53` 魔数不能区分 ext2、ext3 和 ext4；回执不会将其特指为 ext4。实际排他重命名和同步支持由操作检查，不受支持即失败。Darwin 目标支持限定为 APFS，并检查扩展 ACL 为空。Overlayfs 和 tmpfs 可作为只读源文件系统，但在创建前会被拒绝作为私有目标。没有诊断选项会放宽该提供方策略。
+Linux 目标观察报告 ext 文件系统族、XFS 或 Btrfs。`0xef53` 魔数不能区分 ext2、ext3 和 ext4；回执不会将其特指为 ext4。实际排他重命名和同步支持由操作检查，不受支持即失败。Darwin 目标支持限定为 APFS，并检查扩展 ACL 为空。可信祖先 ACL 只能包含已明确识别的拒绝条目，不得授予命名空间修改权限；所有权和权限限制仍然适用。不会改写目标 ACL。Overlayfs 和 tmpfs 可作为只读源文件系统，但在创建前会被拒绝作为私有目标。没有诊断选项会放宽该提供方策略。
 
 发布在同一保留父目录下使用 Linux `renameat2(RENAME_NOREPLACE)` 或 Darwin `renameatx_np(RENAME_EXCL)`。Linux 要求文件 fsync、排他重命名、父目录 fsync 和最终绑定校验。Darwin 要求文件完全同步、排他重命名、父目录 fsync、对保留文件再次完全同步，以及最终绑定校验。系统调用序列成功不等同于实际断电保证。普通读取可能更新 atime 或产生操作系统审计事件；保留检查不会通过写入原文件来恢复这些副作用。
 

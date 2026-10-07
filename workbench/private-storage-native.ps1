@@ -23,9 +23,15 @@ $sourceSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLow
 $binary = Join-Path $output 'private-storage-oracle.exe'
 $object = Join-Path $output 'private-storage-oracle.obj'
 # C4191 is the documented GetProcAddress-to-native-signature cast, used only in this test executable.
-$command = "`"$developer`" -no_logo -arch=x64 -host_arch=x64 && set CL= && set _CL_= && set LINK= && set _LINK_= && `"$compilerPath`" /nologo /Bv /std:c17 /W4 /WX /wd4191 /TC /DUNICODE /D_UNICODE `"$source`" /Fo`"$object`" /Fe`"$binary`" /link Advapi32.lib && set WindowsSDK"
+$commandFile = Join-Path $output 'private-storage-oracle-compile.cmd'
+# Only the command-file path crosses PowerShell's native argument serialization.
+@('@echo off', 'setlocal DisableDelayedExpansion', "call `"$developer`" -no_logo -arch=x64 -host_arch=x64",
+  'if errorlevel 1 exit /b %errorlevel%', 'set CL=', 'set _CL_=', 'set LINK=', 'set _LINK_=',
+  "`"$compilerPath`" /nologo /Bv /std:c17 /W4 /WX /wd4191 /TC /DUNICODE /D_UNICODE `"$source`" /Fo`"$object`" /Fe`"$binary`" /link Advapi32.lib",
+  'if errorlevel 1 exit /b %errorlevel%', 'set WindowsSDK', 'exit /b %errorlevel%') |
+  Set-Content -LiteralPath $commandFile -Encoding ascii
 $compilerLog = Join-Path $output 'compiler.log'
-& $env:ComSpec /d /s /c "`"$command`"" 2>&1 | Tee-Object -FilePath $compilerLog
+& $env:ComSpec /d /c $commandFile 2>&1 | Tee-Object -FilePath $compilerLog
 if ($LASTEXITCODE -ne 0) { throw "Oracle compilation failed with exit $LASTEXITCODE" }
 if ($compilerSha256 -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $compilerPath).Hash.ToLowerInvariant()) { throw 'Installed compiler changed during compilation' }
 if ($developerSha256 -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $developer).Hash.ToLowerInvariant()) { throw 'Developer environment script changed during compilation' }

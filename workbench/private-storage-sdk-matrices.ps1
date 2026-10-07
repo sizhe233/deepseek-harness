@@ -48,14 +48,20 @@ foreach ($target in $targets) {
     $binary = Join-Path $output $target.binary
     $object = Join-Path $output ($target.name + '.obj')
     $log = Join-Path $output ($target.name + '-compiler.log')
-    foreach ($path in @($binary, $object, $log)) {
+    $commandFile = Join-Path $output ($target.name + '-compile.cmd')
+    foreach ($path in @($binary, $object, $log, $commandFile)) {
       if (Test-Path -LiteralPath $path) { throw "Fixture output already exists: $path" }
     }
     $outputsAdmitted = $true
     $record.sourceSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLowerInvariant()
     # C4191 is the test oracle's documented GetProcAddress-to-native-signature cast.
-    $command = "`"$developer`" -no_logo -arch=x64 -host_arch=x64 && set CL= && set _CL_= && set LINK= && set _LINK_= && `"$compilerPath`" /nologo /Bv /std:c17 /W4 /WX /wd4191 /TC /DUNICODE /D_UNICODE $($target.options) `"$source`" /Fo`"$object`" /Fe`"$binary`" /link Advapi32.lib && set WindowsSDK"
-    & $env:ComSpec /d /s /c "`"$command`"" 2>&1 | Tee-Object -FilePath $log
+    # Only the command-file path crosses PowerShell's native argument serialization.
+    @('@echo off', 'setlocal DisableDelayedExpansion', "call `"$developer`" -no_logo -arch=x64 -host_arch=x64",
+      'if errorlevel 1 exit /b %errorlevel%', 'set CL=', 'set _CL_=', 'set LINK=', 'set _LINK_=',
+      "`"$compilerPath`" /nologo /Bv /std:c17 /W4 /WX /wd4191 /TC /DUNICODE /D_UNICODE $($target.options) `"$source`" /Fo`"$object`" /Fe`"$binary`" /link Advapi32.lib",
+      'if errorlevel 1 exit /b %errorlevel%', 'set WindowsSDK', 'exit /b %errorlevel%') |
+      Set-Content -LiteralPath $commandFile -Encoding ascii
+    & $env:ComSpec /d /c $commandFile 2>&1 | Tee-Object -FilePath $log
     $record.exitCode = $LASTEXITCODE
     $record.compilerLog = [IO.Path]::GetFileName($log)
     $record.compilerLogSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $log).Hash.ToLowerInvariant()

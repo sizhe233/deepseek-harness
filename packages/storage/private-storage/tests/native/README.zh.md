@@ -17,7 +17,7 @@ $oracle = Join-Path $oracleDirectory 'private-storage-oracle.exe'
 & $oracle token
 ```
 
-构建器选择已安装的 x64 编译器绝对路径，并记录编译器、开发环境脚本、源码、二进制与日志的身份。主构建把 C 源码、可执行文件和编译日志的 SHA256 写入 `oracle-build.json`；`compiler.log` 包含 `cl /Bv` 与 Windows SDK 设置。`sdk-abi.json` 记录大小、对齐、偏移、指针宽度和有符号 NTSTATUS 的事实。`FILE_RENAME_INFO`、`FILE_BASIC_INFO` 与 `FILE_STANDARD_INFO` 是原生记录对应的 SDK 布局。SDK 未提供 WDK 的模式 typedef，因此校验程序使用其文档规定的单个 `ULONG Mode` 成员，并在 JSON 中记录这一区别。
+构建器选择已安装的 x64 编译器绝对路径，并记录编译器、开发环境脚本、源码、二进制与日志的身份。每个目标都在编译日志旁保留一个 `.cmd` 文件；PowerShell 只向 `cmd.exe` 传递该文件路径，开发环境设置或编译失败时，命令文件立即退出。主构建把 C 源码、可执行文件和编译日志的 SHA256 写入 `oracle-build.json`；`compiler.log` 包含 `cl /Bv` 与 Windows SDK 设置。`sdk-abi.json` 记录大小、对齐、偏移、指针宽度和有符号 NTSTATUS 的事实。`FILE_RENAME_INFO`、`FILE_BASIC_INFO` 与 `FILE_STANDARD_INFO` 是原生记录对应的 SDK 布局。SDK 未提供 WDK 的模式 typedef，因此校验程序使用其文档规定的单个 `ULONG Mode` 成员，并在 JSON 中记录这一区别。
 
 ```powershell
 node packages/storage/private-storage/tests/native/verify-abi.mjs $oracle packages/storage/private-storage/src/abi.ts

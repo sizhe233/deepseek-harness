@@ -17,7 +17,7 @@ $oracle = Join-Path $oracleDirectory 'private-storage-oracle.exe'
 & $oracle token
 ```
 
-The builders select the absolute installed x64 compiler and record compiler, developer-script, source, binary and log identities. The primary build records the C source, executable and compiler-log SHA256 values in `oracle-build.json`; `compiler.log` includes `cl /Bv` and Windows SDK settings. `sdk-abi.json` records sizes, alignment, offsets, pointer width and signed NTSTATUS facts. `FILE_RENAME_INFO`, `FILE_BASIC_INFO` and `FILE_STANDARD_INFO` are SDK layout equivalents of the native records. The SDK omits the WDK mode typedef, so the oracle uses its documented single `ULONG Mode` member. This distinction is recorded in the JSON.
+The builders select the absolute installed x64 compiler and record compiler, developer-script, source, binary and log identities. Each target retains a `.cmd` file beside its compiler log; PowerShell passes only that file path to `cmd.exe`, and developer-environment or compiler failure stops the command file immediately. The primary build records the C source, executable and compiler-log SHA256 values in `oracle-build.json`; `compiler.log` includes `cl /Bv` and Windows SDK settings. `sdk-abi.json` records sizes, alignment, offsets, pointer width and signed NTSTATUS facts. `FILE_RENAME_INFO`, `FILE_BASIC_INFO` and `FILE_STANDARD_INFO` are SDK layout equivalents of the native records. The SDK omits the WDK mode typedef, so the oracle uses its documented single `ULONG Mode` member. This distinction is recorded in the JSON.
 
 ```powershell
 node packages/storage/private-storage/tests/native/verify-abi.mjs $oracle packages/storage/private-storage/src/abi.ts

@@ -83,7 +83,7 @@ export async function apply(ctx) {
     if (++queries !== 1) return
     const agent = ctx.agents.get(request.agentId)
     if (agent === undefined) throw new Error('Client inspect request has no owning Agent')
-    ctx.cordisInspect.resolveClientQuery(agent, request.requestId, {
+    ctx.cordisInspect.resolveClientQuery(agent.id, request.requestId, {
       ok: false,
       reason: 'provider-error',
       message: 'no catalogued Service named "remote"',

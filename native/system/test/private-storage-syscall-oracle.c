@@ -49,26 +49,60 @@ static int replace_record(int parent, const char *source, const char *target) {
 }
 
 #ifdef __APPLE__
-static void observe_acl(int fd, bool expected_present) {
+static void observe_acl(int fd, int expected_entries) {
   filesec_t security = filesec_init();
   require(security != NULL, "allocate ACL observation");
   struct stat observed;
   require(fstatx_np(fd, &observed, security) == 0, "observe retained ACL property");
   int present = 0;
   require(filesec_query_property(security, FILESEC_ACL, &present) == 0, "query retained ACL property");
-  require((present != 0) == expected_present, "expected retained ACL presence");
+  require((present != 0) == (expected_entries != 0), "expected retained ACL presence");
   if (present) {
     acl_t acl = NULL;
     require(filesec_get_property(security, FILESEC_ACL, &acl) == 0 && acl != NULL, "copy present ACL");
     filesec_free(security);
     require(acl_valid(acl) == 0, "validate present ACL");
     acl_entry_t entry;
-    require(acl_get_entry(acl, ACL_FIRST_ENTRY, &entry) == 0, "observe one ACL entry");
+    for (int index = 0; index < expected_entries; ++index) {
+      require(acl_get_entry(acl, index == 0 ? ACL_FIRST_ENTRY : ACL_NEXT_ENTRY, &entry) == 0,
+              "observe expected ACL entry");
+      acl_tag_t tag;
+      require(acl_get_tag_type(entry, &tag) == 0, "observe ACL entry tag");
+      require(tag == ACL_EXTENDED_ALLOW || tag == ACL_EXTENDED_DENY, "observe supported ACL tag");
+    }
     errno = 0;
     require(acl_get_entry(acl, ACL_NEXT_ENTRY, &entry) < 0 && errno == EINVAL, "observe ACL enumeration end");
     require(acl_free(acl) == 0, "release copied ACL");
   } else {
     filesec_free(security);
+  }
+}
+
+static void darwin_ancestor_acl_probe(int parent, const uuid_t owner) {
+  const char *names[] = {"oracle-deny-ancestor", "oracle-allow-ancestor", "oracle-mixed-ancestor"};
+  for (size_t index = 0; index < sizeof(names) / sizeof(names[0]); ++index) {
+    require(mkdirat(parent, names[index], 0700) == 0, "create owned ACL ancestor");
+    int fd = openat(parent, names[index], O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    require(fd >= 0, "open owned ACL ancestor");
+    require(mkdirat(fd, "private-leaf", 0700) == 0, "create private leaf before ancestor ACL");
+    int entries = index == 2 ? 2 : 1;
+    acl_t acl = acl_init(entries);
+    require(acl != NULL, "allocate ancestor fixture ACL");
+    for (int entry_index = 0; entry_index < entries; ++entry_index) {
+      bool deny = index == 0 || (index == 2 && entry_index == 0);
+      acl_entry_t entry;
+      acl_permset_t permissions;
+      require(acl_create_entry(&acl, &entry) == 0, "create ancestor ACL entry");
+      require(acl_set_tag_type(entry, deny ? ACL_EXTENDED_DENY : ACL_EXTENDED_ALLOW) == 0, "set ancestor ACL tag");
+      require(acl_set_qualifier(entry, owner) == 0, "set ancestor ACL owner");
+      require(acl_get_permset(entry, &permissions) == 0 &&
+              acl_add_perm(permissions, deny ? ACL_WRITE_OWNER : ACL_READ_DATA) == 0, "set ancestor ACL permission");
+    }
+    require(acl_valid(acl) == 0, "validate ancestor fixture ACL");
+    require(acl_set_fd_np(fd, acl, ACL_TYPE_EXTENDED) == 0, "set owned ancestor ACL");
+    observe_acl(fd, entries);
+    require(acl_free(acl) == 0, "release ancestor fixture ACL");
+    require(close(fd) == 0, "close owned ACL ancestor");
   }
 }
 
@@ -104,10 +138,11 @@ static void darwin_acl_probe(int parent) {
       require(fchmodx_np(fd, removal) == 0, "remove owned fixture ACL");
       filesec_free(removal);
     }
-    observe_acl(fd, present);
+    observe_acl(fd, present ? 1 : 0);
     require(close(fd) == 0, "close owned ACL fixture");
   }
   require(acl_free(acl) == 0, "release owned fixture ACL");
+  darwin_ancestor_acl_probe(parent, owner);
   filesec_t security = filesec_init();
   require(security != NULL, "allocate invalid-fd ACL observation");
   struct stat observed;
