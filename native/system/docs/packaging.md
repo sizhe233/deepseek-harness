@@ -4,10 +4,10 @@ The family publishes one ESM entry package plus OS/CPU-selected optional platfor
 
 ## Payloads
 
-The entry package exports the Landlock API at `./landlock-run` and the asynchronous lock API at `./flock`, with C sources included for auditability. There is no root export. Platform packages contain no JavaScript.
+The entry package exports the Landlock API at `./landlock-run` and the asynchronous lock API at `./flock`, and lazy retained-storage primitives at `./private-storage`, with C sources included for auditability. There is no root export. Platform packages contain no JavaScript.
 
-- Linux: `bin/landlock-run`, `bin/glibc/system.node`, and `bin/musl/system.node`.
-- macOS: `bin/system.node`.
+- Linux: `bin/landlock-run`, plus `system.node` and `private-storage.node` in each of `bin/glibc/` and `bin/musl/`.
+- macOS: `bin/system.node` and `bin/private-storage.node`.
 
 `package.json` supplies OS/CPU metadata; `prebuilds.json` supplies tool, binary kind, path, and addon Node-API/libc metadata. CI matrices and release assembly derive from those files. Nested paths remain intact in uploaded artifacts and tarballs.
 

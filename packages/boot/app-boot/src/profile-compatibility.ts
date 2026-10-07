@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { parse } from 'semver'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { getDshRuntimeVersion } from './plugin-compatibility.ts'
+import type { ProfileDocumentView } from './profile-document-view.ts'
+import { createProfileDocumentOperationId, publishedProfileDocumentView, type ProfileDocuments } from './profile-documents.ts'
 
 /** Independent profile metadata; neither package manifests nor Cordis patches carry grants. */
 export const PROFILE_COMPATIBILITY_FILENAME = 'compatibility.json'
@@ -57,14 +59,19 @@ export interface ProfileCompatibility {
  * reported instead of failing, so a bad file can never make the profile unusable; rejected records
  * are skipped while the remaining valid ones still apply.
  * @param profileDir Absolute profile directory.
+ * @param view Optional native admitted view; unlisted/unavailable documents throw without filesystem fallback.
  * @returns Accepted exemptions plus every problem found; no manifest fallback is used.
  */
-export function readProfileCompatibility(profileDir: string): ProfileCompatibility {
+export function readProfileCompatibility(profileDir: string, view?: ProfileDocumentView): ProfileCompatibility {
   const filename = join(profileDir, PROFILE_COMPATIBILITY_FILENAME)
   const unreadable = (reason: string): ProfileCompatibility =>
     ({ exemptions: {}, warnings: [`${filename} ${reason}; treating the profile as having no exemptions`], rewritable: false })
   let text: string
-  try { text = readFileSync(filename, 'utf8') }
+  if (view !== undefined) {
+    const document = view.read(filename)
+    if (document.state === 'absent') return { exemptions: {}, warnings: [], rewritable: true }
+    text = document.text
+  } else try { text = readFileSync(filename, 'utf8') }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { exemptions: {}, warnings: [], rewritable: true }
     return unreadable(`cannot be read (${String(error)})`)
@@ -94,24 +101,45 @@ export function readProfileCompatibility(profileDir: string): ProfileCompatibili
 
 /** Read only the accepted exemptions of a profile.
  * @param profileDir Absolute profile directory.
+ * @param view Optional admitted view; unavailable managed documents never reopen their originals.
  * @returns Exact package-name@version keys mapped to their allowed DSH versions.
  */
-export function readProfileVersionExemptions(profileDir: string): Record<string, string[]> {
-  return readProfileCompatibility(profileDir).exemptions
+export function readProfileVersionExemptions(profileDir: string, view?: ProfileDocumentView): Record<string, string[]> {
+  return readProfileCompatibility(profileDir, view).exemptions
 }
 
-/** Persist one informed grant or revocation under the compatibility file's own lock.
+function changedExemptions(
+  current: ProfileCompatibility, packageVersion: string, runtimeVersion: string, enabled: boolean,
+): string {
+  if (!current.rewritable) {
+    throw new Error(`${PROFILE_COMPATIBILITY_FILENAME} must be repaired before exemptions change:\n${current.warnings.join('\n')}`)
+  }
+  const exemptions = current.exemptions
+  const versions = exemptions[packageVersion] ?? []
+  if (enabled) exemptions[packageVersion] = [...new Set([...versions, runtimeVersion])]
+  else {
+    const retained = versions.filter(version => version !== runtimeVersion)
+    if (retained.length) exemptions[packageVersion] = retained
+    else Reflect.deleteProperty(exemptions, packageVersion)
+  }
+  return JSON.stringify(exemptions, undefined, 2) + '\n'
+}
+
+/** Persist one informed grant or revocation through its file lock or admitted document authority.
  * @param profileDir Profile directory; no package manifest is created or modified.
  * @param packageVersion Exact manifest package-name@version.
  * @param runtimeVersion Exact DSH version; grants must name the current runtime, revocations may name historical ones.
  * @param enabled Whether to grant rather than revoke.
  * @param acceptRisk Required true for grants after explicit acknowledgement of possible crashes or data loss.
- * @returns After the atomic write. Existing plugin instances are not reloaded by this operation.
+ * @param documents Launcher-admitted native authority for managed profiles; omitted retains ordinary file behavior.
+ * @returns After the ordinary atomic write or finalized native publication. Existing plugin instances are not reloaded.
  * @throws For invalid identities, missing consent, a stale runtime, or a file the reader rejected,
- * which the user must repair by hand because rewriting it would discard their content.
+ * which the user must repair because rewriting it would discard their content. Native stale views or
+ * unfinalized outcomes refuse without an original-file fallback or automatic publication retry.
  */
 export async function setProfileVersionExemption(
   profileDir: string, packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk: boolean,
+  documents?: ProfileDocuments,
 ): Promise<void> {
   validatePluginVersionExemption(packageVersion, runtimeVersion)
   if (enabled && !acceptRisk) {
@@ -121,21 +149,20 @@ export async function setProfileVersionExemption(
   if (enabled && runtimeVersion !== current) {
     throw new Error(`Cannot approve DSH ${runtimeVersion}: this application runs DSH ${current}. Use --dsh-version ${current}.`)
   }
-  await mkdir(profileDir, { recursive: true })
   const filename = join(profileDir, PROFILE_COMPATIBILITY_FILENAME)
+  if (documents !== undefined) {
+    if (documents.selection.profileDir !== profileDir) throw new Error('Compatibility writer does not match the admitted Profile')
+    const view = await documents.refresh()
+    const publication = await documents.withWriteSnapshot({
+      operationId: createProfileDocumentOperationId(), expected: view.reference,
+    }, current => [{ logicalPath: filename, expected: current.read(filename).reference,
+      text: changedExemptions(readProfileCompatibility(profileDir, current), packageVersion, runtimeVersion, enabled) }])
+    publishedProfileDocumentView(publication)
+    return
+  }
+  await mkdir(profileDir, { recursive: true })
   await withFileLock(filename, async () => {
-    const current = readProfileCompatibility(profileDir)
-    if (!current.rewritable) {
-      throw new Error(`${PROFILE_COMPATIBILITY_FILENAME} must be repaired before exemptions change:\n${current.warnings.join('\n')}`)
-    }
-    const exemptions = current.exemptions
-    const versions = exemptions[packageVersion] ?? []
-    if (enabled) exemptions[packageVersion] = [...new Set([...versions, runtimeVersion])]
-    else {
-      const retained = versions.filter(version => version !== runtimeVersion)
-      if (retained.length) exemptions[packageVersion] = retained
-      else Reflect.deleteProperty(exemptions, packageVersion)
-    }
-    await writeFileAtomic(filename, JSON.stringify(exemptions, undefined, 2) + '\n', { mode: 0o600 })
+    const text = changedExemptions(readProfileCompatibility(profileDir), packageVersion, runtimeVersion, enabled)
+    await writeFileAtomic(filename, text, { mode: 0o600 })
   })
 }

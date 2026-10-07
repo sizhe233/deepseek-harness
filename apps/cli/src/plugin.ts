@@ -1,7 +1,9 @@
 /** Profile package management and explicit, exact-version compatibility approvals. */
-import { runPluginCommand, runProfilePnpm, setProfileVersionExemption, type PackageOperationOptions } from '@deepseek-ai/dsh-plugin-manager/operations'
+import { createProfilePackageOperationId, runPluginCommand, runProfilePnpm, setProfileVersionExemption, type PackageOperationOptions } from '@deepseek-ai/dsh-plugin-manager/operations'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
-import { DEFAULT_PROFILE_BUNDLES, initProfile, PROFILE_TEMPLATES, readProfileCompatibility, resolveProfileDir, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { DEFAULT_PROFILE_BUNDLES, initProfile, PROFILE_TEMPLATES, readProfileCompatibility, resolveProfileDir, type ProfileContext, type ProfileDocuments } from '@deepseek-ai/dsh-app-boot'
+import { currentRuntimeAdmission, requireManagedRuntimeAdmission, type ManagedRuntimeAdmission } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+import { Context } from '@deepseek-ai/cordis'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -14,7 +16,7 @@ function requireDesktopProfile(dir: string): void {
 }
 
 /** Parse only DSH-owned commands; all other arguments remain pnpm's responsibility. */
-async function versionCommand(profile: string, args: readonly string[]): Promise<number | undefined> {
+async function versionCommand(profile: string, args: readonly string[], documents?: ProfileDocuments): Promise<number | undefined> {
   const [command, ...rest] = args
   if (command !== 'allow-version' && command !== 'revoke-version' && command !== 'version-exemptions') return undefined
   try {
@@ -40,25 +42,66 @@ async function versionCommand(profile: string, args: readonly string[]): Promise
     if (command === 'allow-version') {
       process.stderr.write('dsh: warning: allowing incompatible plugin versions can break the application or corrupt data. Approval applies only to the exact package and DSH versions.\n')
     }
-    const dir = resolveProfileDir(profile)
-    if (profile !== 'desktop') await mkdir(dir, { recursive: true })
-    await withFileLock(join(dir, 'package.json'), async () => {
-      if (profile === 'desktop') requireDesktopProfile(dir)
-      else if (!existsSync(join(dir, 'package.json'))) initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+    const dir = documents?.selection.profileDir ?? resolveProfileDir(profile)
+    const apply = async () => {
       if (request === undefined) {
-        const { exemptions, warnings } = readProfileCompatibility(dir)
+        const { exemptions, warnings } = readProfileCompatibility(dir, documents === undefined ? undefined : await documents.refresh())
         for (const warning of warnings) process.stderr.write(`dsh: warning: ${warning}\n`)
         process.stdout.write(JSON.stringify(exemptions, undefined, 2) + '\n')
       } else {
-        await setProfileVersionExemption(dir, request.packageVersion, request.runtimeVersion, command === 'allow-version', acceptRisk)
+        await setProfileVersionExemption(dir, request.packageVersion, request.runtimeVersion, command === 'allow-version', acceptRisk, documents)
         process.stdout.write(`dsh: ${command === 'allow-version' ? 'allowed' : 'revoked'} ${request.packageVersion} for DSH ${request.runtimeVersion}\n`)
       }
-    }, { waitMs: 120000 })
+    }
+    if (documents !== undefined) await apply()
+    else {
+      if (profile !== 'desktop') await mkdir(dir, { recursive: true })
+      await withFileLock(join(dir, 'package.json'), async () => {
+        if (profile === 'desktop') requireDesktopProfile(dir)
+        else if (!existsSync(join(dir, 'package.json'))) initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+        await apply()
+      }, { waitMs: 120000 })
+    }
     return 0
   } catch (error) {
     process.stderr.write(`dsh: ${String(error)}\n`)
     return 1
   }
+}
+
+/** Reuse the fixed carrier's services without mounting business plugins or reopening the logical Profile. */
+async function runManagedPlugin(
+  admission: ManagedRuntimeAdmission, profile: string, args: readonly string[], packageManager?: ProfileContext['packageManager'],
+): Promise<number> {
+  const ctx = new Context()
+  try {
+    requireManagedRuntimeAdmission(admission)
+    if (admission.request.profile !== profile || admission.request.mode !== 'package') throw new Error('Package invocation differs from carrier admission')
+    const versionResult = await versionCommand(profile, args, admission.documents)
+    if (versionResult !== undefined) return versionResult
+    await admission.provideServices(ctx)
+    const provider = ctx.get('profilePackageOperations')
+    if (provider === undefined) throw new Error('Managed CLI package commands require the installed native package provider')
+    for (const key of ['profileDir', 'home', 'codeBinding', 'packageDocuments'] as const) {
+      if (provider.selection[key] !== admission.documents.selection[key]) throw new Error('CLI package provider belongs to another Profile selection')
+    }
+    const view = await admission.documents.refresh()
+    const operationId = createProfilePackageOperationId()
+    const result = await provider.run({ kind: 'command', args: [...args], operationId, expected: view.reference }, {
+      ...packageManager, execution: 'cli', outputBytes: 16384, lockWaitMs: 120000,
+      lookupTimeoutMs: 120000, githubConnectionTimeoutMs: 5000,
+      registries: { registry: null, fallbackRegistries: [], resolved: null },
+      onOutput: (text, stream) => { process[stream].write(text) },
+    })
+    if (result.operationId !== operationId) throw new Error(`Package receipt does not match operation ${operationId}`)
+    if (result.error !== undefined) process.stderr.write(`dsh: ${result.error.diagnostic ?? result.error.code}; operation ${operationId}\n`)
+    for (const warning of result.warnings ?? []) process.stderr.write(`dsh: warning: ${warning}\n`)
+    if (result.application === 'failed' || result.application === 'cancelled') return result.packageResult?.exitCode || 1
+    return result.packageResult?.exitCode ?? 0
+  } catch (error) {
+    process.stderr.write(`dsh: ${String(error)}\n`)
+    return 1
+  } finally { await ctx.fiber.dispose() }
 }
 
 /** Run package management for a profile.
@@ -68,6 +111,8 @@ async function versionCommand(profile: string, args: readonly string[]): Promise
  * @returns Zero on success; nonzero on invalid approval or package-manager failure.
  */
 export async function runPlugin(profile: string, args: readonly string[], packageManager?: ProfileContext['packageManager']): Promise<number> {
+  const admission = currentRuntimeAdmission()
+  if (admission?.status === 'managed') return runManagedPlugin(admission, profile, args, packageManager)
   if (profile === 'desktop') {
     try { requireDesktopProfile(resolveProfileDir(profile)) } catch (error) {
       process.stderr.write(`dsh: ${String(error)}\n`)

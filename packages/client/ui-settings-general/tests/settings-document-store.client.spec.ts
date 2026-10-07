@@ -98,3 +98,18 @@ describe('SettingsDocumentStore', () => {
     expect(caught.store.getSnapshot()).toMatchObject({ status: 'ready', error: null })
   })
 })
+
+it('retains a native draft on stale import and clears it only after successful application', async () => {
+  const importDraft = vi.fn().mockResolvedValueOnce({ ok: false, error: new RemoteError('settings/rejected', 'stale draft', { ns: '' }) })
+    .mockResolvedValueOnce({ ok: true, value: { imported: true } })
+  const controller = derivedDocumentStore({ settings: {
+    describe: () => Promise.resolve(response(true)),
+    openSettingsDocument: () => Promise.resolve({ ok: true, value: { opened: true, draft: { id: 'native-draft', saveBehavior: 'explicit-import' } } }),
+    importSettingsDocumentDraft: importDraft,
+  } })
+  await controller.load(); await controller.open(); await controller.importSaved()
+  expect(importDraft).toHaveBeenCalledWith('native-draft')
+  expect(controller.store.getSnapshot()).toMatchObject({ draftId: 'native-draft', importError: true, error: 'stale draft' })
+  await controller.importSaved()
+  expect(controller.store.getSnapshot().draftId).toBeUndefined()
+})

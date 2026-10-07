@@ -37,11 +37,16 @@ export function SettingsDocumentAction({ controller, useSnapshot, t }: SettingsD
 
   return (
     <div className={css.action}>
-      {state.error === null ? null : <span className={css.error} role="alert">{t('openDocument.error')}</span>}
+      {state.error === null ? null : <span className={css.error} role="alert">{t(state.importError ? 'importDocument.error' : 'openDocument.error')}</span>}
+      {state.draftId === undefined ? null : <>
+        <span>{t('importDocument.hint')}</span>
+        <Button variant="outline" size="sm" disabled={state.opening || state.importing}
+          onClick={() => { void controller.importSaved() }}>{t('importDocument')}</Button>
+      </>}
       <Button
         variant="outline"
         size="sm"
-        disabled={state.opening}
+        disabled={state.opening || state.importing}
         onClick={() => { void controller.open() }}
       >
         {t('openDocument')}

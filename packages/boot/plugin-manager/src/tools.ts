@@ -5,7 +5,7 @@ import type {} from './index.ts'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { approveEscalation } from '@deepseek-ai/dsh-sandbox'
-import type { PluginEntryId } from './types.ts'
+import type { PluginEntryId, InstallBundleOptions } from './types.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { getDshRuntimeVersion } from '@deepseek-ai/dsh-app-boot'
 
@@ -26,6 +26,7 @@ export function apply(ctx: Context): void {
       runtimeVersion: { type: 'string', description: 'For set_version_exemption: exact DSH version from list_version_exemptions. Target must be the manifest package-name@version, not an alias or version range.' },
       acceptRisk: { type: 'boolean', description: 'For granting an exemption: true only after warning the user about possible crashes and data loss and receiving explicit permission for this exact plugin/runtime pair. General installation permission is not enough.' },
       approvedBuilds: { type: 'array', items: { type: 'string' }, description: 'For install_bundle: pass names from pendingBuilds only after the user explicitly approves running their install scripts in the conversation. This grants persistent permission for this profile.' },
+      approvalOperationId: { type: 'string', description: 'For managed install_bundle script approval: copy operationId from the failed result that supplied pendingBuilds. It identifies that exact retained policy; approval still requires the user’s explicit permission.' },
       registry: { type: 'string', description: 'For install_bundle: the npm registry URL asked first, when the user names one; otherwise the configured registry is asked, and its configured fallbacks while a registry is unreachable.' },
       offset: { type: 'number', description: 'Zero-based list offset; defaults to 0.' },
       limit: { type: 'number', description: 'List page size, from 1 to 100; defaults to 25.' },
@@ -75,9 +76,11 @@ export function apply(ctx: Context): void {
         }
         case 'install_bundle':
           if (args.target === undefined) throw new Error('target package spec is required')
+          if (args.approvalOperationId !== undefined && !/^[a-f0-9]{64}$/.test(args.approvalOperationId)) throw new Error('approvalOperationId must identify the exact failed managed operation')
           return JSON.stringify(await manager.installBundle(args.target, {
             ...args.enabled === undefined ? {} : { enabled: args.enabled },
             ...args.approvedBuilds === undefined ? {} : { approvedBuilds: args.approvedBuilds },
+            ...args.approvalOperationId === undefined ? {} : { approvalOperationId: args.approvalOperationId as NonNullable<InstallBundleOptions['approvalOperationId']> },
             ...args.registry === undefined ? {} : { registry: args.registry },
           }))
         case 'remove_bundle':

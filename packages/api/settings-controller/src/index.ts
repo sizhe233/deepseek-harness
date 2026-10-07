@@ -91,7 +91,7 @@ export class SettingsController extends TypertRemoteService {
   /**
    * Describe every registered namespace for a configuration page: redacted
    * layered values plus the serialized schema the page renders its form from.
-   * @returns provider writability, local-document presence, and one view per namespace.
+   * @returns provider writability, editable-document availability, and one view per namespace.
    * @throws RemoteError when no settings provider is mounted.
    */
   @Remote
@@ -99,7 +99,7 @@ export class SettingsController extends TypertRemoteService {
     const settings = this.provider()
     return {
       writable: settings.writable,
-      hasDocument: true,
+      hasDocument: settings.canPrepareDocument,
       namespaces: settings.describe({ redactSecrets: true }).map(namespaceView),
     }
   }
@@ -177,10 +177,26 @@ export class SettingsController extends TypertRemoteService {
     if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'settings document open was aborted', {})
     try {
       await this.openTextFile(path, signal)
-      return { opened: true }
+      const draft = settings.preparedDocumentDraft(path)
+      return { opened: true, ...draft === undefined ? {} : { draft } }
     } catch (error: unknown) {
       if (isAborted(signal)) throw new RemoteError('gateway/cancelled', 'settings document open was aborted', {})
       throw new RemoteError('gateway/internal', `path open failed: ${messageOf(error)}`, {}, { cause: error })
+    }
+  }
+
+  /** Publish a saved native editing copy and reconcile the active configuration.
+   * @param draftId Identity returned by openSettingsDocument; never a client supplied filename.
+   * @returns Confirmation after publication and ordinary Loader reconciliation.
+   * @throws RemoteError when the save is stale, invalid or cannot be applied.
+   */
+  @Remote
+  async importSettingsDocumentDraft(draftId: string): Promise<{ imported: true }> {
+    try {
+      await this.provider().importDocumentDraft(draftId)
+      return { imported: true }
+    } catch (error) {
+      throw new RemoteError('settings/rejected', `settings draft import failed: ${messageOf(error)}`, { ns: '' }, { cause: error })
     }
   }
 

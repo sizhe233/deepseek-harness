@@ -1,6 +1,7 @@
 /** Isolated verification for a staged or competing current JSONL generation. */
 
-import { Worker } from 'node:worker_threads'
+import { createRuntimeWorker } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+
 import type { WorkerOptions } from 'node:worker_threads'
 import type { JsonlCompression } from './format.ts'
 import type { JsonlExpectedPrefix, JsonlVerifiedGeneration } from './generation.ts'
@@ -137,7 +138,7 @@ function runVerificationWorker(
     ...(expectedPrefix === undefined ? {} : { expectedPrefix }),
   }
   const { entry, options } = workerSpawn(request)
-  const worker = new Worker(entry, options)
+  const worker = createRuntimeWorker(entry, options)
   return new Promise((resolve, reject) => {
     let settled = false
     const cleanup = (): void => {

@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/storage/private-storage/tests/native/README.md
+/windows-native-private-storage-acceptance:
+  en: a8d0f70481f2c3a8
+  zh: 9e48a4caaaac40b6
+/windows-native-private-storage-acceptance/build-the-sdk-oracle:
+  en: b5b0ceb3efc7d4af
+  zh: 13c92650d557e643
+/windows-native-private-storage-acceptance/prepare-one-immutable-native-closure:
+  en: 03eaa6918d48161a
+  zh: 4dfdf92e0cd39f7d
+/windows-native-private-storage-acceptance/run-built-or-packed-behavior-acceptance:
+  en: 353b3cfd46e4ed38
+  zh: 4674585d6d482df8
+/windows-native-private-storage-acceptance/composed-artifact-only-acceptance:
+  en: d245a6c4c75b09af
+  zh: c46166b86cf6126c
+/windows-native-private-storage-acceptance/declared-acceptance-scope:
+  en: 6dddd7e2b67d2e74
+  zh: 0257abfb2b5cfe95
+/windows-native-private-storage-acceptance/fault-race-and-gc-workers:
+  en: a2d5fde2660f5772
+  zh: 2ad9de3c8ef5cd07
+/windows-native-private-storage-acceptance/native-loader-rejection-fixtures:
+  en: f7dc48dea80e66bf
+  zh: 364d56bda7a059bf
+/windows-native-private-storage-acceptance/fifteen-area-evidence-ledger:
+  en: 702bfc55e7def7dc
+  zh: 6b26de5f91066d69
+/windows-native-private-storage-acceptance/portable-harness-bookkeeping-checks:
+  en: bb2834e84e510011
+  zh: 5e8933ea166b5d14

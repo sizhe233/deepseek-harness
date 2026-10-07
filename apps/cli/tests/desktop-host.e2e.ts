@@ -1,10 +1,10 @@
 /** Built Desktop Host lifecycle with Electron disconnecting before profile startup settles. */
 
 import { fork } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { finished } from 'node:stream/promises'
 import { expect, it, onTestFinished } from 'vitest'
 
@@ -27,17 +27,29 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     writeFileSync(join(modules, name, 'index.js'), source)
   }
   writeFileSync(join(root, 'package.json'), '{"type":"module"}')
-  writeFileSync(join(modules, 'dsh-app-boot', 'package.json'), '{"type":"module","exports":"./index.js"}')
+  writeFileSync(join(modules, 'dsh-app-boot', 'package.json'), JSON.stringify({
+    type: 'module', exports: { '.': './index.js', './runtime-version': './runtime-version.js' },
+  }))
+  writeFileSync(join(modules, 'dsh-app-boot', 'runtime-version.js'), 'export const getDshRuntimeVersion = () => "0.0.0-test"')
   writeFileSync(join(modules, 'dsh-app-boot', 'index.js'), `
     export const loadProfileDirectory = () => ({ skippedBundles: [] });
     export const reportSkippedBundles = () => {};
     export const loadLayeredEnv = () => ({});
   `)
-  writeFileSync(join(modules, 'dsh', 'package.json'), '{"type":"module","exports":{"./profile-boot":"./profile-boot.js"}}')
+  writeFileSync(join(modules, 'dsh', 'package.json'), JSON.stringify({
+    type: 'module', exports: { './profile-boot': './profile-boot.js', './lib/*': './lib/*' },
+  }))
+  const cliDirectory = fileURLToPath(new URL('../', import.meta.url))
+  const cliLib = join(modules, 'dsh', 'lib')
+  mkdirSync(cliLib)
+  for (const name of readdirSync(join(cliDirectory, 'lib')).filter(name => name.endsWith('.js'))) {
+    copyFileSync(join(cliDirectory, 'lib', name), join(cliLib, name))
+  }
+  symlinkSync(realpathSync(join(cliDirectory, 'node_modules', 'commander')), join(root, 'node_modules', 'commander'), 'junction')
   writeFileSync(join(modules, 'dsh', 'profile-boot.js'), `
     import { writeFileSync } from 'node:fs';
     export function runProfile(options) {
-      process.send({ type: 'booting', packageManager: options.packageManager });
+      process.send({ type: 'booting', packageManager: options.packageManager, applicationEntry: options.applicationEntry });
       return new Promise((resolve, reject) => process.once('disconnect', () => {
         if (${String(fail)}) { reject(new Error('fixture boot failure')); return; }
         resolve({ ctx: { plugin: async () => {}, effect: () => {}, on: () => {}, inject: () => {},
@@ -47,7 +59,9 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
     }
   `)
   const entry = join(root, 'index.js')
-  copyFileSync(join(hostDirectory, 'lib', 'index.js'), entry)
+  for (const name of readdirSync(join(hostDirectory, 'lib')).filter(name => name.endsWith('.js'))) {
+    copyFileSync(join(hostDirectory, 'lib', name), join(root, name))
+  }
   const pnpm = join(root, 'bundled-pnpm.mjs')
   const nodeBin = join(root, 'bin')
   const child = fork(entry, [root, root, root, pnpm, nodeBin], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
@@ -63,11 +77,13 @@ it.each([false, true])('settles startup after parent IPC disconnect (boot failur
   try {
     const boot = await new Promise<{
       packageManager: { command: string; args: string[]; env: Record<string, string> }
+      applicationEntry: string
     }>((resolve, reject) => {
       child.once('message', resolve)
       child.once('error', reject)
       child.once('exit', (code) => { reject(new Error(`Host exited before booting: ${String(code)} ${stderr}`)) })
     })
+    expect(boot.applicationEntry).toBe(pathToFileURL(join(root, 'host-main.js')).href)
     expect(boot.packageManager.command).toBe(process.execPath)
     expect(boot.packageManager.args).toEqual(['--expose-internals', pnpm])
     expect(boot.packageManager.env.ELECTRON_RUN_AS_NODE).toBe('1')

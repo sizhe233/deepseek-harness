@@ -8,7 +8,7 @@ import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { FSWatcher, watch, type ChokidarOptions } from 'chokidar'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { readFileSync, realpathSync } from 'node:fs'
-import { readProfileManifest, readProfilePatches, reconcileProfilePatches, PROFILE_PATCH_FILENAME } from '@deepseek-ai/dsh-app-boot'
+import { appliedProfileDocuments, markProfileDocumentsApplied, readProfileManifest, readProfilePatches, readProfilePatchesFromView, reconcileProfilePatches, withProfileDocumentView, PROFILE_PATCH_FILENAME } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import { handleError } from './error.ts'
 import { PackageManifests } from './package-manifest.ts'
@@ -341,29 +341,49 @@ class Hmr extends Service {
       this.applicationReady = started.promise
       const unsubscribe = ready.onReady(() => { started.resolve(true) })
       yield () => { unsubscribe(); started.resolve(false); return Promise.resolve() }
-      const manifestPath = join(profile.dir, 'package.json')
-      const patchFiles = [profile.patchPath, join(profile.home, PROFILE_PATCH_FILENAME)]
-      let lastInputs: string | undefined
-      let lastBundles = JSON.stringify(profile.startedBundles)
-      const refresh = async (manifestOnly: boolean): Promise<void> => {
-        const bundles = JSON.stringify(readProfileManifest('dsh', profile.dir).dsh?.profile?.bundles ?? [])
-        if (manifestOnly && bundles === lastBundles) return
-        const inputs = JSON.stringify([bundles, ...patchFiles.map((filename) => {
-          try { return readFileSync(filename, 'utf8') }
-          catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-            throw error
-          }
-        })])
-        if (inputs === lastInputs) return
-        const patches = readProfilePatches('dsh', profile)
-        const warnings = await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh')
-        lastInputs = inputs
-        lastBundles = bundles
-        for (const diagnostic of warnings) this.ctx.logger.warn(diagnostic)
+      const documents = this.ownerContext.get('profileDocuments')
+      if (documents !== undefined) {
+        let subscribed = true
+        const invalidate = (): void => {
+          if (!subscribed || this.closing) return
+          void this.runReload(async () => {
+            if (!subscribed) return
+            const view = await documents.refresh()
+            if (appliedProfileDocuments(this.ownerContext) === view.reference) return
+            const patches = readProfilePatchesFromView('dsh', profile, view, documents.bundleLayers(view))
+            const applied = await withProfileDocumentView(this.ownerContext, view, () => reconcileProfilePatches(this.ownerContext.root, patches, 'dsh', [], true))
+            markProfileDocumentsApplied(this.ownerContext, applied.view.reference)
+            for (const diagnostic of applied.value) this.ctx.logger.warn(diagnostic)
+          }).catch((error: unknown) => { this.ctx.logger.warn(error) })
+        }
+        const cancel = documents.subscribe(documents.current().reference, invalidate)
+        yield () => { subscribed = false; cancel(); return Promise.resolve() }
+        invalidate()
+      } else {
+        const manifestPath = join(profile.dir, 'package.json')
+        const patchFiles = [profile.patchPath, join(profile.home, PROFILE_PATCH_FILENAME)]
+        let lastInputs: string | undefined
+        let lastBundles = JSON.stringify(profile.startedBundles)
+        const refresh = async (manifestOnly: boolean): Promise<void> => {
+          const bundles = JSON.stringify(readProfileManifest('dsh', profile.dir).dsh?.profile?.bundles ?? [])
+          if (manifestOnly && bundles === lastBundles) return
+          const inputs = JSON.stringify([bundles, ...patchFiles.map((filename) => {
+            try { return readFileSync(filename, 'utf8') }
+            catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+              throw error
+            }
+          })])
+          if (inputs === lastInputs) return
+          const patches = readProfilePatches('dsh', profile)
+          const warnings = await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh')
+          lastInputs = inputs
+          lastBundles = bundles
+          for (const diagnostic of warnings) this.ctx.logger.warn(diagnostic)
+        }
+        for (const filename of patchFiles) await this.watchConfig(filename, () => refresh(false))
+        await this.watchConfig(manifestPath, () => refresh(true))
       }
-      for (const filename of patchFiles) await this.watchConfig(filename, () => refresh(false))
-      await this.watchConfig(manifestPath, () => refresh(true))
     }
 
     const { loader } = this.ctx
@@ -379,8 +399,9 @@ class Hmr extends Service {
 
     // Collect externals before opening the watcher so every post-ready change
     // is observed by listeners that already have their classification state.
-    const mainJob = process.argv[1] === undefined ? undefined
-      : this.internal.loadCache.get(pathToFileURL(resolve(process.argv[1])).href)
+    const applicationEntry = profile?.applicationEntry
+      ?? (process.argv[1] === undefined ? undefined : pathToFileURL(resolve(process.argv[1])).href)
+    const mainJob = applicationEntry === undefined ? undefined : this.internal.loadCache.get(applicationEntry)
     if (mainJob) {
       this.externals = await loadDependencies(mainJob)
     } else {
@@ -422,6 +443,7 @@ class Hmr extends Service {
           if (isManifest) continue
           const include = [...loader.entries()].map(entry => entry.subtree as Include | undefined)
             .find(tree => tree?.filename === filename || tree?.filename === configuredFilename)
+          if (include !== undefined && this.ownerContext.get('profileDocuments') !== undefined) continue
           if (include !== undefined) includes.add(include)
           else this.ctx.emit('hmr/change', url)
         }

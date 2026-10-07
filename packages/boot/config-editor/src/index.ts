@@ -7,9 +7,13 @@ import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-i
 import yaml from 'js-yaml'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
-import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
+import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches,
+  type ProfileDocumentOperationId, type ProfileDocumentViewReference, type ProfileDocumentView, type ProfileDocumentWrite, type Profile } from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
+import { createManagedConfigurationDerivation, editManagedConfiguration, managedConfigurationLayers, refreshManagedConfiguration, reverseManagedConfiguration, type ConfigurationEditReceipt, type ConfigurationDocumentChange } from './managed-editor.ts'
+export { ConfigurationReconciliationError, createOfflineConfigurationEditor,
+  type ConfigurationEditReceipt, type ConfigurationDocumentChange, type OfflineConfigurationEditor, type OfflineConfigurationEntry } from './managed-editor.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -30,8 +34,19 @@ export class ConfigEditor extends Service {
     super(ownerContext, 'configEditor')
   }
 
-  /** The profile patch edited by this service. */
+  /** Logical Profile patch label; managed current contents are supplied by the native document authority. */
   get documentPath(): string { return this.ownerContext.profileContext.patchPath }
+
+  /**
+   * Prepare raw edits for one versioned candidate while retaining real schema and owned-field validation.
+   * @param changes Ordered entry edits or receipted reversals.
+   * @returns A derivation to invoke exactly once under the native document write snapshot.
+   */
+  createDocumentDerivation(
+    changes: readonly ConfigurationDocumentChange[],
+  ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]> {
+    return createManagedConfigurationDerivation(this.ownerContext, changes, entry => this.entries().includes(entry))
+  }
 
   /** Addressable profile rows; nested Includes have independent configuration ownership.
    * @returns Active entries with unique profile patch ids.
@@ -48,7 +63,9 @@ export class ConfigEditor extends Service {
    */
   configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }> {
     const profile = this.ownerContext.profileContext
-    const loaded = loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
+    const documents = this.ownerContext.get('profileDocuments')
+    const loaded = documents === undefined ? loadProfileDirectory('dsh', profile.dir, profile.installAnchor)
+      : managedConfigurationLayers(documents, profile.patchPath)
     const entries = this.entries()
     // An own config key can replace inherited config even when its value is undefined.
     const overridden = new Set(loaded.patches.filter(patch => patch.insert === undefined && Object.hasOwn(patch, 'config')).map(patch => patch.id))
@@ -69,7 +86,7 @@ export class ConfigEditor extends Service {
     }))
   }
 
-  private inherited(entry: Entry, loaded: ReturnType<typeof loadProfileDirectory>): Record<string, unknown> {
+  private inherited(entry: Entry, loaded: { layers: readonly Profile['layers'][number][]; patches: PatchOptions[] }): Record<string, unknown> {
     const patches = loaded.patches.map((patch) => {
       if (patch.id !== entry.options.id || patch.insert !== undefined) return patch
       const rest = { ...patch }; Reflect.deleteProperty(rest, 'config')
@@ -88,6 +105,10 @@ export class ConfigEditor extends Service {
     entry: Entry,
     change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>,
   ): Promise<void> {
+    if (this.ownerContext.get('profileDocuments') !== undefined) {
+      await this.editWithReceipt(entry, change)
+      return
+    }
     const run = async (): Promise<void> => {
       const path = this.documentPath
       await withFileLock(join(this.ownerContext.profileContext.dir, 'package.json'), async () => {
@@ -151,6 +172,44 @@ export class ConfigEditor extends Service {
     }
     const hmr = this.ownerContext.get('hmr')
     await (hmr === undefined ? run() : hmr.runExclusive(run))
+  }
+
+  /**
+   * Edit managed documents with inspectable native publication facts; ordinary edit() retains its void API.
+   * @param entry Current uniquely addressed profile entry.
+   * @param change Derive once from detached raw values under native serialization.
+   * @param operationId Optional caller-retained key for interruption recovery.
+   * @returns Native publication receipt after successful Loader reconciliation.
+   */
+  async editWithReceipt(
+    entry: Entry,
+    change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>,
+    operationId?: ProfileDocumentOperationId,
+  ): Promise<ConfigurationEditReceipt> {
+    const run = () => editManagedConfiguration(this.ownerContext, entry, () => this.entries().includes(entry), change, operationId)
+    const hmr = this.ownerContext.get('hmr')
+    return hmr === undefined ? run() : hmr.runExclusive(run)
+  }
+
+  /**
+   * Reverse only still-matching owned raw fields from a persisted native operation.
+ * @param receipt Original editor receipt; current unrelated changes survive the newer publication.
+   * @param operationId Optional caller-retained reversal key for interruption recovery.
+   * @returns The native reverse receipt after Loader reconciliation.
+   */
+  async reverseEdit(receipt: Pick<ConfigurationEditReceipt, 'entry' | 'document'>, operationId?: ProfileDocumentOperationId): Promise<ConfigurationEditReceipt> {
+    const run = () => reverseManagedConfiguration(this.ownerContext, receipt, operationId)
+    const hmr = this.ownerContext.get('hmr')
+    return hmr === undefined ? run() : hmr.runExclusive(run)
+  }
+
+  /** Apply the latest finalized native document view after operation inspection.
+   * @returns The applied reference; a missing native binding or reconciliation failure rejects.
+   */
+  async refreshDocuments(): Promise<ProfileDocumentViewReference> {
+    const run = () => refreshManagedConfiguration(this.ownerContext)
+    const hmr = this.ownerContext.get('hmr')
+    return hmr === undefined ? run() : hmr.runExclusive(run)
   }
 }
 

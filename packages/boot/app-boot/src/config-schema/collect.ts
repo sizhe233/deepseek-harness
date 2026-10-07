@@ -12,6 +12,8 @@ import { installRuntimeInterception } from '../profile-resolution/resolver.ts'
 import { buildConfigSchemaDocument } from './document.ts'
 import type { CollectedConfigEntry, ConfigSchemaDiagnostic, ConfigSchemaDump } from './types.ts'
 import { isNativeConfigSchema } from './native.ts'
+import type { ProfileDocumentView } from '../profile-document-view.ts'
+import type { AdmittedPackageGraph } from '../runtime-admission.ts'
 
 interface ParsedEntry {
   id?: string
@@ -72,6 +74,9 @@ function includePatches(value: unknown): PatchOptions[] | undefined {
  * @param entries - unvalidated rows from profile composition; malformed rows become positioned diagnostics without losing siblings.
  * @param resolution - the same immutable package resolution used for profile boot.
  * @param diagnostics - existing composition diagnostics; copied into the returned catalog.
+ * @param documentView - optional admitted native Include snapshots matching the supplied process resolution.
+ * @param admittedPackages - launcher-installed immutable graph; requires the identical resolution and a document view.
+ * No second router is installed for an admitted graph.
  * @returns a JSON Schema document with partial-result diagnostics and Config references under `x-cordis`.
  * @throws when Node's profile module resolution cannot be installed.
  */
@@ -80,12 +85,17 @@ export async function collectConfigSchemas(
   entries: readonly unknown[],
   resolution: RuntimeResolution,
   diagnostics: readonly ConfigSchemaDiagnostic[] = [],
+  documentView?: ProfileDocumentView,
+  admittedPackages?: AdmittedPackageGraph,
 ): Promise<ConfigSchemaDump> {
   const result: { entries: CollectedConfigEntry[]; diagnostics: ConfigSchemaDiagnostic[] } = {
     entries: [], diagnostics: [...diagnostics],
   }
   const byOptions = new Map<object, CollectedConfigEntry>()
-  const interception = installRuntimeInterception(resolution)
+  if (admittedPackages !== undefined && (admittedPackages.resolution !== resolution || documentView === undefined)) {
+    throw new Error('Managed schema collection requires the admitted package resolution and document view')
+  }
+  const interception = admittedPackages === undefined ? installRuntimeInterception(resolution) : undefined
   try {
     const loader = ModuleLoader.fromInternal()
     if (loader === undefined) throw new Error('config schema dump requires the Node module loader used by profile resolution')
@@ -131,7 +141,8 @@ export async function collectConfigSchemas(
       if (!['.json', '.yaml', '.yml'].includes(extension)) throw new Error(`include extension ${JSON.stringify(extension)} is not supported`)
       let source: unknown
       let canonical: string
-      try {
+      if (documentView !== undefined) canonical = filename
+      else try {
         canonical = await realpath(filename)
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -139,7 +150,14 @@ export async function collectConfigSchemas(
       }
       if (ancestors.has(canonical)) throw new Error(`include cycle at ${filename}`)
       let content: string | undefined
-      try {
+      if (documentView !== undefined) {
+        const document = documentView.read(filename)
+        if (document.state === 'present') content = document.text
+        else {
+          source = config.initial
+          if (source === undefined) throw new Error(`include file not found: ${filename}`)
+        }
+      } else try {
         content = await readFile(filename, 'utf8')
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
@@ -244,6 +262,6 @@ export async function collectConfigSchemas(
     indexTargets(entries)
     return await buildConfigSchemaDocument(profile.name, result.entries, targets, result.diagnostics)
   } finally {
-    interception.dispose()
+    interception?.dispose()
   }
 }

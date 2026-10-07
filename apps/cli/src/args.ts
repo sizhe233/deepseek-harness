@@ -57,8 +57,19 @@ interface PluginInvocation {
   args: string[]
 }
 
-/** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
+/** The resolved `dsh` invocation; terminal commands are represented separately. */
 export type DshInvocation = ProfileInvocation | DumpConfigInvocation | DumpConfigSchemaInvocation | PluginInvocation
+
+/** An ordered write produced by the launcher grammar. */
+export interface DshArgumentOutput {
+  stream: 'stdout' | 'stderr'
+  text: string
+}
+
+/** A parsed invocation or a terminal help, version, or error decision. */
+export type DshArgumentResult =
+  | { kind: 'invocation'; invocation: DshInvocation }
+  | { kind: 'terminal'; exitCode: number; output: readonly DshArgumentOutput[] }
 
 /** Launcher flags for profile boot and configuration dumps. */
 interface BootOptions {
@@ -136,14 +147,14 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
 }
 
 /**
- * Resolve argv into one invocation, or print and exit for help, version, or an
- * error.
+ * Resolve argv without importing applications, writing output, or exiting.
  * @param argv - arguments after the Node binary and script.
  * @param version - version string printed by `--version`.
  * @param manageDesktopProfile - permit Desktop's installed carrier to manage its reserved profile's plugins.
- * @returns the resolved invocation.
+ * @returns the invocation or the exact terminal output and exit code.
  */
-export function parseDshArgs(argv: readonly string[], version: string, manageDesktopProfile = false): DshInvocation {
+export function parseDshArgumentResult(argv: readonly string[], version: string, manageDesktopProfile = false): DshArgumentResult {
+  const output: DshArgumentOutput[] = []
   const first = argv[0]
   let resolved: DshInvocation | undefined
   // Annotated, not inferred: the actions below call back into `program`, and an
@@ -156,6 +167,10 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
     .description('dsh: boot a DeepSeek Harness profile — an ordered stack of plugin-bundle patch layers under your own overrides.')
     .addHelpText('after', HELP_EXAMPLES)
     .exitOverride()
+    .configureOutput({
+      writeOut: (text) => { output.push({ stream: 'stdout', text }) },
+      writeErr: (text) => { output.push({ stream: 'stderr', text }) },
+    })
     // The launcher's flags come first and end at the first token it does not
     // know; everything from there on belongs to the booted app, including
     // its -h. `dsh -h` with no profile still prints this help, below.
@@ -204,9 +219,31 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
       : argv
     program.parse(expanded, { from: 'user' })
   } catch (error) {
-    return process.exit(error instanceof CommanderError ? error.exitCode : 1)
+    return { kind: 'terminal', exitCode: error instanceof CommanderError ? error.exitCode : 1, output }
   }
   /* v8 ignore next -- an action resolves or Commander throws */
   if (resolved === undefined) throw new Error('dsh: no invocation resolved')
-  return resolved
+  return { kind: 'invocation', invocation: resolved }
+}
+
+/**
+ * Apply the launcher's terminal output, or return its already parsed invocation.
+ * @param result - Decision from the single launcher grammar.
+ * @returns the invocation when the command does not exit.
+ */
+export function finishDshArguments(result: DshArgumentResult): DshInvocation {
+  if (result.kind === 'invocation') return result.invocation
+  for (const { stream, text } of result.output) process[stream].write(text)
+  return process.exit(result.exitCode)
+}
+
+/**
+ * Resolve argv, preserving the command-line parser's print-and-exit API.
+ * @param argv - Arguments after the Node binary and script.
+ * @param version - Version string printed by `--version`.
+ * @param manageDesktopProfile - Permit Desktop's installed carrier to manage its reserved profile's plugins.
+ * @returns the resolved invocation.
+ */
+export function parseDshArgs(argv: readonly string[], version: string, manageDesktopProfile = false): DshInvocation {
+  return finishDshArguments(parseDshArgumentResult(argv, version, manageDesktopProfile))
 }

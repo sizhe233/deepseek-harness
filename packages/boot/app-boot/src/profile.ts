@@ -33,6 +33,7 @@ import { evaluatePluginCompatibility, pluginCompatibilityWarning } from './plugi
 import { readProfileVersionExemptions } from './profile-compatibility.ts'
 import { loadOverlayPatches } from './index.ts'
 import { realModuleDirectory } from './profile-resolution/legacy-links.ts'
+import type { ProfileDocumentView } from './profile-document-view.ts'
 
 /** Directory under the Harness home holding every profile. */
 export const PROFILES_DIR = 'profiles'
@@ -599,13 +600,19 @@ function collectProfileScopePackages(
  * Read a profile's manifest.
  * @param binName - the diagnostic prefix on the thrown error.
  * @param dir - the profile directory.
+ * @param view - optional admitted document view; missing or unlisted managed documents never fall back to originals.
  * @returns the parsed manifest.
  */
-export function readProfileManifest(binName: string, dir: string): ProfileManifest {
+export function readProfileManifest(binName: string, dir: string, view?: ProfileDocumentView): ProfileManifest {
   const path = join(dir, 'package.json')
   let raw: string
   try {
-    raw = readFileSync(path, 'utf8')
+    if (view === undefined) raw = readFileSync(path, 'utf8')
+    else {
+      const document = view.read(path)
+      if (document.state === 'absent') throw new Error('The admitted Profile manifest is absent')
+      raw = document.text
+    }
   } catch (error) {
     throw new Error(`${binName}: failed to read profile manifest ${path}: ${String(error)}`)
   }

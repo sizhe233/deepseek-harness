@@ -141,6 +141,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The dsh launcher supplies data-only profile locations and composition inputs; reload scheduling belongs to dsh-hmr.',
   },
   {
+    key: 'profileDocuments',
+    pkg: 'app-boot',
+    title: 'Launcher-admitted Profile document authority',
+    mode: 'service',
+    consumers: ['app-boot', 'config-editor', 'hmr', 'plugin-manager'],
+    note: 'The native launcher supplies immutable views, serialized publication and inspectable receipts; consumers record Loader application separately.',
+  },
+  {
+    key: 'profilePackageOperations',
+    pkg: 'plugin-manager',
+    title: 'Launcher-admitted package operation authority',
+    mode: 'service',
+    consumers: ['plugin-manager'],
+    note: 'The native launcher supplies durable package staging, code/document publication and operation inspection under existing script consent and cancellation policy.',
+  },
+  {
     key: 'connection',
     pkg: 'client-connection',
     title: 'Authenticated browser transport',

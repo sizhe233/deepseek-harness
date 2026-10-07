@@ -29,7 +29,7 @@ kind: "package-reference"
 
 `settings.describe()` 返回部署信息，以及在 `redactSecrets: true` 下读取的所有 namespace。`settings.update`、`settings.replace` 与 `settings.mutate` 暴露 settings 服务的三种写入操作，并返回该 namespace 的新脱敏视图；陈旧写入使用 `settings-conflict`，其他提供方拒绝使用 `settings-rejected`。
 
-`settings.openSettingsDocument()` 准备提供方持有的文档，并用原生文本编辑器打开；该方法不接受浏览器提供的文件系统目标。
+`settings.openSettingsDocument()` 准备提供方持有的文档，并用原生文本编辑器打开；该方法不接受浏览器提供的文件系统目标。 `hasDocument` 表示提供方能否准备可编辑文档；托管 Profile 缺少已验证的外部草稿能力时返回 false，并拒绝直接打开。托管打开返回草稿 id 和显式导入行为，不返回物理路径。`settings.importSettingsDocumentDraft(id)` 通过原生校验导入已保存副本并调用 Loader 协调；过期基线会被拒绝。
 
 -----
 

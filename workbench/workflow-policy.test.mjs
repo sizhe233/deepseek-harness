@@ -81,7 +81,7 @@ test('official job conditions retain their original event and disabled-state sem
 
 test('required fork status waits for Linux and native platform acceptance', () => {
   const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
-  assert.deepEqual(workflow.jobs['build-and-test'].needs, ['linux-build-and-test', 'source-coverage', 'node-22-compatibility', 'native-platforms'])
+  assert.deepEqual(workflow.jobs['build-and-test'].needs, ['linux-build-and-test', 'source-coverage', 'node-22-compatibility', 'native-platforms', 'private-storage-packed'])
   assert.equal(workflow.jobs['build-and-test'].if, '${{ !cancelled() }}')
   assert.deepEqual(workflow.jobs['native-platforms'].strategy.matrix.os, ['macos-15', 'windows-2025'])
   assert.equal(workflow.jobs['native-platforms']['continue-on-error'], undefined)
@@ -138,16 +138,26 @@ test('coverage, recorded Sessions, SDKs, and built expectations remain blocking'
   }
 })
 
-test('all candidate jobs check out and name artifacts for the exact PR source commit', () => {
+test('candidate producer jobs check out the exact PR source and packed jobs consume its verified artifact', () => {
   const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
   const source = '${{ github.event.pull_request.head.sha || github.sha }}'
   assert.equal(workflow.env.CANDIDATE_SHA, source)
   assert.equal(workflow.env.DSH_ARCHIVE_BASE_REF, "${{ github.event.pull_request.base.sha || github.event.before || 'origin/workbench' }}")
-  for (const name of workflow.jobs['build-and-test'].needs) {
+  for (const name of ['linux-build-and-test', 'source-coverage', 'node-22-compatibility', 'native-platforms']) {
     const checkout = workflow.jobs[name].steps.find(step => step.uses?.startsWith('actions/checkout@'))
     assert.equal(checkout.with.ref, source)
     assert.equal(checkout.with['persist-credentials'], false)
   }
+  const packed = workflow.jobs['private-storage-packed']
+  assert.deepEqual(packed.needs, ['private-storage-artifact'])
+  assert.equal(packed['continue-on-error'], undefined)
+  assert.equal(packed.if, undefined)
+  assert.ok(!packed.steps.some(step => step.uses?.startsWith('actions/checkout@')))
+  assert.equal(packed.env.EXPECTED_MANIFEST_SHA256, '${{ needs.private-storage-artifact.outputs.manifest-sha256 }}')
+  assert.equal(packed.env.CANDIDATE_ARTIFACT_DIGEST, '${{ needs.private-storage-artifact.outputs.artifact-digest }}')
+  assert.deepEqual(packed.steps.find(step => step.uses === 'actions/download-artifact@v4').with, {
+    'artifact-ids': '${{ needs.private-storage-artifact.outputs.artifact-id }}', 'merge-multiple': true, path: 'candidate',
+  })
   const upload = workflow.jobs['linux-build-and-test'].steps.find(step => step.with?.name?.startsWith('host-candidate-'))
   assert.equal(upload.with.name, 'host-candidate-${{ env.CANDIDATE_SHA }}')
 })
@@ -226,4 +236,32 @@ test('Linux build and coverage require a real enforcing sandbox without security
   assert.match(script, /pnpm --dir native\/system run build:native/)
   assert.match(script, /NALR_REQUIRE_LANDLOCK=1 pnpm --dir native\/system run test:launcher/)
   assert.doesNotMatch(script, /sysctl|danger-full-access|unshare|host-addon-only/)
+})
+
+
+test('candidate packaging depends on the complete same-source native prebuild matrix', () => {
+  const workflow = yaml.load(readFileSync(new URL('fork-ci.yml', directory), 'utf8'))
+  const matrix = workflow.jobs['native-build-matrix'], native = workflow.jobs['native-prebuilds']
+  assert.equal(native.needs, 'native-build-matrix')
+  assert.equal(native.strategy['fail-fast'], false)
+  assert.equal(native.strategy.matrix, '${{ fromJSON(needs.native-build-matrix.outputs.matrix) }}')
+  assert.ok(matrix.steps.some(step => step.run?.includes('github-matrix.mjs release-prebuild')))
+  for (const job of [matrix, native]) {
+    const checkout = job.steps.find(step => step.uses?.startsWith('actions/checkout@'))
+    assert.equal(checkout.with.ref, '${{ github.event.pull_request.head.sha || github.sha }}')
+    assert.equal(checkout.with['persist-credentials'], false)
+    assert.equal(job['continue-on-error'], undefined)
+  }
+  assert.equal(workflow.jobs['linux-build-and-test'].needs, 'native-prebuilds')
+  assert.equal(workflow.jobs['private-storage-artifact'].needs, 'native-prebuilds')
+  assert.ok(native.steps.some(step => step.run === 'node workbench/native-build-artifact.mjs prepare . workbench-artifacts/native-output'))
+  const upload = native.steps.find(step => step.uses?.startsWith('actions/upload-artifact@'))
+  assert.equal(upload.with.name, 'candidate-native-${{ matrix.package }}')
+  assert.equal(upload.with.path, 'workbench-artifacts/native-output/')
+  const download = workflow.jobs['linux-build-and-test'].steps.find(step => step.with?.pattern === 'candidate-native-*')
+  assert.equal(download.with.path, 'workbench-artifacts/native-candidate-inputs')
+  assert.match(readFileSync(new URL('../.gitignore', import.meta.url), 'utf8'), /^workbench-artifacts\/$/mu)
+  assert.equal(upload.with['if-no-files-found'], 'error')
+  const pack = workflow.jobs['linux-build-and-test'].steps.find(step => step.name === 'Package candidate host and web artifacts')
+  assert.equal(pack.env.CANDIDATE_NATIVE_ARTIFACTS, 'workbench-artifacts/native-candidate-inputs')
 })

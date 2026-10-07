@@ -29,7 +29,7 @@ Mount this package as a Loader entry in a profile that serves browser configurat
 
 `settings.describe()` returns deployment facts and every namespace under `redactSecrets: true`. `settings.update`, `settings.replace`, and `settings.mutate` expose the settings service's three write operations and return the namespace's new redacted view; stale writes use `settings-conflict` and other provider refusals use `settings-rejected`.
 
-`settings.openSettingsDocument()` prepares the provider-owned document and opens it with the native text editor; it accepts no browser-supplied filesystem target.
+`settings.openSettingsDocument()` prepares the provider-owned document and opens it with the native text editor; it accepts no browser-supplied filesystem target. `hasDocument` reports the provider’s ability to prepare an editable document; a managed Profile without qualified external drafts reports false and refuses direct opening. Managed opening returns a draft id and explicit-import behavior without a physical path. `settings.importSettingsDocumentDraft(id)` imports the saved copy through native validation and Loader reconciliation; stale bases refuse.
 
 -----
 

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, onTestFinished } from 'vitest'
 import { getDshRuntimeVersion } from '../src/index.ts'
+import { documentProviderFixture } from './document-provider-fixture.ts'
 import {
   PROFILE_COMPATIBILITY_FILENAME, isExactPluginVersion,
   readProfileCompatibility, readProfileVersionExemptions, setProfileVersionExemption, validatePluginVersionExemption,
@@ -20,6 +21,57 @@ function profileFixture(): string {
 function write(dir: string, value: unknown): void {
   writeFileSync(join(dir, PROFILE_COMPATIBILITY_FILENAME), JSON.stringify(value))
 }
+
+function managedFixture(initial = '{}\n') {
+  const dir = profileFixture()
+  const path = join(dir, PROFILE_COMPATIBILITY_FILENAME)
+  const original = 'original compatibility bytes stay untouched\n'
+  writeFileSync(path, original)
+  const native = documentProviderFixture({ name: 'test', dir, home: dir, cwd: dir,
+    patchPath: join(dir, 'cordis.patch.yml'), installAnchor: join(dir, 'package.json'),
+    startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }, [], { [path]: initial })
+  return { dir, path, original, ...native }
+}
+
+it('publishes managed grants and revocations without replacing original compatibility bytes', async () => {
+  const f = managedFixture('{"other@2.0.0":["0.0.1"]}')
+  await setProfileVersionExemption(f.dir, 'plugin@1.0.0', runtime, true, true, f.documents)
+  expect(readProfileVersionExemptions(f.dir, f.documents.current())).toEqual({
+    'other@2.0.0': ['0.0.1'], 'plugin@1.0.0': [runtime],
+  })
+  await setProfileVersionExemption(f.dir, 'plugin@1.0.0', runtime, false, false, f.documents)
+  expect(readProfileVersionExemptions(f.dir, f.documents.current())).toEqual({ 'other@2.0.0': ['0.0.1'] })
+  expect(f.receipts.size).toBe(2)
+  expect(readFileSync(f.path, 'utf8')).toBe(f.original)
+})
+
+it('rejects managed grants before publication without consent or for another Profile', async () => {
+  const f = managedFixture()
+  await expect(setProfileVersionExemption(f.dir, 'plugin@1.0.0', runtime, true, false, f.documents)).rejects.toThrow('crashes or data loss')
+  await expect(setProfileVersionExemption(join(f.dir, 'other'), 'plugin@1.0.0', runtime, true, true, f.documents)).rejects.toThrow('admitted Profile')
+  expect(f.receipts.size).toBe(0)
+  expect(readFileSync(f.path, 'utf8')).toBe(f.original)
+})
+
+it('preserves newer managed permissions when the source view changes during validation', async () => {
+  const f = managedFixture()
+  f.beforePublish(() => { f.external({ [f.path]: '{"other@2.0.0":["0.0.1"]}' }) })
+  await expect(setProfileVersionExemption(f.dir, 'plugin@1.0.0', runtime, true, true, f.documents)).rejects.toThrow('changed during validation')
+  expect(f.receipts.size).toBe(0)
+  expect(readProfileVersionExemptions(f.dir, f.documents.current())).toEqual({ 'other@2.0.0': ['0.0.1'] })
+  expect(readFileSync(f.path, 'utf8')).toBe(f.original)
+})
+
+it.each(['unconfirmed', 'lost-ack'] as const)('retains managed publication facts without fallback or retry after %s', async (failure) => {
+  const f = managedFixture()
+  if (failure === 'unconfirmed') f.unconfirmed()
+  else f.lateFailure(new Error('acknowledgement lost'))
+  await expect(setProfileVersionExemption(f.dir, 'plugin@1.0.0', runtime, true, true, f.documents)).rejects.toMatchObject({
+    receipt: { publication: 'published', durability: failure === 'unconfirmed' ? 'unconfirmed' : 'confirmed' },
+  })
+  expect(f.receipts.size).toBe(1)
+  expect(readFileSync(f.path, 'utf8')).toBe(f.original)
+})
 
 it('reads no permissions from a profile without a compatibility file', () => {
   expect(readProfileVersionExemptions(profileFixture())).toEqual({})

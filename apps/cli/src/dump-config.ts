@@ -12,9 +12,11 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   renderConfigDump,
+  parsePatchList,
   type ConfigDumpLayer,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
+import { currentRuntimeAdmission } from '@deepseek-ai/dsh-app-boot/runtime-admission'
 import { homePatchPath, prepareProfile, PROFILE_ROOT_FILENAME } from './profile-boot.ts'
 
 const NAME = 'dsh'
@@ -53,22 +55,33 @@ export function collectConfigDumpLayers(
   defaultOnly: boolean,
   patches: readonly string[],
 ): ConfigDumpLayer[] {
-  const layers: ConfigDumpLayer[] = loaded.layers.map(layer => ({
+  const admission = currentRuntimeAdmission()
+  const documents = admission?.status === 'managed' ? admission.documents : undefined
+  const view = documents?.current()
+  const bundleLayers = view === undefined || documents === undefined ? loaded.layers : documents.bundleLayers(view).layers
+  const layers: ConfigDumpLayer[] = bundleLayers.map(layer => ({
     label: layer.packageName,
     patches: layer.patches,
   }))
   if (!defaultOnly) {
-    if (existsSync(loaded.patchPath)) {
-      layers.push({ label: loaded.patchPath, patches: loaded.patches })
+    const patch = view?.read(loaded.patchPath)
+    if (patch === undefined ? existsSync(loaded.patchPath) : patch.state === 'present') {
+      layers.push({ label: loaded.patchPath, patches: patch?.state === 'present'
+        ? parsePatchList(NAME, loaded.patchPath, patch.text, 'patches') : loaded.patches })
     }
     const homePatchFile = homePatchPath()
-    const homePatches = loadOptionalPatches(NAME, homePatchFile)
+    const home = view?.read(homePatchFile)
+    const homePatches = home === undefined ? loadOptionalPatches(NAME, homePatchFile)
+      : home.state === 'absent' ? undefined : parsePatchList(NAME, homePatchFile, home.text, 'patches')
     if (homePatches !== undefined) {
       layers.push({ label: homePatchFile, patches: homePatches })
     }
     for (const file of patches) {
       const absolute = resolve(file)
-      layers.push({ label: absolute, patches: loadOverlayPatches(NAME, absolute) })
+      const overlay = view?.read(absolute)
+      if (overlay?.state === 'absent') throw new Error(`dsh: overlay is missing from the admitted view: ${absolute}`)
+      layers.push({ label: absolute, patches: overlay === undefined ? loadOverlayPatches(NAME, absolute)
+        : parsePatchList(NAME, absolute, overlay.text, 'overlay') })
     }
   }
   return layers

@@ -18,10 +18,13 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
   readProfilePatches,
+  readProfilePatchesFromView,
+  bindProfileDocuments,
   createRuntimeResolution,
   initProfile,
   installFailLoud,
   loadOverlayPatches,
+  parsePatchList,
   loadProfile,
   reportSkippedBundles,
   PluginPackages,
@@ -32,6 +35,8 @@ import {
   type Profile,
   type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
+import { failRuntimeCarrier, currentRuntimeAdmission, requireManagedRuntimeAdmission,
+  type RuntimeAdmission, type ManagedRuntimeAdmission } from '@deepseek-ai/dsh-app-boot/runtime-admission'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -149,6 +154,15 @@ export function initializeProfileFromDefault(
     throw error
   }
 }
+function prepareManagedProfile(managed: ManagedRuntimeAdmission, userLayer: boolean): Profile {
+  const view = managed.documents.current()
+  const layers = managed.documents.bundleLayers(view).layers.map(layer => ({ ...layer, patches: [...layer.patches] }))
+  const patch = userLayer ? view.read(managed.profile.patchPath) : undefined
+  return { ...managed.profile, layers,
+    patches: patch?.state === 'present' ? parsePatchList(NAME, patch.logicalPath, patch.text, 'patches') : [],
+    skippedBundles: [...managed.profile.skippedBundles] }
+}
+
 /**
  * Load a resolved profile for `name` and (re)write the empty root config. The
  * root is always rewritten: the whole composition is patch layers, and the
@@ -164,7 +178,14 @@ export function initializeProfileFromDefault(
  * @returns the loaded profile.
  * @throws when explicit initialization names an unknown template or an existing profile.
  */
+
 export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string): Profile {
+  const admission = currentRuntimeAdmission()
+  if (admission?.status === 'managed') {
+    if (name !== admission.request.profile) throw new Error('Profile does not match this process’s admitted invocation')
+    // Template initialization, if requested, is completed by native admission under its document lease.
+    return prepareManagedProfile(admission, userLayer)
+  }
   if (fromDefaultProfile !== undefined) initializeProfileFromDefault(name, fromDefaultProfile)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   reportSkippedBundles(NAME, profile)
@@ -199,12 +220,21 @@ async function composeProfile(
   patchFiles: readonly string[],
   fromDefaultProfile?: string,
   resolvedProfile?: ResolvedProfileRuntime,
+  managed?: ManagedRuntimeAdmission,
 ): Promise<ComposedProfile> {
-  const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
-  if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  const profile = managed === undefined ? resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
+    : prepareManagedProfile(managed, true)
+  if (managed === undefined && resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
-  const resolution = await createRuntimeResolution(resolutionOptions)
-  const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  const resolution = managed?.packages.resolution ?? await createRuntimeResolution(resolutionOptions)
+  const view = managed?.documents.current()
+  const overlays = patchFiles.flatMap((file) => {
+    const path = resolve(file)
+    if (view === undefined) return loadOverlayPatches(NAME, path)
+    const snapshot = view.read(path)
+    if (snapshot.state === 'absent') throw new Error(`dsh: overlay is missing from the admitted view: ${path}`)
+    return parsePatchList(NAME, path, snapshot.text, 'overlay')
+  })
   return { profile, resolution, overlays }
 }
 
@@ -232,6 +262,12 @@ export interface RunProfileOptions {
   args: readonly string[]
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
+  /** Fixed business-entry module URL; omitted callers retain HMR's process-entry fallback. */
+  readonly applicationEntry?: string
+  /** Opaque process qualification obtained before the application module was imported. */
+  readonly admission?: Exclude<RuntimeAdmission, { status: 'blocked' }>
+  /** Desktop readiness includes office and IPC setup after Profile boot. */
+  readonly deferAdmissionReady?: boolean
 }
 
 /**
@@ -242,6 +278,7 @@ export interface RunProfileOptions {
  * @throws after disposing startup resources; cleanup failures retain the original error.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  const managed = options.admission?.status === 'managed' ? requireManagedRuntimeAdmission(options.admission) : undefined
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
   // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
   // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
@@ -263,10 +300,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   })()
   try {
     const composed = await composeProfile(
-      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
+      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile, managed,
     )
     const appReady = createAppReady()
     const shutdown = createProcessShutdown(dispose)
+    managed?.bindShutdown?.(() => { shutdown.interrupt(0) })
     const signalShutdown = new AbortController()
     const interrupt = (code: number): void => {
       signalShutdown.abort()
@@ -286,21 +324,30 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
     const profileContext: ProfileContext = {
       name: options.profile,
+      ...(options.applicationEntry === undefined ? {} : { applicationEntry: options.applicationEntry }),
       ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
       dir: composed.profile.dir, patchPath: composed.profile.patchPath,
-      installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
+      installAnchor: managed?.installAnchor ?? options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
       startedBundles: composed.profile.layers.map(layer => layer.packageName),
       cwd: process.cwd(), home: resolveDshHome(),
       overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
     }
-    const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext, composed.profile), async (hostCtx) => {
+    const patches = managed === undefined ? readProfilePatches(NAME, profileContext, composed.profile)
+      : readProfilePatchesFromView(NAME, profileContext, managed.documents.current(),
+        managed.documents.bundleLayers(managed.documents.current()))
+    const ctx = await boot(NAME, rootConfig, patches, async (hostCtx) => {
       app.current = hostCtx
       hostCtx.provide('profileContext', profileContext)
+      if (options.admission !== undefined) hostCtx.provide('runtimeAdmission', options.admission)
+      if (managed !== undefined) {
+        bindProfileDocuments(hostCtx, managed.documents)
+        await managed.provideServices(hostCtx)
+      }
       // Before any config-tree entry mounts, so plugins resolve all launch-time
       // environment values from the same immutable launch snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
       await hostCtx.plugin(PluginPackages, {
-        resolution: composed.resolution,
+        ...(managed === undefined ? { resolution: composed.resolution } : { admitted: managed.packages }),
       })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.
@@ -314,13 +361,16 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     if (!signalShutdown.signal.aborted
       && ctx.fiber.state === FiberState.ACTIVE
       && ctx.get('loader') !== undefined) {
+      if (managed !== undefined && !options.deferAdmissionReady) {
+        await managed.ready({ carrier: managed.request.carrier, applicationEntry: options.applicationEntry ?? '' })
+      }
       appReady.commit()
     }
     return { ctx, shutdown }
   } catch (error) {
     try { await dispose() } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], 'dsh: profile startup and cleanup failed')
+      return failRuntimeCarrier(options.admission, new AggregateError([error, cleanupError], 'dsh: profile startup and cleanup failed'))
     }
-    throw error
+    return failRuntimeCarrier(options.admission, error)
   }
 }

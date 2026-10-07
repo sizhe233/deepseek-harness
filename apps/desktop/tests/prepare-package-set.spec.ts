@@ -78,10 +78,12 @@ describe('desktop package-set selection', () => {
     ])
   })
 
-  it('requires both Desktop Host and public CLI entries', () => {
+  it('requires both Desktop wrappers and their business entries', () => {
     const files = [
       'package/lib/index.js',
       'package/lib/cli.js',
+      'package/lib/cli-main.js',
+      'package/lib/host-main.js',
     ]
     expect(() => {
       assertDesktopHostPackageFiles(files)
@@ -90,5 +92,8 @@ describe('desktop package-set selection', () => {
       assertDesktopHostPackageFiles(files.slice(1))
     }).toThrow(/lib\/index\.js/u)
     expect(() => { assertDesktopHostPackageFiles(files.slice(0, 1)) }).toThrow(/lib\/cli\.js/u)
+    for (const file of files) {
+      expect(() => { assertDesktopHostPackageFiles(files.filter(candidate => candidate !== file)) }).toThrow(file.slice('package/'.length))
+    }
   })
 })

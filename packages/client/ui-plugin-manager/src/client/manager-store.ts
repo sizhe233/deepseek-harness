@@ -229,6 +229,8 @@ export interface InstallState {
     /** What the last failed run could not reach, as the Host attributed it: the registry, or the spec's own host. */
     readonly failedAt?: 'registry' | 'spec-host'
     readonly pendingBuilds?: readonly string[]
+    /** Native operation whose retained policy supplied the offered pending names. */
+    readonly operationId?: ChangeResult['operationId']
     readonly uncertainty?: 'result' | 'cancellation' | 'acceptance'
   } | null
   /** The packages whose install scripts the finished run was allowed to execute, saved for this profile. */
@@ -898,7 +900,7 @@ export class PluginManagerController {
    * `approvedBuilds` names the pending install scripts the person allowed;
    * the Host saves that permission for this profile before pnpm runs.
    */
-  private async startInstall(subject: InstallSubject, approvedBuilds?: readonly string[]): Promise<void> {
+  private async startInstall(subject: InstallSubject, approvedBuilds?: readonly string[], approvalOperationId?: ChangeResult['operationId']): Promise<void> {
     const { spec, registry } = subject
     const requestId = randomUUID() as PluginInstallRequestId
     const request: InstallRequest = { requestId, acknowledged: false, replyLost: false, recovering: false }
@@ -909,6 +911,7 @@ export class PluginManagerController {
     // the run's settlement.
     const result = await this.ctx.remote.pluginManager.installBundle(spec, {
       enabled: false, requestId, registry, ...approvedBuilds === undefined ? {} : { approvedBuilds: [...approvedBuilds] },
+      ...approvalOperationId === undefined ? {} : { approvalOperationId },
     })
     if (this.disposed || this.request !== request) return
     if (!result.ok) {
@@ -957,7 +960,8 @@ export class PluginManagerController {
       const packages = result.packageResult
       this.patchInstall({
         phase: 'failed', runs: settledRuns(runs, packages?.exitCode ?? null),
-        failure: failureOf(result.error, packages?.kind, result.pendingBuilds, result.failedAt),
+        failure: { ...failureOf(result.error, packages?.kind, result.pendingBuilds, result.failedAt),
+          ...result.operationId === undefined ? {} : { operationId: result.operationId } },
         ...asked,
       })
     } else {
@@ -992,7 +996,7 @@ export class PluginManagerController {
     const pending = install.failure?.pendingBuilds
     if (install.phase !== 'failed' || install.subject === null || pending === undefined || pending.length === 0) return
     if (this.ctx.get('productAnalytics')?.enabled) this.analyticsAttempt = { input: sanitizeInstallInput(install.subject.spec), started: Date.now() }
-    await this.startInstall(install.subject, pending)
+    await this.startInstall(install.subject, pending, install.failure?.operationId)
   }
 
   /**

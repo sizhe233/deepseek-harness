@@ -11,6 +11,7 @@ import { resolvePluginResource } from './package-meta.ts'
 import { barePackageName } from './profile-resolution/resolver.ts'
 import type {} from './profile-resolution/service.ts'
 import type {} from './profile-context.ts'
+import { currentProfileDocumentView } from './profile-documents.ts'
 import { evaluatePluginCompatibility, pluginCompatibilityWarning } from './plugin-compatibility.ts'
 import { readProfileCompatibility } from './profile-compatibility.ts'
 
@@ -94,7 +95,8 @@ function preflight(
   if (profile === undefined) return { rows, blocked: false }
   if (parentURL === undefined) throw new Error('Profile compatibility preflight requires a resolution base')
   // A damaged permission file authorizes nothing, but it must not stop the profile from starting.
-  const { exemptions, warnings } = readProfileCompatibility(profile.dir)
+  const view = currentProfileDocumentView(ctx)
+  const { exemptions, warnings } = readProfileCompatibility(profile.dir, view)
   for (const warning of warnings) process.stderr.write(`${warning}\n`)
   const includes = new Set<string>()
   /** Only a compatibility conflict denies a row; every other failure keeps the Loader's own diagnosis. */
@@ -146,12 +148,19 @@ function preflight(
       return undefined
     }
     const requested = isAbsolute(config.path) ? config.path : fileURLToPath(new URL(config.path, base))
-    const filename = existsSync(requested) ? realpathSync(requested) : requested
+    const filename = view === undefined && existsSync(requested) ? realpathSync(requested) : requested
     if (includes.has(filename)) return undefined
     includes.add(filename)
     try {
       let data: unknown
-      try { data = load(readFileSync(filename, 'utf8'), { schema: entryListSchema }) }
+      if (view !== undefined) {
+        const document = view.read(filename)
+        if (document.state === 'absent') {
+          if (config.initial === undefined) throw new Error(`config file not found: ${filename}`)
+          data = config.initial
+        } else data = load(document.text, { schema: entryListSchema })
+        if (!Array.isArray(data)) throw new Error(`config file must be a top-level array of entries: ${filename}`)
+      } else try { data = load(readFileSync(filename, 'utf8'), { schema: entryListSchema }) }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || config.initial === undefined) return undefined
         data = config.initial

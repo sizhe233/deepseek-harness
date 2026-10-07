@@ -2,12 +2,14 @@
 import { existsSync } from 'node:fs'
 import { readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { parse } from 'yaml'
 import { Context, FiberState, Service, resolveConfig, type Fiber } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import { interpolate, type Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-config-editor'
-import type {} from '@deepseek-ai/dsh-app-boot'
+import { createProfileDocumentOperationId, publishedProfileDocumentView, type ProfileDocumentDraft, type ProfileDocumentOperationId, type ProfileDocumentReceipt } from '@deepseek-ai/dsh-app-boot'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { redactSecrets, type RedactedSecret } from './redact.ts'
 import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema.ts'
 import type { SettingsNamespace } from './types.ts'
@@ -226,14 +228,29 @@ export class SettingsForms extends Service {
   private revisions = new Map<string, { raw: string | undefined; revision: number; ns: SettingsNamespace; autoGenerate: boolean }>()
   private closed = false
   private scheduled = false
+  private migrationTask: Promise<void> | undefined
   private readonly presentations = new Map<Fiber, { auto?: boolean }>()
 
   constructor(private readonly ownerContext: Context) {
     super(ownerContext, 'settings')
     const ctx = ownerContext
     ctx.effect(() => () => { this.closed = true })
-    ctx.on('app-boot/config-reload', () => { this.invalidate() })
-    void ctx.root.loader.await().then(() => this.importLegacyDocument()).catch((error: unknown) => { ctx.logger.error(error) })
+    ctx.on('app-boot/config-reload', () => {
+      this.invalidate()
+      if (ctx.get('profileDocuments') !== undefined) this.scheduleLegacyImport()
+    })
+    const documents = ctx.get('profileDocuments')
+    if (documents !== undefined) ctx.effect(() => documents.subscribe(documents.current().reference, () => { this.scheduleLegacyImport() }))
+    void ctx.root.loader.await().then(() => { this.scheduleLegacyImport() }).catch((error: unknown) => { ctx.logger.error(error) })
+  }
+
+  private scheduleLegacyImport(): void {
+    if (this.closed || this.migrationTask !== undefined) return
+    const task = Promise.resolve().then(() => this.importLegacyDocument())
+    this.migrationTask = task
+    void task.catch((error: unknown) => { this.ownerContext.logger.error(error) }).finally(() => {
+      if (this.migrationTask === task) this.migrationTask = undefined
+    })
   }
 
   /** Move the sections of the removed `settings.yaml` into the active profile once the Loader has settled every entry.
@@ -242,6 +259,55 @@ export class SettingsForms extends Service {
   private async importLegacyDocument(): Promise<void> {
     const profile = this.ownerContext.profileContext
     const path = join(profile.home, 'settings.yaml')
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents !== undefined) {
+      const source = documents.current().read(path)
+      if (source.state === 'absent') return
+      if (documents.migrations === undefined) throw new Error('Managed legacy Settings import requires native source observation and a migration ledger; the original is unchanged')
+      const sections: unknown = parse(source.text)
+      if (sections !== null && !isPlainObject(sections)) throw new Error('Legacy Settings source must contain section objects')
+      const identity = { logicalPath: path, reference: source.reference }
+      const migrationId = (section: string) => brandString<ProfileDocumentOperationId>(`settings-migration-${createHash('sha256').update(JSON.stringify([source.reference, section])).digest('hex')}`)
+      let completed
+      try { completed = await documents.migrations.read(identity) }
+      catch {
+        for (const section of Object.keys(sections ?? {})) await documents.migrations.recover(identity, migrationId(section))
+        completed = await documents.migrations.read(identity)
+      }
+      for (const [section, values] of Object.entries(sections ?? {})) {
+        if (completed.some(row => row.key === section)) continue
+        const operationId = migrationId(section)
+        const retained = await documents.inspectOperation(operationId)
+        if (retained !== undefined) {
+          if (retained.publication !== 'published' || retained.verification !== 'verified' || retained.durability !== 'confirmed') {
+            throw new Error(`Legacy Settings section ${section} requires native operation inspection`)
+          }
+          await documents.migrations.record(identity, { key: section, operationId, status: 'published', receipt: retained })
+          continue
+        }
+        const ns = LEGACY_SECTION_ENTRIES[section] ?? section
+        try {
+          if (!isPlainObject(values)) throw new Error('Legacy Settings section must be an object')
+          const input = cloneJsonShaped(values)
+          const receipt = await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>,
+            undefined, [], operationId)
+          if (receipt === undefined) throw new Error('Native Settings migration did not return its publication receipt')
+          await documents.migrations.record(identity, { key: section, operationId, status: 'published', receipt })
+        } catch (error) {
+          // Publication can precede a Loader or ledger failure; never label that native operation unstarted or repeat it.
+          const receipt = await documents.inspectOperation(operationId)
+          if (receipt !== undefined) {
+            if (receipt.publication !== 'published' || receipt.verification !== 'verified' || receipt.durability !== 'confirmed') throw error
+            await documents.migrations.record(identity, { key: section, operationId, status: 'published', receipt,
+              reason: 'The section was published; later reconciliation or migration acknowledgement reported a failure.' })
+          } else await documents.migrations.record(identity, { key: section, operationId, status: 'rejected',
+            reason: error instanceof Error ? error.message.slice(0, 4096) : 'Legacy section validation failed' })
+          this.ownerContext.logger.warn('settings: section %s of native legacy document was not fully imported into entry %s', section, ns)
+          this.ownerContext.logger.warn(error)
+        }
+      }
+      return
+    }
     if (!existsSync(path)) return
     const imported = `${path}.imported`
     await rename(path, imported)
@@ -289,12 +355,61 @@ export class SettingsForms extends Service {
 
   /** Whether the active profile accepts form edits. */
   get writable(): boolean { return true }
-  /** Current profile patch shown by the native configuration editor. */
+  /** Logical Profile patch label; managed versions must be opened through a detached native draft. */
   get documentPath(): string { return this.ownerContext.configEditor.documentPath }
+  /** Whether native opening can prepare an editable document with the currently qualified capabilities. */
+  get canPrepareDocument(): boolean {
+    const documents = this.ownerContext.get('profileDocuments')
+    return documents === undefined || documents.drafts !== undefined
+  }
+  private readonly preparedDrafts = new Map<string, ProfileDocumentDraft>()
   /** Locate the profile patch for native editing.
-   * @returns The existing profile patch path.
+   * @returns The ordinary Profile path or an exclusive native editing copy.
+   * @throws When native draft preparation is unavailable or its base is stale.
    */
-  prepareDocument(): Promise<string> { return Promise.resolve(this.documentPath) }
+  async prepareDocument(): Promise<string> {
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents === undefined) return this.documentPath
+    if (documents.drafts === undefined) throw new Error('Managed Settings editing requires a native external draft; the logical original is not the current document')
+    const view = await documents.refresh()
+    const draft = await documents.drafts.prepare({
+      operationId: createProfileDocumentOperationId(), expected: view.reference, logicalPath: this.documentPath,
+    })
+    this.preparedDrafts.set(draft.path, draft)
+    return draft.path
+  }
+
+  /** Identify a prepared copy without exposing its physical path to remote clients.
+   * @param path Host-only path returned by prepareDocument.
+   * @returns Draft identity when native explicit import is required.
+   */
+  preparedDocumentDraft(path: string): { id: string; saveBehavior: 'explicit-import' } | undefined {
+    const draft = this.preparedDrafts.get(path)
+    return draft === undefined ? undefined : { id: draft.id, saveBehavior: draft.saveBehavior }
+  }
+
+  /** Import an editor save against its immutable base, then use ordinary Loader reconciliation.
+   * @param draftId Native draft identity returned when opening the editor.
+   * @returns The published view reference after successful Loader reconciliation.
+   * @throws For stale bases, invalid saves, unavailable drafts or failed reconciliation.
+   */
+  async importDocumentDraft(draftId: string): Promise<string> {
+    if (draftId.length < 1 || draftId.length > 256 || /[\u0000-\u001f\u007f]/u.test(draftId)) throw new Error('Invalid settings draft identity')
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents?.drafts === undefined) throw new Error('Native Settings drafts are unavailable')
+    const id = brandString<ProfileDocumentOperationId>(draftId), observed = await documents.drafts.inspect(id)
+    if (observed.draft.logicalPath !== this.documentPath) throw new Error('Draft does not belong to this Settings document')
+    const publication = await documents.drafts.import({
+      operationId: createProfileDocumentOperationId(), draftId: id, sha256: observed.sha256,
+    })
+    const view = publishedProfileDocumentView(publication)
+    try { await this.ownerContext.configEditor.refreshDocuments() }
+    catch (error) {
+      throw Object.assign(new Error('Settings copy was published, but configuration reload failed; inspect the published revision before retrying', { cause: error }),
+        { receipt: publication.receipt, reconciliation: 'failed' })
+    }
+    return view.reference
+  }
 
   /** Read active plugin schemas and their live values.
    * @param options Redaction required for remote callers.
@@ -378,8 +493,8 @@ export class SettingsForms extends Service {
   private async write(
     ns: string,
     change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,
-    expected?: number, paths: readonly (readonly string[])[] = [],
-  ): Promise<void> {
+    expected?: number, paths: readonly (readonly string[])[] = [], operationId?: ProfileDocumentOperationId,
+  ): Promise<ProfileDocumentReceipt | undefined> {
     const entry = this.ownerContext.configEditor.entries().find(row => row.options.id === ns)
     const schema = entry === undefined ? undefined : this.schema(entry)
     if (entry === undefined || schema === undefined) throw new Error(`No configurable plugin entry "${ns}"`)
@@ -388,7 +503,7 @@ export class SettingsForms extends Service {
     for (const path of paths) {
       if (path.length && !isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`)
     }
-    await this.ownerContext.configEditor.edit(entry, (raw, inherited) => {
+    const derive = (raw: Record<string, unknown>, inherited: Record<string, unknown>): Record<string, unknown> => {
       const descriptor = this.describe().find(row => row.ns === ns)
       if (descriptor === undefined) throw new Error(`Plugin entry "${ns}" is no longer configurable`)
       if (expected !== undefined && descriptor.revision !== expected) {
@@ -419,8 +534,12 @@ export class SettingsForms extends Service {
         return result
       }
       return mergeLayers(strip(raw, form), next) as Record<string, unknown>
-    })
+    }
+    let receipt: ProfileDocumentReceipt | undefined
+    if (operationId === undefined) await this.ownerContext.configEditor.edit(entry, derive)
+    else receipt = (await this.ownerContext.configEditor.editWithReceipt(entry, derive, operationId)).document
     this.describe()
+    return receipt
   }
 
   private schema(entry: Entry): z | undefined {

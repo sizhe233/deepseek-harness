@@ -90,6 +90,8 @@ Welcome 加载共享 Toast 的配色和阴影变量，挂载在 body 下的通�
 
 ## 内置命令运行时
 
+安装后的 Host 包入口 `lib/cli.js` 和 `lib/index.js` 先描述各自固定的载体，再动态调用单独打包的 `cli-main.js` 和 `host-main.js` 业务导出。[CLI 载体](../cli/README.zh.md#development)负责共享的参数和 Home 描述。Desktop 启动保留 Office 设置、内置包管理器、信号、IPC 控制和就绪通知。 由启动器管理的替换始终由同一个后端控制器拥有：先排空旧子进程，再接纳真实的替代进程，并在就绪后重新绑定认证、URL、注入数据和账户观察器。退出会等待替换流程与子进程退出；旧进程的事件不能改变新进程的状态。排除失败候选时仍持有真实子进程的退出依据，随后可接纳已验证的前代重启，但不把失败候选的退出报告为任务正常清理成功。
+
 安装后的 `resources/runtime/cli/bin/dsh` shell 脚本（Windows 为 `dsh.cmd`）使用 Desktop 的 Electron 可执行文件和内置 pnpm 运行普通 CLI 分派入口。Desktop 关闭时也可使用，并保留 Electron 运行时限制。普通 profile、配置和插件命令与 npm dsh 使用相同实现；该命令不会打开 Desktop。
 
 管理 Desktop 插件前，先启动一次 Desktop 以初始化其 profile，完全退出应用，再运行 `dsh plugin --profile desktop add <package>`、`list` 或 `remove <package>`。重新打开 Desktop 后使用更改。包操作保留共享的 profile 写锁和兼容性检查。内置命令拒绝未初始化的 Desktop profile，不会在其位置创建普通 CLI profile。

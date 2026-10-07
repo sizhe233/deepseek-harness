@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { PassThrough } from 'node:stream'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { getDshRuntimeVersion, initProfile, readProfileManifest } from '@deepseek-ai/dsh-app-boot'
-import { anchorPathSpec, readProfileRegistry, runPluginCommand, runProfilePnpm, viewProfilePackage } from '../src/operations.ts'
+import { anchorPathSpec, readProfileRegistry, runPluginCommand, runProfilePnpm, viewProfilePackage, viewProfilePackageArchive } from '../src/operations.ts'
 
 /** What execa resolves for a run that settled, including the buffered output the pre-install lookup is read for. */
 interface FakeOutcome {
@@ -958,4 +958,18 @@ it('uses application-owned executable arguments and environment for package oper
   expect(command.run).toHaveBeenLastCalledWith(runtime.command,
     [...runtime.args, 'view', 'example', 'name', 'version', 'description', 'dsh', '--json', '--config.fetch-retries=0'],
     expect.objectContaining({ env: expect.objectContaining(runtime.env) as unknown }))
+})
+
+
+it.each(['cli', 'service'] as const)('looks up exact archive metadata through the configured %s runner with bounded output', async (execution) => {
+  const { dir } = fixture()
+  const body = JSON.stringify({ name: '@scope/native', version: '1.2.3', dist: { tarball: 'https://registry.example/actual.tgz', integrity: 'sha512-exact' } })
+  command.run.mockResolvedValueOnce({ exitCode: 0, failed: false, stdout: body, stderr: '', timedOut: false } as never)
+  const signal = new AbortController().signal
+  expect(await viewProfilePackageArchive(dir, '@scope/native@1.2.3', { execution, command: '/app/node', args: ['/app/pnpm.js'],
+    env: { DSH_ARCHIVE_LOOKUP_FIXTURE: 'preserved' }, registry: 'https://registry.example/', timeoutMs: 500, signal }))
+    .toMatchObject({ exitCode: 0, stdout: body, timedOut: false })
+  expect(command.run).toHaveBeenLastCalledWith('/app/node', ['/app/pnpm.js', 'view', '@scope/native@1.2.3', 'name', 'version', 'dist', '--json',
+    '--registry=https://registry.example/', '--config.fetch-retries=0'], expect.objectContaining({ cwd: dir, timeout: 500, maxBuffer: 1024 * 1024,
+    cancelSignal: signal, extendEnv: false, stdin: 'ignore', env: expect.objectContaining({ DSH_ARCHIVE_LOOKUP_FIXTURE: 'preserved' }) as unknown }))
 })

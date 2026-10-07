@@ -23,16 +23,32 @@
       "default": "./lib/worker/profile-resolution-bootstrap.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./runtime-version": {
+      "types": "./lib/types/runtime-version.d.ts",
+      "default": "./lib/runtime-version.js"
+    },
+    "./profile-documents": {
+      "types": "./lib/types/profile-document-view.d.ts",
+      "default": "./lib/profile-documents.js"
+    },
+    "./runtime-admission": {
+      "types": "./lib/types/runtime-admission.d.ts",
+      "default": "./lib/runtime-admission.js"
+    }
   },
   "files": [
     "lib/index.js",
+    "lib/runtime-version.js",
+    "lib/profile-documents.js",
     "lib/worker/profile-resolution-bootstrap.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/runtime-admission.js"
   ],
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-package-manifest": "workspace:*",
     "@eslint-community/regexpp": "^4.12.2",
     "ajv": "^8.20.0",

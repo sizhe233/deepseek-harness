@@ -23,13 +23,14 @@ vi.mock('chokidar', async (original) => {
   } }
 })
 
-async function fixture(config: Partial<Hmr.Config> = {}) {
+async function fixture(config: Partial<Hmr.Config> = {}, setup?: (ctx: Context, dir: string) => Promise<void>) {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-coordination-'))
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   onTestFinished(async () => { await ctx.fiber.dispose(); rmSync(dir, { recursive: true, force: true }) })
   await ctx.plugin(Loader)
   await ctx.plugin(Timer)
+  await setup?.(ctx, dir)
   const provider = await ctx.plugin(Hmr, { root: [], ignored: [], debounce: 0, ...config })
   return { ctx, dir, hmr: ctx.hmr, provider }
 }
@@ -226,4 +227,32 @@ it('rebinds configuration handlers when its provider is reconfigured within a re
   const current = watchers.at(-1)
   current?.emit('change', file)
   await vi.waitFor(() => { expect(refresh).toHaveBeenCalledOnce() })
+})
+
+it.each(['cli-main', 'host-main', 'legacy'] as const)('classifies %s dependencies using the explicit business entry or process fallback', async (entry) => {
+  const originalArgv = process.argv
+  onTestFinished(() => { process.argv = originalArgv })
+  const { hmr, dir } = await fixture({}, async (ctx, directory) => {
+    const business = join(directory, `${entry}.mjs`)
+    const wrapper = join(directory, 'wrapper.mjs')
+    writeFileSync(join(directory, 'application.mjs'), 'export const application = true')
+    writeFileSync(join(directory, 'bootstrap.mjs'), 'export const bootstrap = true')
+    writeFileSync(business, "import './application.mjs'; export const business = true")
+    writeFileSync(wrapper, "import './bootstrap.mjs'; export const wrapper = true")
+    await ctx.loader.import(pathToFileURL(business).href)
+    await ctx.loader.import(pathToFileURL(wrapper).href)
+    process.argv = [process.execPath, wrapper]
+    if (entry === 'legacy') return
+    writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'hmr-business-entry', dsh: { profile: { bundles: [] } } }))
+    ctx.provide('profileContext', {
+      name: 'test', dir: directory, patchPath: join(directory, 'profile.patch.yml'), home: directory, cwd: directory,
+      installAnchor: join(directory, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined,
+      applicationEntry: pathToFileURL(business).href,
+    })
+    ctx.provide('appReady', { onReady(listener) { listener(); return () => {} } })
+  })
+  const externals = Reflect.get(hmr, 'externals') as Set<string>
+  expect(externals.has(pathToFileURL(join(dir, entry === 'legacy' ? 'wrapper.mjs' : `${entry}.mjs`)).href)).toBe(true)
+  expect(externals.has(pathToFileURL(join(dir, entry === 'legacy' ? 'bootstrap.mjs' : 'application.mjs')).href)).toBe(true)
+  expect(externals.has(pathToFileURL(join(dir, entry === 'legacy' ? 'application.mjs' : 'wrapper.mjs')).href)).toBe(false)
 })

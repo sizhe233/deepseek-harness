@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { packageManagerInvocation } from './package-manager.mjs';
 import { entryDirs, platformDirs, readJson, root } from './repo.mjs';
 
 const args = process.argv.slice(2);
@@ -30,7 +31,8 @@ function hostPlatformDirs() {
 }
 
 function run(command, args, cwd) {
-  const result = spawnSync(command, args, {
+  const invocation = ['npm', 'pnpm'].includes(command) ? packageManagerInvocation(command, args) : { command, args };
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd,
     stdio: 'inherit',
   });

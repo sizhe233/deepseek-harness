@@ -45,6 +45,10 @@ const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHO
 <a id="profiles"></a>
 ### Profile
 
+不加载应用代码的 `@deepseek-ai/dsh-app-boot/profile-documents` 入口表示由提供方准入的不可变文档视图。它区分已记录的文件缺失与未列入视图的路径，并将配置读取绑定到进程已准入的代码及包文档选择。`acquireProfileDocumentView` 要求显式提供原生读取能力；托管读取不可用或失败时，绝不会重新打开原始文件。app-boot 主入口导出的 `readProfilePatchesFromView` 将这些快照与匹配的组合包层、调用时的覆盖层及现有遥测/MCP 投影组合，保留以逻辑文件名所在目录为基准的相对插件解析。视图描述期望配置，不代表 Loader 当前已应用的版本。
+
+面向宿主的 `ProfileDocuments` 绑定将已准入的原生文档提供方接入 Include、ConfigEditor 和 HMR。它保留逻辑解析路径，将每次异步组合固定在同一视图，并单独记录进程已应用的版本。原生写入在提供方串行化的快照内派生，保留可查询的操作回执，且仅在发布、校验和持久性均确认后准入后继版本。这些适配器不安装启动器注册流程或持久化提供方。 `readProfileManifest` 同样接受已准入视图；托管清单缺失、未列入视图或格式无效时会拒绝读取，不重新打开原路径。 托管兼容性授权与撤销保留原有同意及精确版本校验，在原生比较并发布的串行化快照内派生，并且只接受已完成的发布回执。 可选的草稿与迁移 API 保留精确基线引用和已提交的原生回执。`createProfileDocumentSemantics()` 在固定代码入口安装后组合已验证的 bundle 字节和 Include 快照，不挂载插件即可校验字面 Config；变化的表达式只能通过真实在线 Host 上下文解析。共享 Home 更改要求每个参与 Profile 提供自身已准入的模式验证器。 `missingIncludeWrites()` 只从原生 `initial` 字面声明派生已准入且明确缺失的 Include 文档；启动器必须在显式启动作用域内发布这些写入。可选的 `readDocumentVersion()` 跨代码激活提供保留的可变文档原始证据，不准入历史代码或包选择。
+
 Profile 与组合包的声明类型从 [`@deepseek-ai/dsh-package-manifest`](../../util/package-manifest/README.zh.md) 导入。App-boot 将 `DshPackageManifest` 适配为包身份可选的 `ProfileManifest`，因为本地 profile 无需发布版本。App-boot 负责 profile 加载、JSON 校验和解析后的运行时数据。
 
 profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`headless`、`acp`、`sdk` 与 `sdk-minimal` 从同一 launcher 启动不同组合。profile 位于 `$DSH_HOME/profiles/<name>`，由可安装组合包和自身 `cordis.patch.yml` 组成。组合包的 `dsh.bundle.patch` 指定一个 patch 文件或一个有序的文件列表；`bundlePatchFiles` 校验该声明，`bundlePatchPaths` 把它解析为绝对路径；该层按此顺序拼接各文件的 patch 列表。YAML 组合决定是否启用 HMR。随产品交付的 `web` 模板实时重载，其他随附模板只在启动时应用 patch。`sdk-minimal` 只列出自身的独立组合包，其他模板保留 base 加模式的组合包栈。`dsh --profile <name> --from-default-profile <template>` 从一个随附模板，在新的非内置名称处创建自定义 profile；`dsh plugin` 则初始化以 base 为基础的 profile，并管理其中安装的组合包。组合包解析、manifest 读取或 patch 加载失败时会跳过该组合包，不改变其选择状态；加载结果在 `skippedBundles` 中列出每个被跳过的组合包，启动器每次启动时通过 `reportSkippedBundles` 输出一次。其余组合包保持原顺序；profile 和用户 patch 错误仍会导致启动失败。跳过组合包不保证剩余组合能够提供所需服务。由应用持有的 npm 项目（例如 Electron 保留的 Desktop profile）通过 `loadProfileDirectory` 加载已经初始化的目录，而不会将它暴露给 CLI profile 查找。
@@ -128,8 +132,8 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 ### 设计说明
 
-- **运行时版本。** `getDshRuntimeVersion()` 通过文件系统路径读取本包清单，也支持可执行文件内的虚拟文件系统；版本缺失或无效时会失败，而不会绕过兼容性检查。
-- **Profile 启动数据。** `ctx.profileContext` 只包含 profile 位置、启动时组合包名称、已解析的调用级 overlay 与遥测退出值。`readProfilePatches()` 组合传入的启动 profile，或读取这些位置上的当前文件；调用方负责调度和应用结果。
+- **运行时版本。** `getDshRuntimeVersion()` 通过文件系统路径读取本包清单，也支持可执行文件内的虚拟文件系统；版本缺失或无效时会失败，而不会绕过兼容性检查。`@deepseek-ai/dsh-app-boot/runtime-version` 导出提供相同的读取操作，不加载 AppBoot、Cordis 或 profile 解析。
+- **Profile 启动数据。** `ctx.profileContext` 包含 profile 位置、供 HMR 使用的可选固定业务入口 URL、启动时组合包名称、已解析的调用级 overlay 与遥测退出值。`readProfilePatches()` 组合传入的启动 profile，或读取这些位置上的当前文件；调用方负责调度和应用结果。
 - **进程内模块解析。** launcher 在挂载 profile 条目前，将 runtime resolution 安装到 Node 的 ESM 与 CommonJS 内部 resolver。exports、conditions、子路径、模块缓存和错误码仍由 Node 负责；路由后的 ESM 失败报告原始 importer。显式 CommonJS `paths` 始终保留原生查询，包括指向 profile 内的路径。
 - **链接目录。** profile 链接到树外目录时，其下的 importer 参与逐层 peer 查询，即使目标没有自身的 `package.json`。在每个 `D/node_modules` 位置，当前 `D/package.json` 的 peer 包名若存在于运行时表，就使用运行时包；其他包名查询物理候选。更近的物理包先于后续 peer 声明，peer 位置无需物理 `node_modules`。installation 作用域包目录不参与 linked 拦截，重叠 root 不改变 importer 的查询顺序（[规则](../../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.zh.md)）。
 - **包元数据。** `ctx.pluginPackages.packageOf` 定位所属包，不加载代码，也不要求导出 `package.json`；子路径选择其所属包，不校验该文件。安装 runtime resolution 后，即使查询未命中也以其选包规则为准。仅安装服务而不提供 runtime resolution 的底层嵌入方保留原生查询。展示元数据使用上文另述的入口感知读取器。
@@ -154,6 +158,8 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、会明确报错的保护机制、激活审计、patch 解析、配置 dump、harness 源码段落 |
+| [`src/profile-document-view.ts`](src/profile-document-view.ts) | 不加载应用代码的不可变文档读取与提供方要求 |
+| [`src/patch-list.ts`](src/patch-list.ts) | 共享 YAML patch 解析与基于逻辑文件的相对解析 |
 | [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、组合包解析、runtime resolution 构造 |
 | [`src/profile-plugins.ts`](src/profile-plugins.ts) | 已安装依赖、bundle 启用策略与 manifest 更新 |
 | [`src/profile-sanitize.ts`](src/profile-sanitize.ts) | profile patch 备份与恢复 bundle 启用状态 |
@@ -195,6 +201,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 这些限制说明此启动库在何时不合适，或何时需要特别注意。它们是当前包约束，不是任务积压。
 
+- **托管文档要求原生准入**——通用消费者适配器要求已准入的启动器与持久化提供方。构造快照不证明源文件准入或持久性。真实登记、草稿编辑、共享参与方校验、混合激活与同产物原生执行仍是独立验收项。
 - **运行时解析依赖 Node 内部机制**——受支持的 Node 版本需要 native builtin access addon 和可执行兼容验证。只有构建后的 Harness 自有 Worker 接收 runtime resolution bootstrap；第三方 Worker 与自定义 `vm` linker 保持原生解析。
 - **重新链接 profile 包需要重启**——Node 缓存真实路径，因此改变 profile 链接或依赖链接的目标需要重启进程。
 - **链接作用域以记录的真实目录为准**——提升后的依赖若在所有 linked root 之外，就使用原生 Node。每次读取 peer 都不会使 Node 缓存失效，也不会改变被监视的文件。

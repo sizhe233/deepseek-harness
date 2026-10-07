@@ -1,8 +1,9 @@
 /** Evaluate plugin dsh peer requirements without importing plugin code. */
 
-import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import semver from 'semver'
+import { getDshRuntimeVersion, runtimeVersionOf } from './runtime-version.ts'
+
+export { getDshRuntimeVersion } from './runtime-version.ts'
 
 /** Incompatible dsh peers and the exact plugin/runtime exemption decision. */
 export interface PluginCompatibility {
@@ -21,31 +22,12 @@ function objectOf(value: unknown, field: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-function runtimeVersionOf(value: unknown): string {
-  if (typeof value !== 'string' || semver.valid(value) === null) {
-    throw new Error(`Invalid dsh runtime version: ${JSON.stringify(value)}; expected a semantic version`)
-  }
-  return value
-}
-
 function identityField(manifest: Record<string, unknown>, field: 'name' | 'version'): string {
   const value = Object.hasOwn(manifest, field) ? manifest[field] : undefined
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`Plugin manifest ${field} must be a non-empty string when dsh peers are incompatible`)
   }
   return value
-}
-
-/**
- * Read this app-boot package's version in both source and bundled installations.
- * @returns the validated runtime semantic version, preserving its exact spelling.
- * @throws if package.json cannot be read or its version is missing or invalid.
- */
-export function getDshRuntimeVersion(): string {
-  // The executable's virtual filesystem intercepts string paths, not URL arguments.
-  const filename = fileURLToPath(new URL('../package.json', import.meta.url))
-  const manifest = objectOf(JSON.parse(fs.readFileSync(filename, 'utf8')), 'app-boot package.json')
-  return runtimeVersionOf(Object.hasOwn(manifest, 'version') ? manifest.version : undefined)
 }
 
 /**

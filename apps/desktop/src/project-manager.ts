@@ -25,6 +25,7 @@ import { readDesktopRuntime } from './runtime-tree.ts'
 import {
   initProfile, PROFILE_TEMPLATES, removeLinkProjections, sanitizeProfile, type ProfileTemplate,
 } from '@deepseek-ai/dsh-app-boot'
+import { qualifyRuntimeProfile } from '@deepseek-ai/dsh-app-boot/runtime-admission'
 
 const PROJECT_NAME = '@deepseek-ai/dsh-desktop-runtime'
 const DSH_PACKAGE = '@deepseek-ai/dsh'
@@ -74,6 +75,9 @@ export class DesktopProjectManager {
    * @returns Backup path after the locked profile write, or undefined if the patch was absent.
    */
   async disableAllPlugins(): Promise<string | undefined> {
+    const native = await qualifyRuntimeProfile({ home: this.paths.home, profileDir: this.paths.profile, runtimeDir: this.runtime.dsh })
+    if (native.status === 'blocked') throw new Error(native.reason)
+    if (native.status === 'managed') return native.disableThirdParty(WEB_PROFILE.bundles)
     return this.withLock(() => sanitizeProfile('dsh', this.paths.profile, WEB_PROFILE.bundles))
   }
 
@@ -81,6 +85,9 @@ export class DesktopProjectManager {
    * Load application metadata and prepare the external plugin profile without installing packages.
    */
   async applyRelease(): Promise<void> {
+    const native = await qualifyRuntimeProfile({ home: this.paths.home, profileDir: this.paths.profile, runtimeDir: this.runtime.dsh })
+    if (native.status === 'blocked') throw new Error(native.reason)
+    if (native.status === 'managed') { await native.prepare(); return }
     await this.withLock(() => {
       // Validation only: an unreadable or mismatched runtime descriptor stops preparation before the Host starts.
       readDesktopRuntime(this.runtime.dsh)

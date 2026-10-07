@@ -62,9 +62,7 @@ const desktopApplicationDirectory = 'apps/desktop'
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js', 'lib/types/*.d.ts'],
-  '@deepseek-ai/dsh-desktop-host': [
-    'lib/index.js', 'lib/cli.js',
-  ],
+  '@deepseek-ai/dsh-desktop-host': ['lib/*.js'],
   // Sourcemaps stay out by payload policy; the worker-preview surface
   // (dist/preview.html and dist/preview/) backs opt-in experimental
   // packages and is not published.
@@ -168,8 +166,8 @@ export function readWorkspaceManifests(repositoryRoot: string): WorkspaceManifes
 }
 
 const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
-  // Owned Worker bundles import this public bootstrap before their business entry.
-  '@deepseek-ai/dsh-app-boot': ['lib/worker/profile-resolution-bootstrap.js'],
+  // Application-free carrier and Worker bootstraps have separate emitted entries.
+  '@deepseek-ai/dsh-app-boot': ['lib/runtime-version.js', 'lib/worker/profile-resolution-bootstrap.js'],
   // Statically linked client libraries keep their stylesheets next to the emitted
   // JavaScript, which imports them by relative path: the compile shell runs
   // them through its own CSS pipeline, so the sheets are published artifacts.

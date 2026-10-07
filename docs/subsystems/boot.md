@@ -18,6 +18,174 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path, plus `timedOut` when the manager terminated a run that stopped printing. A terminated run is classified `timeout` whatever exit status the signal left behind, so installation and removal report failure instead of success and no further registry is asked. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation; `registries` lists the registries an installation asked, in order; `bundle` and `version` name the package a finished installation added and its manifest version; `failedAt` says whether the last failed run could not reach the registry it asked or the host a git or tarball spec is fetched from.
 
+## Managed document views
+
+`ProfileDocuments` is the launcher-admitted authority consumed by [App boot](../../packages/boot/app-boot/README.md). `ProfileDocumentViewReference` identifies a complete immutable desired configuration; `ProfileDocumentReference` identifies one document version or recorded absence. `ProfileDocumentSelection` fixes the logical profile and home together with their admitted code and package-document identities. These references do not authorize storage access, and a desired view does not establish Loader application.
+
+```ts type-equiv
+/** Provider-issued identity of one complete configuration and package-document view. */
+type ProfileDocumentViewReference = Branded<'ProfileDocumentViewReference'>
+```
+
+```ts type-equiv
+/** Provider-issued identity of an immutable document version or recorded absence. */
+type ProfileDocumentReference = Branded<'ProfileDocumentReference'>
+```
+
+```ts type-equiv
+/** Admitted process code identity; configuration publication cannot change it. */
+type ProfileCodeBindingReference = Branded<'ProfileCodeBindingReference'>
+```
+
+```ts type-equiv
+/** Package-document set admitted with one process code binding, excluding pending package edits. */
+type ProfilePackageDocumentsReference = Branded<'ProfilePackageDocumentsReference'>
+```
+
+```ts type-equiv
+/** Logical locations and immutable package selection owned by the requesting launcher. */
+interface ProfileDocumentSelection {
+  readonly profileDir: string
+  readonly home: string
+  readonly codeBinding: ProfileCodeBindingReference
+  readonly packageDocuments: ProfilePackageDocumentsReference
+}
+```
+
+```ts type-equiv
+/** Detached text or an explicit absence; unlisted paths are never treated as absent. */
+type ProfileDocumentSnapshot = Readonly<{
+  logicalPath: string
+  reference: ProfileDocumentReference
+}> & (Readonly<{ state: 'present'; text: string }> | Readonly<{ state: 'absent' }>)
+```
+
+```ts type-equiv
+/** Immutable desired configuration; this does not assert a running Loader has applied it. */
+interface ProfileDocumentView {
+  readonly reference: ProfileDocumentViewReference
+  readonly selection: ProfileDocumentSelection
+  /**
+   * Read an admitted logical filename without reopening its source.
+   * @param logicalPath Canonical absolute filename in this view's admitted read set.
+   * @returns The immutable snapshot, including an explicit absence when admitted.
+   * @throws When the filename is not in the read set.
+   */
+  read(logicalPath: string): ProfileDocumentSnapshot
+}
+```
+
+```ts type-equiv
+/** Bundle layers loaded from the exact code and package-document selection admitted for this process. */
+interface ProfileDocumentLayers {
+  readonly codeBinding: ProfileDocumentSelection['codeBinding']
+  readonly packageDocuments: ProfileDocumentSelection['packageDocuments']
+  readonly layers: readonly ProfileLayer[]
+}
+```
+
+`ProfileDocumentSnapshot` distinguishes present raw text from explicit absence; a path outside the admitted read set throws rather than becoming an absent document. `ProfileDocumentLayers` binds the resolved [bundle layers](../../packages/boot/app-boot/src/profile.ts) to the view’s exact code and package-document selection. `refresh()` admits a desired view, while consumers separately record successful Loader reconciliation.
+
+## Document publication receipts
+
+`ProfileDocumentOperationId` is a caller-retained idempotency key. Each `ProfileDocumentWrite` names an admitted logical path, its expected immutable document reference, and either replacement text or explicit absence. `withWriteSnapshot` invokes the derivation once under native serialization and rechecks the complete expected view before publication. A throw before a receipt means no publication; late or uncertain outcomes retain their receipt for `inspectOperation` instead of automatic retry.
+
+```ts type-equiv
+/** Caller-generated idempotency key, persisted and inspected by the native document authority. */
+type ProfileDocumentOperationId = Branded<'ProfileDocumentOperationId'>
+```
+
+```ts type-equiv
+/** Exact candidate bytes and the immutable document they replace. */
+type ProfileDocumentWrite = Readonly<{
+  readonly logicalPath: string
+  readonly expected: ProfileDocumentReference
+}> & (Readonly<{ text: string; state?: 'present' }> | Readonly<{ state: 'absent' }>)
+```
+
+```ts type-equiv
+/** Independent native publication facts; Loader reconciliation is reported by its consumer. */
+interface ProfileDocumentReceipt {
+  readonly operationId: ProfileDocumentOperationId
+  readonly before: ProfileDocumentViewReference
+  readonly after: ProfileDocumentViewReference | undefined
+  readonly publication: 'not-published' | 'published' | 'unknown'
+  readonly verification: 'verified' | 'failed' | 'not-performed'
+  readonly durability: 'confirmed' | 'unconfirmed'
+}
+```
+
+```ts type-equiv
+/** Native completion, retaining late failures instead of reducing them to a rejected Promise. */
+interface ProfileDocumentPublication {
+  readonly receipt: ProfileDocumentReceipt
+  readonly view: ProfileDocumentView | undefined
+  readonly error?: Error
+}
+```
+
+`ProfileDocumentReceipt` reports publication, verification and durability independently of Loader application. `ProfileDocumentPublication` preserves the successor view when available and any late error. A consumer admits success only when publication is `published`, verification is `verified`, durability is `confirmed`, `after` matches the returned view, and no error remains.
+
+## Configuration edits and reversal
+
+[Config Editor](../../packages/boot/config-editor/README.md) returns `ConfigurationEditReceipt` only after native publication and successful Loader reconciliation. Its `entry` selector contains the original Loader row’s `id` and `name`. `ConfigurationDocumentChange` supplies either an entry and a raw-config derivation (`Raw` is `Record<string, unknown>`) or the exact persisted receipt to reverse.
+
+```ts type-equiv
+/** Native publication and the actual Loader application result for one entry's raw config edit. */
+interface ConfigurationEditReceipt {
+  readonly entry: Readonly<Selector>
+  readonly document: ProfileDocumentReceipt
+  readonly reconciliation: 'applied'
+}
+```
+
+```ts type-equiv
+/** Raw changes composed into one native document candidate, without publishing or reconciling it. */
+type ConfigurationDocumentChange = {
+  readonly entry: Entry
+  readonly change: (current: Raw, inherited: Raw) => Raw
+} | { readonly reverse: Pick<ConfigurationEditReceipt, 'entry' | 'document'> }
+```
+
+`createDocumentDerivation` prepares ordered edits and receipted reversals without publishing or reconciling them; the returned derivation runs once in the caller’s native write snapshot. Reversal requires verified, durable publication history and reverses only still-matching owned raw fields, preserving unrelated current edits. Missing or ambiguous entries, replaced fibers, stale receipts and schema failures refuse the edit.
+
+## Managed package operations
+
+`ProfilePackageOperations` is the launcher-bound provider used by [Plugin Manager](../../packages/boot/plugin-manager/README.md). `ManagedPackageRequest` binds an install, removal or package command to a durable `ProfilePackageOperationId` and the expected document view. Reusing an operation id inspects its saved request and outcome; a changed payload refuses rather than rerunning package scripts.
+
+```ts type-equiv
+/** Durable identity retained across package preparation, publication and response loss. */
+type ProfilePackageOperationId = Branded<'ProfilePackageOperationId'>
+```
+
+```ts type-equiv
+/** A normal package request against one finalized native Profile read vector. */
+type ManagedPackageRequest = Readonly<{
+  operationId: ProfilePackageOperationId
+  expected: ProfileDocumentViewReference
+}> & (Readonly<{ kind: 'install'; spec: string; options?: InstallBundleOptions }>
+  | Readonly<{ kind: 'remove'; name: string }>
+  | Readonly<{ kind: 'command'; args: readonly string[] }>)
+```
+
+```ts type-equiv
+/** Existing execution, consent, registry and cancellation policy; no caller pathname grants storage authority. */
+interface ManagedPackagePolicy extends PackageOperationOptions {
+  readonly registries: PluginRegistries
+  readonly githubConnectionTimeoutMs: number
+  /** Progress changes cancellation availability only after the provider durably enters publication. */
+  readonly onProgress?: (phase: PluginInstallProgress['phase'], attempt?: PluginInstallProgress['attempt']) => void
+}
+```
+
+`ManagedPackagePolicy` extends [PackageOperationOptions](../../packages/boot/plugin-manager/src/operations.ts) with registry selection, the GitHub connection timeout and progress observation. Existing execution, cancellation and build-script consent remain in force; updater rollback does not contain or reverse separately approved scripts’ side effects. Uncertain publication returns a failed `ChangeResult` retaining the operation id; `inspectOperation` reads its durable outcome without repeating package commands or publication.
+
+## Carrier admission value
+
+`ctx.runtimeAdmission` is a fixed-carrier boot value, not an independently mounted service. Its [RuntimeAdmission](../../packages/boot/app-boot/src/runtime-admission.ts) union reports `unenrolled`, `blocked` or `managed`; the context value excludes `blocked` because a blocked admission prevents application startup. `unenrolled` requires positive absence of runtime management. `managed` retains the admitted code graph, document authority and carrier lifecycle callbacks for this process.
+
+The carrier obtains admission before importing business code and provides the retained result before plugins mount. `requireManagedRuntimeAdmission` accepts only the opaque result admitted to this process, not a caller-constructed object with the same fields. The [App boot package](../../packages/boot/app-boot/README.md) owns composition over that admitted state.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -33,6 +201,13 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Persist complete raw configs and apply them through the normal Loader path.
 
 ```ts cordis-catalog
+/**
+ * Prepare raw edits for one versioned candidate while retaining real schema and owned-field validation.
+ * @param changes Ordered entry edits or receipted reversals.
+ * @returns A derivation to invoke exactly once under the native document write snapshot.
+ */
+createDocumentDerivation( changes: readonly ConfigurationDocumentChange[], ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]>
+
 /** Addressable profile rows; nested Includes have independent configuration ownership.
  * @returns Active entries with unique profile patch ids.
  */
@@ -49,6 +224,28 @@ configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; overr
  * @returns Fulfillment after Loader reconciliation completes.
  */
 async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
+
+/**
+ * Edit managed documents with inspectable native publication facts; ordinary edit() retains its void API.
+ * @param entry Current uniquely addressed profile entry.
+ * @param change Derive once from detached raw values under native serialization.
+ * @param operationId Optional caller-retained key for interruption recovery.
+ * @returns Native publication receipt after successful Loader reconciliation.
+ */
+async editWithReceipt( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, operationId?: ProfileDocumentOperationId, ): Promise<ConfigurationEditReceipt>
+
+/**
+ * Reverse only still-matching owned raw fields from a persisted native operation.
+ * @param receipt Original editor receipt; current unrelated changes survive the newer publication.
+ * @param operationId Optional caller-retained reversal key for interruption recovery.
+ * @returns The native reverse receipt after Loader reconciliation.
+ */
+async reverseEdit(receipt: Pick<ConfigurationEditReceipt, 'entry' | 'document'>, operationId?: ProfileDocumentOperationId): Promise<ConfigurationEditReceipt>
+
+/** Apply the latest finalized native document view after operation inspection.
+ * @returns The applied reference; a missing native binding or reconciliation failure rejects.
+ */
+async refreshDocuments(): Promise<ProfileDocumentViewReference>
 ```
 
 Source: [`packages/boot/config-editor/src/index.ts`](../../packages/boot/config-editor/src/index.ts)
@@ -213,6 +410,103 @@ Source: [`packages/client/ui-plugin-manager/src/index.ts`](../../packages/client
 Current profile facts; scheduling and mutation belong to their callers.
 
 Source: [`packages/boot/app-boot/src/profile-context.ts`](../../packages/boot/app-boot/src/profile-context.ts)
+
+<a id="ctxprofiledocuments--profiledocuments"></a>
+
+### `ctx.profileDocuments` — `ProfileDocuments`
+
+Native authority supplied only after launcher enrollment; no provider is installed by this package.
+
+```ts cordis-catalog
+/**
+ * Select bundle layers from this view's config manifest within the fixed admitted package graph.
+ * @param view Exact admitted or derived candidate configuration view.
+ * @returns Layers whose code/package identities still equal selection; unadmitted bundles refuse.
+ */
+bundleLayers(view: ProfileDocumentView): ProfileDocumentLayers
+
+/**
+ * Return the last document view admitted by this authority.
+ * @returns The desired view, never an assertion of Loader application.
+ */
+current(): ProfileDocumentView
+
+/**
+ * Admit the latest native document selection without reopening original files.
+ * @returns The fresh desired view, also retained by current().
+ */
+refresh(): Promise<ProfileDocumentView>
+
+/**
+ * Read an immutable view retained by this authority, for receipted semantic reversal.
+ * @param reference Exact historical view for this process's admitted selection.
+ * @returns Detached historical documents; unavailable history fails without inference.
+ */
+readView(reference: ProfileDocumentViewReference): Promise<ProfileDocumentView>
+
+/**
+ * Read one retained mutable document across code activations without admitting an old code/package view.
+ * @param reference Exact retained native view named by an inspected publication receipt.
+ * @param logicalPath An admitted mutable document label; package snapshots are excluded.
+ * @returns Original raw text or explicit absence for owned-field reversal.
+ */
+readDocumentVersion?(reference: ProfileDocumentViewReference, logicalPath: string): Promise<ProfileDocumentSnapshot>
+
+/**
+ * Derive once under native serialization, rechecking the complete read/source/conflict/participant vector before publication.
+ * The provider captures returned bytes once and persists the operation before dependent mutation. A throw before a
+ * receipt means no publication; late/uncertain outcomes return their receipt for inspection, never automatic retry.
+ * @param request Idempotency key and exact expected view including code/package selection and metadata epochs.
+ * @param derive Native semantic validation, called once with the current immutable view while its lease is held.
+ * @returns Persisted publication facts and verified successor when available; updates current() only on admitted success.
+ */
+withWriteSnapshot( request: Readonly<{ operationId: ProfileDocumentOperationId; expected: ProfileDocumentViewReference }>, derive: (view: ProfileDocumentView) => readonly ProfileDocumentWrite[] | Promise<readonly ProfileDocumentWrite[]>, ): Promise<ProfileDocumentPublication>
+
+/**
+ * Inspect the persisted outcome without repeating publication.
+ * @param operationId Previously submitted idempotency key.
+ * @returns The retained receipt, or undefined if no operation was recorded.
+ */
+inspectOperation(operationId: ProfileDocumentOperationId): Promise<ProfileDocumentReceipt | undefined>
+
+/**
+ * Subscribe from an admitted cursor, replaying any registration gap; overflow/reopen requests a full refresh.
+ * Observer callbacks cannot alter publication facts and must not be awaited by native publication.
+ * @param after Last observed view; source/conflict and pending-package metadata also invalidate this cursor.
+ * @param invalidate Notification to reread the current admitted view.
+ * @returns Synchronous subscription cancellation; consumer owns draining its reconciliation queue.
+ */
+subscribe(after: ProfileDocumentViewReference, invalidate: () => void): () => void
+```
+
+Source: [`packages/boot/app-boot/src/profile-documents.ts`](../../packages/boot/app-boot/src/profile-documents.ts)
+
+<a id="ctxprofilepackageoperations--profilepackageoperations"></a>
+
+### `ctx.profilePackageOperations` — `ProfilePackageOperations`
+
+A separately installed provider owns staging, exact archive admission, publication and recovery.
+
+```ts cordis-catalog
+/**
+ * Preserve ordinary install/remove semantics in updater-owned staging, then coordinate package documents and code.
+ * Script execution retains its explicit existing consent and side effects; updater rollback does not sandbox scripts.
+ * @param request Fixed operation identity and expected native document selection.
+ * @param policy Existing package workflow limits, registry policy, cancellation and diagnostic observers.
+ * @returns Durable staging outcome; uncertain publication is failed with its operation id retained, never automatically retried.
+ * Repeated operation ids inspect the persisted request and outcome; changed payloads refuse instead of rerunning scripts.
+ */
+run(request: ManagedPackageRequest, policy: ManagedPackagePolicy): Promise<ChangeResult>
+
+/**
+ * Read an existing durable operation without repeating package commands or publication.
+ * @param operationId Previously submitted package operation.
+ * @returns The retained result, or undefined when no operation was recorded.
+ */
+inspectOperation(operationId: ProfilePackageOperationId): Promise<ChangeResult | undefined>
+```
+
+Source: [`packages/boot/plugin-manager/src/managed-operations.ts`](../../packages/boot/plugin-manager/src/managed-operations.ts)
 
 <a id="app-boot-events"></a>
 

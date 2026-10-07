@@ -2371,6 +2371,91 @@
       "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "LlmCompactionResult",
       "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentViewReference",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentReference",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileCodeBindingReference",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfilePackageDocumentsReference",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentSelection",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentSnapshot",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentView",
+      "source": "packages/boot/app-boot/src/profile-document-view.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentLayers",
+      "source": "packages/boot/app-boot/src/profile-context.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentOperationId",
+      "source": "packages/boot/app-boot/src/profile-documents.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentWrite",
+      "source": "packages/boot/app-boot/src/profile-documents.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentReceipt",
+      "source": "packages/boot/app-boot/src/profile-documents.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileDocumentPublication",
+      "source": "packages/boot/app-boot/src/profile-documents.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ConfigurationEditReceipt",
+      "source": "packages/boot/config-editor/src/managed-editor.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ConfigurationDocumentChange",
+      "source": "packages/boot/config-editor/src/managed-editor.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfilePackageOperationId",
+      "source": "packages/boot/plugin-manager/src/managed-operations.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ManagedPackageRequest",
+      "source": "packages/boot/plugin-manager/src/managed-operations.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ManagedPackagePolicy",
+      "source": "packages/boot/plugin-manager/src/managed-operations.ts"
     }
   ]
 }

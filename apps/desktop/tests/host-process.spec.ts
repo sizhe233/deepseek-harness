@@ -1,7 +1,10 @@
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as runtimeAdmission from '@deepseek-ai/dsh-app-boot/runtime-admission'
+import { DesktopBackendController } from '../src/backend-controller.ts'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError, QUIT_INSPECTION_DEADLINE_MS } from '../src/host-process.ts'
 
 const roots: string[] = []
@@ -73,6 +76,211 @@ afterEach(async () => {
 })
 
 describe('desktop host process', () => {
+  it('adopts a real replacement child under the same owner and routes controls, readiness and shutdown to it', async () => {
+    let launch: runtimeAdmission.RuntimeChildLaunchRequest | undefined
+    let firstChild: ChildProcess | undefined
+    const original = runtimeAdmission.spawnRuntimeChild
+    const capture = vi.spyOn(runtimeAdmission, 'spawnRuntimeChild').mockImplementation((request) => {
+      launch = request
+      firstChild = original(request)
+      return firstChild
+    })
+    const runtime = projectWithHost()
+    const rebound = vi.fn(async (_ready: { readonly url: string }) => {})
+    const beforeStop = vi.fn()
+    const failures = vi.fn()
+    const host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, failures,
+      undefined, undefined, undefined, { run: operation => operation(), beforeStop, ready: rebound })
+    hosts.push(host)
+    try {
+      const first = await host.start()
+      if (launch?.owner === undefined || firstChild === undefined) throw new Error('missing launch owner')
+      const request = launch
+      const previous = firstChild
+      let successor: ChildProcess | undefined
+      await launch.owner.withReplacement(async (scope) => {
+        await scope.stop(previous)
+        expect(previous.exitCode).toBe(0)
+        successor = spawn(request.executable, [...request.args], request.options)
+        await scope.adopt(successor)
+      })
+      expect(beforeStop).toHaveBeenCalledTimes(1)
+      expect(rebound).toHaveBeenCalledTimes(1)
+      expect(rebound.mock.calls[0]?.[0]).not.toEqual(first)
+      expect(await host.updateTasks('lock')).toBe(true)
+      previous.emit('message', { type: 'fatal', message: 'stale predecessor' })
+      expect(failures).not.toHaveBeenCalled()
+      await host.stop(true)
+      expect(successor?.exitCode).toBe(0)
+      await expect(host.start()).rejects.toThrow('stopped')
+    } finally { capture.mockRestore() }
+  })
+
+  it('keeps the shell usable after an exited failed candidate is excluded and the predecessor is relaunched', async () => {
+    let launch: runtimeAdmission.RuntimeChildLaunchRequest | undefined
+    let previous: ChildProcess | undefined
+    const original = runtimeAdmission.spawnRuntimeChild
+    const capture = vi.spyOn(runtimeAdmission, 'spawnRuntimeChild').mockImplementation((request) => {
+      launch = request; previous = original(request); return previous
+    })
+    const runtime = projectWithHost(), failures = vi.fn()
+    let host!: DesktopHostProcess
+    let instance!: { start(): Promise<unknown>; stop(): Promise<void> }
+    const controller = new DesktopBackendController((onFailure) => {
+      host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+        (error) => { failures(error); onFailure(error) },
+        undefined, undefined, undefined, { run: operation => controller.continueHost(instance, operation),
+          beforeStop: () => {}, ready: async () => {} })
+      hosts.push(host)
+      instance = { start: () => host.start(), stop: () => host.stop(true) }
+      return instance
+    }, () => {})
+    try {
+      await controller.start(async () => {})
+      if (launch?.owner === undefined || previous === undefined) throw new Error('missing launch owner')
+      const request = launch, oldChild = previous
+      let failed: ChildProcess | undefined, restored: ChildProcess | undefined
+      await launch.owner.withReplacement(async (scope) => {
+        await scope.stop(oldChild)
+        failed = spawn(process.execPath, ['-e', 'process.exit(7)'], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+        await expect(scope.adopt(failed)).rejects.toThrow('exited with 7')
+        expect(failed.exitCode).toBe(7)
+        await scope.discard(failed)
+        restored = spawn(request.executable, [...request.args], request.options)
+        await scope.adopt(restored)
+      })
+      expect(controller.state).toEqual({ phase: 'ready' })
+      expect(controller.host).toBe(instance)
+      expect(failures).not.toHaveBeenCalled()
+      expect(await host.updateTasks('lock')).toBe(true)
+      await controller.close()
+      expect(restored?.exitCode).toBe(0)
+    } finally { capture.mockRestore() }
+  })
+
+  it('cancels and joins adoption when normal shell shutdown starts before replacement readiness', async () => {
+    let launch: runtimeAdmission.RuntimeChildLaunchRequest | undefined
+    let previous: ChildProcess | undefined
+    const original = runtimeAdmission.spawnRuntimeChild
+    const capture = vi.spyOn(runtimeAdmission, 'spawnRuntimeChild').mockImplementation((request) => {
+      launch = request; previous = original(request); return previous
+    })
+    const runtime = projectWithHost()
+    let host!: DesktopHostProcess
+    let instance!: { start(): Promise<unknown>; stop(): Promise<void> }
+    const controller = new DesktopBackendController((onFailure) => {
+      host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env, onFailure,
+        undefined, undefined, undefined, { run: operation => controller.continueHost(instance, operation),
+          beforeStop: () => {}, ready: async () => {} })
+      hosts.push(host)
+      instance = { start: () => host.start(), stop: () => host.stop(true) }
+      return instance
+    }, () => {})
+    try {
+      await controller.start(async () => {})
+      if (launch?.owner === undefined || previous === undefined) throw new Error('missing launch owner')
+      const oldChild = previous
+      const adopted = Promise.withResolvers<undefined>()
+      let successor: ChildProcess | undefined
+      const replacing = launch.owner.withReplacement(async (scope) => {
+        await scope.stop(oldChild)
+        successor = spawn(process.execPath, ['--input-type=module', '-e', `
+          process.on('message', message => {
+            if (message.type === 'shutdown') process.send({ type: 'shutdown-complete' }, () => process.disconnect())
+          })
+          setInterval(() => {}, 1000).unref()
+        `], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+        const ready = scope.adopt(successor)
+        adopted.resolve(undefined)
+        await ready
+      })
+      const rejected = expect(replacing).rejects.toMatchObject({ name: 'AbortError' })
+      await adopted.promise
+      expect(controller.host).toBeUndefined()
+      await controller.close()
+      await rejected
+      expect(successor?.exitCode).toBe(0)
+    } finally { capture.mockRestore() }
+  })
+
+  it('finishes initial startup only after a failed first child is replaced by the restored runtime', async () => {
+    const runtime = projectWithHost(), failures = vi.fn(), rebound = vi.fn(async () => {})
+    let host!: DesktopHostProcess
+    let instance!: { start(): Promise<unknown>; stop(): Promise<void> }
+    let recovery: Promise<void> | undefined, failed: ChildProcess | undefined, restored: ChildProcess | undefined
+    const controller = new DesktopBackendController((onFailure) => {
+      host = new DesktopHostProcess(process.execPath, runtime, runtime, undefined, process.env,
+        (error) => { failures(error); onFailure(error) }, undefined, undefined, undefined,
+        { run: operation => controller.continueHost(instance, operation), beforeStop: () => {}, ready: rebound })
+      hosts.push(host)
+      instance = { start: () => host.start(), stop: () => host.stop(true) }
+      return instance
+    }, () => {})
+    const capture = vi.spyOn(runtimeAdmission, 'spawnRuntimeChild').mockImplementation((request) => {
+      const owner = request.owner
+      if (owner === undefined) throw new Error('missing launch owner')
+      const candidate = spawn(process.execPath, ['-e', 'setTimeout(() => process.exit(7), 50)'],
+        { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
+      failed = candidate
+      queueMicrotask(() => {
+        recovery = owner.withReplacement(async (scope) => {
+          await new Promise<void>(resolve => candidate.once('close', () => { resolve() }))
+          await scope.discard(candidate)
+          restored = spawn(request.executable, [...request.args], request.options)
+          await scope.adopt(restored)
+        })
+        void recovery.catch(() => {})
+      })
+      return candidate
+    })
+    try {
+      await controller.start(async () => {})
+      await recovery
+      expect(failed?.exitCode).toBe(7)
+      expect(restored?.pid).toBeTypeOf('number')
+      expect(controller.state).toEqual({ phase: 'ready' })
+      expect(controller.host).toBe(instance)
+      expect(rebound).toHaveBeenCalledTimes(1)
+      expect(failures).not.toHaveBeenCalled()
+      expect(await host.updateTasks('lock')).toBe(true)
+      await controller.close()
+      expect(restored?.exitCode).toBe(0)
+    } finally { capture.mockRestore() }
+  })
+
+  it('delivers private coordinator traffic separately while preserving ordinary ready, control and shutdown IPC', async () => {
+    let privatePid: number | undefined
+    const consume = vi.spyOn(runtimeAdmission, 'consumeRuntimeChildMessage').mockImplementation((child, message) => {
+      if (message !== null && typeof message === 'object' && 'type' in message && message.type === 'dsh-runtime-test') {
+        privatePid = child.pid
+        return true
+      }
+      return false
+    })
+    try {
+      const host = hostProcess(projectWithHost(`process.send({ type: 'dsh-runtime-test' });\n${HTTP_HOST}`))
+      const ready = await host.start()
+      expect(ready.url).toContain('token=fixture')
+      expect(privatePid).toBeTypeOf('number')
+      expect(await host.updateTasks('inspect')).toBe(false)
+      await host.stop()
+    } finally { consume.mockRestore() }
+  })
+
+  it.each(['refused', 'throw'] as const)('stops a Host after %s private coordinator traffic', async (mode) => {
+    const cause = new Error('native child identity mismatch')
+    const consume = vi.spyOn(runtimeAdmission, 'consumeRuntimeChildMessage').mockImplementation(() => {
+      if (mode === 'throw') throw cause
+      return false
+    })
+    try {
+      const host = hostProcess(projectWithHost("process.send({ type: 'dsh-runtime-invalid' }); setInterval(() => {}, 1000)"))
+      if (mode === 'throw') await expect(host.start()).rejects.toMatchObject({ message: 'dsh desktop host private coordinator rejected IPC', cause })
+      else await expect(host.start()).rejects.toThrow('sent an invalid IPC event')
+      await host.stop()
+    } finally { consume.mockRestore() }
+  })
+
   it('correlates task inspections and admission changes over private IPC', async () => {
     const host = hostProcess(projectWithHost())
     await expect(host.updateTasks('inspect')).rejects.toThrow('Host is unavailable')

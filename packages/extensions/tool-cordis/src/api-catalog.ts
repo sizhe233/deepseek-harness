@@ -719,6 +719,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Persist complete raw configs and apply them through the normal Loader path.',
     methods: [
       {
+        signature: 'createDocumentDerivation( changes: readonly ConfigurationDocumentChange[], ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]>',
+        description: 'Prepare raw edits for one versioned candidate while retaining real schema and owned-field validation.',
+        parameters: [{ name: 'changes', description: 'Ordered entry edits or receipted reversals.' }],
+        returns: 'A derivation to invoke exactly once under the native document write snapshot.',
+      },
+      {
         signature: 'entries(): Entry[]',
         description: 'Addressable profile rows; nested Includes have independent configuration ownership.',
         parameters: [],
@@ -735,6 +741,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Validate, persist, and reconcile a plugin\'s next config; ordinary fields keep normal lifecycle rules.',
         parameters: [{ name: 'entry', description: 'Current Loader entry, also used to detect replacement during the write.' }, { name: 'change', description: 'Derive a raw config from the current entry and its inherited layer.' }],
         returns: 'Fulfillment after Loader reconciliation completes.',
+      },
+      {
+        signature: 'async editWithReceipt( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, operationId?: ProfileDocumentOperationId, ): Promise<ConfigurationEditReceipt>',
+        description: 'Edit managed documents with inspectable native publication facts; ordinary edit() retains its void API.',
+        parameters: [{ name: 'entry', description: 'Current uniquely addressed profile entry.' }, { name: 'change', description: 'Derive once from detached raw values under native serialization.' }, { name: 'operationId', description: 'Optional caller-retained key for interruption recovery.' }],
+        returns: 'Native publication receipt after successful Loader reconciliation.',
+      },
+      {
+        signature: 'async reverseEdit(receipt: Pick<ConfigurationEditReceipt, \'entry\' | \'document\'>, operationId?: ProfileDocumentOperationId): Promise<ConfigurationEditReceipt>',
+        description: 'Reverse only still-matching owned raw fields from a persisted native operation.',
+        parameters: [{ name: 'receipt', description: 'Original editor receipt; current unrelated changes survive the newer publication.' }, { name: 'operationId', description: 'Optional caller-retained reversal key for interruption recovery.' }],
+        returns: 'The native reverse receipt after Loader reconciliation.',
+      },
+      {
+        signature: 'async refreshDocuments(): Promise<ProfileDocumentViewReference>',
+        description: 'Apply the latest finalized native document view after operation inspection.',
+        parameters: [],
+        returns: 'The applied reference; a missing native binding or reconciliation failure rejects.',
       },
     ],
   },
@@ -1825,6 +1849,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly applicationEntry?: string',
+        description: 'Fixed business-entry module URL used to classify application dependencies during HMR.',
+        parameters: [],
+      },
+      {
         signature: 'readonly startedBundles: readonly string[]',
         description: 'Bundle packages used to start this process, before any persisted edits.',
         parameters: [],
@@ -1838,6 +1867,95 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'readonly telemetryDisabledEnv: string | undefined',
         description: 'Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out.',
         parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'profileDocuments',
+    summary: 'Native authority supplied only after launcher enrollment; no provider is installed by this package.',
+    description: 'Native authority supplied only after launcher enrollment; no provider is installed by this package.',
+    methods: [
+      {
+        signature: 'readonly drafts?: ProfileDocumentDrafts',
+        description: 'Available only when the native launcher admits private editable draft locations.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly migrations?: ProfileDocumentMigrations',
+        description: 'Native committed-state ledger for importing legacy source sections once.',
+        parameters: [],
+      },
+      {
+        signature: 'bundleLayers(view: ProfileDocumentView): ProfileDocumentLayers',
+        description: 'Select bundle layers from this view\'s config manifest within the fixed admitted package graph.',
+        parameters: [{ name: 'view', description: 'Exact admitted or derived candidate configuration view.' }],
+        returns: 'Layers whose code/package identities still equal selection; unadmitted bundles refuse.',
+      },
+      {
+        signature: 'readonly domainId: Branded<\'ProfileDocumentDomainId\'>',
+        description: 'Stable native document-domain identity; logical paths remain diagnostic labels.',
+        parameters: [],
+      },
+      {
+        signature: 'current(): ProfileDocumentView',
+        description: 'Return the last document view admitted by this authority.',
+        parameters: [],
+        returns: 'The desired view, never an assertion of Loader application.',
+      },
+      {
+        signature: 'refresh(): Promise<ProfileDocumentView>',
+        description: 'Admit the latest native document selection without reopening original files.',
+        parameters: [],
+        returns: 'The fresh desired view, also retained by current().',
+      },
+      {
+        signature: 'readView(reference: ProfileDocumentViewReference): Promise<ProfileDocumentView>',
+        description: 'Read an immutable view retained by this authority, for receipted semantic reversal.',
+        parameters: [{ name: 'reference', description: 'Exact historical view for this process\'s admitted selection.' }],
+        returns: 'Detached historical documents; unavailable history fails without inference.',
+      },
+      {
+        signature: 'readDocumentVersion?(reference: ProfileDocumentViewReference, logicalPath: string): Promise<ProfileDocumentSnapshot>',
+        description: 'Read one retained mutable document across code activations without admitting an old code/package view.',
+        parameters: [{ name: 'reference', description: 'Exact retained native view named by an inspected publication receipt.' }, { name: 'logicalPath', description: 'An admitted mutable document label; package snapshots are excluded.' }],
+        returns: 'Original raw text or explicit absence for owned-field reversal.',
+      },
+      {
+        signature: 'withWriteSnapshot( request: Readonly<{ operationId: ProfileDocumentOperationId; expected: ProfileDocumentViewReference }>, derive: (view: ProfileDocumentView) => readonly ProfileDocumentWrite[] | Promise<readonly ProfileDocumentWrite[]>, ): Promise<ProfileDocumentPublication>',
+        description: 'Derive once under native serialization, rechecking the complete read/source/conflict/participant vector before publication. The provider captures returned bytes once and persists the operation before dependent mutation. A throw before a receipt means no publication; late/uncertain outcomes return their receipt for inspection, never automatic retry.',
+        parameters: [{ name: 'request', description: 'Idempotency key and exact expected view including code/package selection and metadata epochs.' }, { name: 'derive', description: 'Native semantic validation, called once with the current immutable view while its lease is held.' }],
+        returns: 'Persisted publication facts and verified successor when available; updates current() only on admitted success.',
+      },
+      {
+        signature: 'inspectOperation(operationId: ProfileDocumentOperationId): Promise<ProfileDocumentReceipt | undefined>',
+        description: 'Inspect the persisted outcome without repeating publication.',
+        parameters: [{ name: 'operationId', description: 'Previously submitted idempotency key.' }],
+        returns: 'The retained receipt, or undefined if no operation was recorded.',
+      },
+      {
+        signature: 'subscribe(after: ProfileDocumentViewReference, invalidate: () => void): () => void',
+        description: 'Subscribe from an admitted cursor, replaying any registration gap; overflow/reopen requests a full refresh. Observer callbacks cannot alter publication facts and must not be awaited by native publication.',
+        parameters: [{ name: 'after', description: 'Last observed view; source/conflict and pending-package metadata also invalidate this cursor.' }, { name: 'invalidate', description: 'Notification to reread the current admitted view.' }],
+        returns: 'Synchronous subscription cancellation; consumer owns draining its reconciliation queue.',
+      },
+    ],
+  },
+  {
+    key: 'profilePackageOperations',
+    summary: 'A separately installed provider owns staging, exact archive admission, publication and recovery.',
+    description: 'A separately installed provider owns staging, exact archive admission, publication and recovery.',
+    methods: [
+      {
+        signature: 'run(request: ManagedPackageRequest, policy: ManagedPackagePolicy): Promise<ChangeResult>',
+        description: 'Preserve ordinary install/remove semantics in updater-owned staging, then coordinate package documents and code. Script execution retains its explicit existing consent and side effects; updater rollback does not sandbox scripts.',
+        parameters: [{ name: 'request', description: 'Fixed operation identity and expected native document selection.' }, { name: 'policy', description: 'Existing package workflow limits, registry policy, cancellation and diagnostic observers.' }],
+        returns: 'Durable staging outcome; uncertain publication is failed with its operation id retained, never automatically retried. Repeated operation ids inspect the persisted request and outcome; changed payloads refuse instead of rerunning scripts.',
+      },
+      {
+        signature: 'inspectOperation(operationId: ProfilePackageOperationId): Promise<ChangeResult | undefined>',
+        description: 'Read an existing durable operation without repeating package commands or publication.',
+        parameters: [{ name: 'operationId', description: 'Previously submitted package operation.' }],
+        returns: 'The retained result, or undefined when no operation was recorded.',
       },
     ],
   },
@@ -2558,10 +2676,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['If this instance already has a registered policy.'],
       },
       {
-        signature: 'prepareDocument(): Promise<string>',
+        signature: 'async prepareDocument(): Promise<string>',
         description: 'Locate the profile patch for native editing.',
         parameters: [],
-        returns: 'The existing profile patch path.',
+        returns: 'The ordinary Profile path or an exclusive native editing copy.',
+        throws: ['When native draft preparation is unavailable or its base is stale.'],
+      },
+      {
+        signature: 'preparedDocumentDraft(path: string): { id: string; saveBehavior: \'explicit-import\' } | undefined',
+        description: 'Identify a prepared copy without exposing its physical path to remote clients.',
+        parameters: [{ name: 'path', description: 'Host-only path returned by prepareDocument.' }],
+        returns: 'Draft identity when native explicit import is required.',
+      },
+      {
+        signature: 'async importDocumentDraft(draftId: string): Promise<string>',
+        description: 'Import an editor save against its immutable base, then use ordinary Loader reconciliation.',
+        parameters: [{ name: 'draftId', description: 'Native draft identity returned when opening the editor.' }],
+        returns: 'The published view reference after successful Loader reconciliation.',
+        throws: ['For stale bases, invalid saves, unavailable drafts or failed reconciliation.'],
       },
       {
         signature: 'describe(options?: SettingsDescribeOptions): SettingsDescriptor[]',
@@ -2595,7 +2727,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote describe(): SettingsDescribeValue',
         description: 'Describe every registered namespace for a configuration page: redacted layered values plus the serialized schema the page renders its form from.',
         parameters: [],
-        returns: 'provider writability, local-document presence, and one view per namespace.',
+        returns: 'provider writability, editable-document availability, and one view per namespace.',
         throws: ['RemoteError when no settings provider is mounted.'],
       },
       {
@@ -2625,6 +2757,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'signal', description: 'caller lifetime; abort terminates preparation or the native command.' }],
         returns: 'confirmation after the native opener accepts the document.',
         throws: ['RemoteError when no document exists, preparation fails, or opening fails.'],
+      },
+      {
+        signature: '@Remote async importSettingsDocumentDraft(draftId: string): Promise<{ imported: true }>',
+        description: 'Publish a saved native editing copy and reconcile the active configuration.',
+        parameters: [{ name: 'draftId', description: 'Identity returned by openSettingsDocument; never a client supplied filename.' }],
+        returns: 'Confirmation after publication and ordinary Loader reconciliation.',
+        throws: ['RemoteError when the save is stale, invalid or cannot be applied.'],
       },
     ],
   },
@@ -4798,7 +4937,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ChangeResult',
-    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    version?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n    failedAt?: \'registry\' | \'spec-host\';\n}',
+    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    version?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n    registries?: Registry[];\n    failedAt?: \'registry\' | \'spec-host\';\n    operationId?: Branded<\'ProfilePackageOperationId\'>;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -4887,6 +5026,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ComputerUseProviderName',
     declaration: 'export type ComputerUseProviderName = Branded<\'ComputerUseProviderName\'>;',
+  },
+  {
+    name: 'ConfigurationDocumentChange',
+    declaration: 'export type ConfigurationDocumentChange = {\n    readonly entry: Entry;\n    readonly change: (current: Raw, inherited: Raw) => Raw;\n} | {\n    readonly reverse: Pick<ConfigurationEditReceipt, \'entry\' | \'document\'>;\n};',
+  },
+  {
+    name: 'ConfigurationEditReceipt',
+    declaration: 'export interface ConfigurationEditReceipt {\n    readonly entry: Readonly<Selector>;\n    readonly document: ProfileDocumentReceipt;\n    readonly reconciliation: \'applied\';\n}',
   },
   {
     name: 'ConfinedArgv',
@@ -5506,7 +5653,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InstallBundleOptions',
-    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    registry?: Registry;\n}',
+    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n    approvalOperationId?: Branded<\'ProfilePackageOperationId\'>;\n    registry?: Registry;\n}',
   },
   {
     name: 'InstallSpecKind',
@@ -5821,6 +5968,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
   },
   {
+    name: 'ManagedPackagePolicy',
+    declaration: 'export interface ManagedPackagePolicy extends PackageOperationOptions {\n    readonly registries: PluginRegistries;\n    readonly githubConnectionTimeoutMs: number;\n    readonly onProgress?: (phase: PluginInstallProgress[\'phase\'], attempt?: PluginInstallProgress[\'attempt\']) => void;\n}',
+  },
+  {
+    name: 'ManagedPackageRequest',
+    declaration: 'export type ManagedPackageRequest = Readonly<{\n    operationId: ProfilePackageOperationId;\n    expected: ProfileDocumentViewReference;\n}> & (Readonly<{\n    kind: \'install\';\n    spec: string;\n    options?: InstallBundleOptions;\n}> | Readonly<{\n    kind: \'remove\';\n    name: string;\n}> | Readonly<{\n    kind: \'command\';\n    args: readonly string[];\n}>);',
+  },
+  {
     name: 'ManagementError',
     declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'stale-approval\' | \'incompatible-version\' | \'operation-error\';\n    diagnostic?: string;\n    incompatible?: IncompatiblePlugin[];\n}',
   },
@@ -6061,6 +6216,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OTelEventScalar = string | number | boolean;',
   },
   {
+    name: 'PackageOperationOptions',
+    declaration: 'export interface PackageOperationOptions {\n    command?: string;\n    args?: readonly string[];\n    env?: Readonly<Record<string, string>>;\n    execution: \'cli\' | \'service\';\n    signal?: AbortSignal;\n    outputBytes: number;\n    onOutput?: (text: string, stream: \'stdout\' | \'stderr\') => void;\n    activateNewBundles?: boolean;\n    lockWaitMs?: number;\n    idleTimeoutMs?: number;\n    lookupTimeoutMs?: number;\n}',
+  },
+  {
     name: 'PackageResult',
     declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n    kind?: PluginInstallFailureKind;\n    timedOut?: boolean;\n    incompatible?: IncompatiblePlugin[];\n}',
   },
@@ -6215,6 +6374,78 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProductTelemetryRecord',
     declaration: 'export type ProductTelemetryRecord = OTelEventRecord;',
+  },
+  {
+    name: 'ProfileCodeBindingReference',
+    declaration: 'export type ProfileCodeBindingReference = Branded<\'ProfileCodeBindingReference\'>;',
+  },
+  {
+    name: 'ProfileDocumentDraft',
+    declaration: 'export interface ProfileDocumentDraft {\n    readonly id: ProfileDocumentOperationId;\n    readonly logicalPath: string;\n    readonly baseView: ProfileDocumentViewReference;\n    readonly baseDocument: ProfileDocumentReference;\n    readonly path: string;\n    readonly saveBehavior: \'explicit-import\';\n}',
+  },
+  {
+    name: 'ProfileDocumentDrafts',
+    declaration: 'export interface ProfileDocumentDrafts {\n    prepare(request: {\n        operationId: ProfileDocumentOperationId;\n        expected: ProfileDocumentViewReference;\n        logicalPath: string;\n    }): Promise<ProfileDocumentDraft>;\n    inspect(draftId: ProfileDocumentOperationId): Promise<{\n        draft: ProfileDocumentDraft;\n        sha256: string;\n    }>;\n    import(request: {\n        operationId: ProfileDocumentOperationId;\n        draftId: ProfileDocumentOperationId;\n        sha256: string;\n    }): Promise<ProfileDocumentPublication>;\n}',
+  },
+  {
+    name: 'ProfileDocumentLayers',
+    declaration: 'export interface ProfileDocumentLayers {\n    readonly codeBinding: ProfileDocumentSelection[\'codeBinding\'];\n    readonly packageDocuments: ProfileDocumentSelection[\'packageDocuments\'];\n    readonly layers: readonly ProfileLayer[];\n}',
+  },
+  {
+    name: 'ProfileDocumentMigrationEntry',
+    declaration: 'export interface ProfileDocumentMigrationEntry {\n    readonly key: string;\n    readonly operationId: ProfileDocumentOperationId;\n    readonly status: \'published\' | \'rejected\';\n    readonly receipt?: ProfileDocumentReceipt;\n    readonly reason?: string;\n}',
+  },
+  {
+    name: 'ProfileDocumentMigrations',
+    declaration: 'export interface ProfileDocumentMigrations {\n    read(source: {\n        logicalPath: string;\n        reference: ProfileDocumentReference;\n    }): Promise<readonly ProfileDocumentMigrationEntry[]>;\n    record(source: {\n        logicalPath: string;\n        reference: ProfileDocumentReference;\n    }, entry: ProfileDocumentMigrationEntry): Promise<void>;\n    recover(source: {\n        logicalPath: string;\n        reference: ProfileDocumentReference;\n    }, operationId: ProfileDocumentOperationId): Promise<void>;\n}',
+  },
+  {
+    name: 'ProfileDocumentOperationId',
+    declaration: 'export type ProfileDocumentOperationId = Branded<\'ProfileDocumentOperationId\'>;',
+  },
+  {
+    name: 'ProfileDocumentPublication',
+    declaration: 'export interface ProfileDocumentPublication {\n    readonly receipt: ProfileDocumentReceipt;\n    readonly view: ProfileDocumentView | undefined;\n    readonly error?: Error;\n}',
+  },
+  {
+    name: 'ProfileDocumentReceipt',
+    declaration: 'export interface ProfileDocumentReceipt {\n    readonly operationId: ProfileDocumentOperationId;\n    readonly before: ProfileDocumentViewReference;\n    readonly after: ProfileDocumentViewReference | undefined;\n    readonly publication: \'not-published\' | \'published\' | \'unknown\';\n    readonly verification: \'verified\' | \'failed\' | \'not-performed\';\n    readonly durability: \'confirmed\' | \'unconfirmed\';\n}',
+  },
+  {
+    name: 'ProfileDocumentReference',
+    declaration: 'export type ProfileDocumentReference = Branded<\'ProfileDocumentReference\'>;',
+  },
+  {
+    name: 'ProfileDocumentSelection',
+    declaration: 'export interface ProfileDocumentSelection {\n    readonly profileDir: string;\n    readonly home: string;\n    readonly codeBinding: ProfileCodeBindingReference;\n    readonly packageDocuments: ProfilePackageDocumentsReference;\n}',
+  },
+  {
+    name: 'ProfileDocumentSnapshot',
+    declaration: 'export type ProfileDocumentSnapshot = Readonly<{\n    logicalPath: string;\n    reference: ProfileDocumentReference;\n}> & (Readonly<{\n    state: \'present\';\n    text: string;\n}> | Readonly<{\n    state: \'absent\';\n}>);',
+  },
+  {
+    name: 'ProfileDocumentView',
+    declaration: 'export interface ProfileDocumentView {\n    readonly reference: ProfileDocumentViewReference;\n    readonly selection: ProfileDocumentSelection;\n    read(logicalPath: string): ProfileDocumentSnapshot;\n}',
+  },
+  {
+    name: 'ProfileDocumentViewReference',
+    declaration: 'export type ProfileDocumentViewReference = Branded<\'ProfileDocumentViewReference\'>;',
+  },
+  {
+    name: 'ProfileDocumentWrite',
+    declaration: 'export type ProfileDocumentWrite = Readonly<{\n    readonly logicalPath: string;\n    readonly expected: ProfileDocumentReference;\n}> & (Readonly<{\n    text: string;\n    state?: \'present\';\n}> | Readonly<{\n    state: \'absent\';\n}>);',
+  },
+  {
+    name: 'ProfileLayer',
+    declaration: 'export interface ProfileLayer {\n    packageName: string;\n    packageDir: string;\n    patchPaths: readonly string[];\n    patches: PatchOptions[];\n}',
+  },
+  {
+    name: 'ProfilePackageDocumentsReference',
+    declaration: 'export type ProfilePackageDocumentsReference = Branded<\'ProfilePackageDocumentsReference\'>;',
+  },
+  {
+    name: 'ProfilePackageOperationId',
+    declaration: 'export type ProfilePackageOperationId = Branded<\'ProfilePackageOperationId\'>;',
   },
   {
     name: 'ProfilePnpmInvocation',
@@ -7190,7 +7421,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SettingsDocumentOpenValue',
-    declaration: 'export interface SettingsDocumentOpenValue {\n    readonly opened: true;\n}',
+    declaration: 'export interface SettingsDocumentOpenValue {\n    readonly opened: true;\n    readonly draft?: {\n        readonly id: string;\n        readonly saveBehavior: \'explicit-import\';\n    };\n}',
   },
   {
     name: 'SettingsNamespace',

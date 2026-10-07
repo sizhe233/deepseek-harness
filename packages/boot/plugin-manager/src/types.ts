@@ -140,6 +140,8 @@ export interface ChangeResult {
    * tarball spec is fetched from, which no registry stands in for; absent for a failure neither explains.
    */
   failedAt?: 'registry' | 'spec-host'
+  /** Durable native package operation to inspect after a lost or unconfirmed managed publication response. */
+  operationId?: Branded<'ProfilePackageOperationId'>
 }
 
 /** Identifies one installation from its start to its settlement, including its log chunks and cancellation. */
@@ -151,6 +153,8 @@ export interface InstallBundleOptions {
   requestId?: PluginInstallRequestId
   /** Explicitly allow these pending packages' scripts for this profile, then install; a name no longer pending refuses the call. */
   approvedBuilds?: string[]
+  /** Exact previous managed operation whose retained pending script names the user approved. */
+  approvalOperationId?: Branded<'ProfilePackageOperationId'>
   /** The registry asked first; absent, the configured one. The configured fallbacks follow while a registry is unreachable or stale. */
   registry?: Registry
 }

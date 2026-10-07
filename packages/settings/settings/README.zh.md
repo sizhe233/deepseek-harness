@@ -32,7 +32,7 @@ kind: "package-reference"
 
 此插件没有配置字段。表单只展示活动且可唯一定位的 profile 条目中的 volatile 字段。普通配置仍通过 Cordis 配置文件编辑。
 
-Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 harness home 中的 `settings.yaml` 会被导入一次：每个 section 写入同名条目（`ui-developer-tools` → `ui-settings`、`ui-onboarding` → `ui-settings-general`、`shell` → 当前平台的 shell 执行器条目、`mcp-client` → `mcp-configuration`），文件在第一次写入前改名为 `settings.yaml.imported`，被当前组合拒绝的 section 会记录日志并只保留在改名后的文件中。
+对于未托管 Profile，Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 harness home 中的 `settings.yaml` 会被导入一次：每个 section 写入同名条目（`ui-developer-tools` → `ui-settings`、`ui-onboarding` → `ui-settings-general`、`shell` → 当前平台的 shell 执行器条目、`mcp-client` → `mcp-configuration`），文件在第一次写入前改名为 `settings.yaml.imported`，被当前组合拒绝的 section 会记录日志并只保留在改名后的文件中。
 
 重置恢复 profile 覆盖层以下的值，包括 schema 默认值。Home patch 和命令行 overlay 优先级更高；表单写入若会被它们覆盖，则被拒绝。
 
@@ -69,6 +69,8 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 ## 已知限制与延后工作
 
 <a id="known-limitations-and-deferred-work"></a>
+
+托管表单通过 ConfigEditor 使用原生文档提供方。逻辑 `documentPath` 仅用于诊断，不能作为当前内容交给外部编辑器。具备已验证的原生草稿能力时，外部打开会创建编辑副本。在编辑器中保存后，使用**应用已保存的副本**；导入会比较完整基线版本及保存字节的摘要，再发布并调用普通 Loader 协调。过期或无效副本保留供检查。原生旧版导入把每个 section 的发布回执和拒绝结果保存在提供方的已提交状态记录中，中断不会重复已完成的导入，原文件不会被重命名。缺少相应能力时安全拒绝，普通表单仍可使用。
 
 - 嵌套 Include 独立拥有配置，不能通过当前 profile 的表单编辑。
 - 字段重置恢复继承值，不能删除下层配置提供的值。取消设置数组索引会移除该元素。

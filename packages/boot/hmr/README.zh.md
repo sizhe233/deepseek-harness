@@ -56,7 +56,7 @@ Chokidar 选项（包括轮询）保持原有含义。精确配置监听同时�
 
 `watchConfig()` 注册会被等待的配置处理器。`runExclusive()` 将配置变更、Loader 更新与自动重载串行化，并拒绝嵌套事务。包安装和删除在该队列之外执行。HMR 不获取包操作写锁；manifest 通知仅在有序的 `dsh.profile.bundles` 列表变化时触发重载。profile 与 home patch 变化也会触发重新组合。配置事务期间收到的文件事件在事务结束后处理。 Include 刷新和 profile 重载都通过普通的 Loader 条目更新到达插件；仅 volatile 变化由 Loader 就地提交。
 
-App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。销毁 HMR 时会关闭监听器并取消等待启动的重载。配置监听器在当前事务上下文之外启动，使后续通知可以进入队列。
+App-boot 负责 profile 解析和 patch 优先级规则。HMR 读取启动器提供的纯数据 `profileContext`，在初始化时注册 profile manifest 和两份用户 patch 的监听，并等待应用就绪后处理更改。固定的 `profileContext.applicationEntry` URL 指定业务模块，其静态依赖变化需要宿主重载；未提供该值的调用方继续按进程入口查找。销毁 HMR 时会关闭监听器并取消等待启动的重载。配置监听器在当前事务上下文之外启动，使后续通知可以进入队列。
 
 `node_modules` 之外的 `package.json` 变化使该包的配置缓存失效。仅作为配置的 manifest 不触发模块重载；作为 JSON 模块导入的 manifest 保留依赖驱动重载，位于宿主依赖图中的 manifest 保留宿主重载。专属配置监听保留原有归属。新包入口在 Loader entry 重启时生效。
 
@@ -69,6 +69,8 @@ Loader entry 保留原始导入结果。HMR 为每个 entry 名称与配置树 b
 被监听模块的路径沿用 Node ESM 解析所用的 `realpathSync()` 表示，包括 Windows 短目录名，使文件事件与模块缓存匹配。
 
 模块替换实现源自 `@cordisjs/plugin-hmr` 1.0.15，包含 Harness 的 Node loader 和惰性配置修改。保留其 [MIT 许可证](LICENSE)。
+
+显式绑定 `profileDocuments` 时，HMR 订阅原生版本通知，不再监听原始 Profile 文件。重放与重新扫描通知会重新读取已准入视图；已成功应用的重复引用会被跳过。嵌套 Include 在同一固定视图内刷新，失败时保留之前已应用的引用。订阅同步取消，因此移除 HMR 的重载不会等待自身队列。原始来源观察、外部导入及草稿监听由原生提供方负责。
 
 </details>
 

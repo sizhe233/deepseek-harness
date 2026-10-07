@@ -22,9 +22,10 @@ import {
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
 } from 'electron'
+import { resolveRuntimeInstallation } from '@deepseek-ai/dsh-app-boot/runtime-admission'
 import { resolveDesktopPaths } from './paths.ts'
 import { DesktopProjectManager } from './project-manager.ts'
-import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
+import { type DesktopHostReady, type DesktopQuitInspection, DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
 import { installDesktopDirectoryPicker } from './directory-picker.ts'
 import { installMicrophonePermissions } from './microphone-permissions.ts'
@@ -157,7 +158,7 @@ function runtimeResources(): RuntimeResources {
       : join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'))
   const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
     ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(app.getAppPath(), 'dsh'))
-  return { node, nodeBin, pnpm, dsh }
+  return { node, nodeBin, pnpm, dsh: resolveRuntimeInstallation(dsh) }
 }
 
 function developmentPrimaryRuntime(): string {
@@ -439,64 +440,74 @@ async function main(): Promise<void> {
   }
   const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'),
     () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US', process.platform === 'win32' ? 'win32' : 'darwin')
-  const backend = new DesktopBackendController((onFailure) => {
+  interface ShellBackendHost {
+    start(): Promise<void>
+    stop(): Promise<void>
+    updateTasks(action: 'inspect' | 'lock' | 'unlock'): Promise<boolean>
+    inspectQuit(): Promise<DesktopQuitInspection>
+  }
+  const backend: DesktopBackendController<ShellBackendHost> = new DesktopBackendController((onFailure) => {
+    const bindReady = async (ready: DesktopHostReady): Promise<void> => {
+      hostCookie = await authenticateWebHost(ready.url)
+      hostUrl = ready.url
+      if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
+      injections = ready.injections
+      welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+      analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
+      if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
+      stopAccount?.()
+      const accountBackend = welcomeBackend.account
+      stopAccount = accountBackend.watch((state) => {
+        if (quitting) return
+        if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+        const attempt = state.attempt
+        if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
+          openedAttempt = attempt.id
+          void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined)
+        }
+        if ((attempt?.phase === 'failed' || attempt?.phase === 'expired') && returnedAttempt !== attempt.id) {
+          returnedAttempt = attempt.id
+          focusPrimaryWindow()
+        }
+        if (state.status === 'credential-stored' && attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
+        if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
+          void readWelcomeState().then(async (value) => {
+            if (needsWelcome(value) && !quitting) {
+              enteredWorkspace = false
+              await showWelcome()
+              if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+            }
+            return undefined
+          }).catch(() => undefined)
+        }
+        previousAccountStatus = state.status
+      }, () => {
+      // The stream reconnects; a transport failure does not change account state.
+      }, () => {
+        void readWelcomeState().then(async (value) => {
+          if (!needsWelcome(value) || quitting) return
+          pendingWelcomeNotice = 'session-expired'
+          enteredWorkspace = false
+          await showWelcome()
+          const state = await accountBackend.state()
+          if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+        }).catch(() => undefined)
+      }, (enabled) => { analyticsEnabled = enabled })
+    }
+    const beforeStop = (): void => { analyticsEnabled = false; stopAccount?.() }
     const hostInspectPort = developmentHostInspectPort(development)
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
       hostInspectPort, { ...hostEnvironment, DSH_CLIENT_VERSION: desktopClientVersion() }, onFailure,
       primaryRuntime,
-      resources, (next) => { platformView.setSession(next) })
-    return {
-      start: async () => {
-        const ready = await host.start()
-        hostCookie = await authenticateWebHost(ready.url)
-        hostUrl = ready.url
-        if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
-        injections = ready.injections
-        welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
-        analyticsEnabled = await welcomeBackend.analyticsEnabled().catch(() => false)
-        if (!reportedLaunch) { reportedLaunch = true; void track('desktop_app_launch', {}) }
-        stopAccount?.()
-        const accountBackend = welcomeBackend.account
-        stopAccount = accountBackend.watch((state) => {
-          if (quitting) return
-          if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
-          const attempt = state.attempt
-          if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
-            openedAttempt = attempt.id
-            void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined)
-          }
-          if ((attempt?.phase === 'failed' || attempt?.phase === 'expired') && returnedAttempt !== attempt.id) {
-            returnedAttempt = attempt.id
-            focusPrimaryWindow()
-          }
-          if (state.status === 'credential-stored' && attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
-          if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
-            void readWelcomeState().then(async (value) => {
-              if (needsWelcome(value) && !quitting) {
-                enteredWorkspace = false
-                await showWelcome()
-                if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
-              }
-              return undefined
-            }).catch(() => undefined)
-          }
-          previousAccountStatus = state.status
-        }, () => {
-          // The stream reconnects; a transport failure does not change account state.
-        }, () => {
-          void readWelcomeState().then(async (value) => {
-            if (!needsWelcome(value) || quitting) return
-            pendingWelcomeNotice = 'session-expired'
-            enteredWorkspace = false
-            await showWelcome()
-            const state = await accountBackend.state()
-            if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
-          }).catch(() => undefined)
-        }, (enabled) => { analyticsEnabled = enabled })
-      },
+      resources, (next) => { platformView.setSession(next) }, {
+        run: operation => backend.continueHost(instance, operation),
+        beforeStop,
+        ready: bindReady,
+      })
+    const instance: ShellBackendHost = {
+      start: async () => { await bindReady(await host.start()) },
       stop: async () => {
-        analyticsEnabled = false
-        stopAccount?.()
+        beforeStop()
         try { await host.stop(requireCleanStop) }
         catch (error) {
           if (!requireCleanStop || !(error instanceof DesktopHostUncleanExitError)) throw error
@@ -507,6 +518,7 @@ async function main(): Promise<void> {
       updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
       inspectQuit: () => host.inspectQuit(),
     }
+    return instance
   }, (state) => {
     if (state.phase === 'error') reportFatal(state.failure, 'host')
     else if (!shuttingDown) backendReady = state.phase === 'ready'

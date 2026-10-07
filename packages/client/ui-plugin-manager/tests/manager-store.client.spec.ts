@@ -1094,6 +1094,7 @@ describe('PluginManagerController', () => {
   })
 
   it.each([true, false])('offers the scripts a blocked run left pending, and retries with analytics enabled=%s', async (enabled) => {
+    const operationId = enabled ? 'a'.repeat(64) as NonNullable<ChangeResult['operationId']> : undefined
     const gates: ReturnType<typeof deferred<Awaited<ReturnType<typeof ok<ChangeResult>> | ReturnType<typeof refused>>>>[] = []
     const { face, state, controller, plugins, started } = bench({
       installBundle: vi.fn(() => {
@@ -1113,14 +1114,17 @@ describe('PluginManagerController', () => {
       ...failed({ code: 'operation-error', diagnostic: 'ERR_PNPM_IGNORED_BUILDS' },
         { exitCode: 1, output: 'ERR_PNPM_IGNORED_BUILDS', truncated: false, logPath: '/l', kind: 'build-blocked' }),
       pendingBuilds: ['native'],
+      ...operationId === undefined ? {} : { operationId },
     }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.failure).toEqual({ reason: 'ERR_PNPM_IGNORED_BUILDS', code: 'operation-error', kind: 'build-blocked', pendingBuilds: ['native'] })
+    expect(state().install.failure).toEqual({ reason: 'ERR_PNPM_IGNORED_BUILDS', code: 'operation-error', kind: 'build-blocked', pendingBuilds: ['native'],
+      ...operationId === undefined ? {} : { operationId } })
     // The retry keeps the subject the check produced and carries the approved names under a new request id.
     face.approveBuildsAndRetry()
     const second = await started()
     expect(second).not.toBe(first)
-    expect(plugins.installBundle).toHaveBeenLastCalledWith('x', { enabled: false, requestId: second, registry: null, approvedBuilds: ['native'] })
+    expect(plugins.installBundle).toHaveBeenLastCalledWith('x', { enabled: false, requestId: second, registry: null, approvedBuilds: ['native'],
+      ...operationId === undefined ? {} : { approvalOperationId: operationId } })
     expect(state().install).toMatchObject({ subject: { spec: 'x', name: 'dsh-better-sidebar' }, failure: null })
     gates[1]!.resolve(ok({ ...APPLIED, bundle: 'dsh-better-sidebar', approvedBuilds: ['native'] }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })

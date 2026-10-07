@@ -1,6 +1,8 @@
 /** Isolated browser runtime configures native inference in Stagehand's extension. */
 
-import { parentPort, workerData } from 'node:worker_threads'
+import { runtimeWorkerData } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+
+import { parentPort } from 'node:worker_threads'
 import { z } from 'zod'
 import { browserInputs, openNativeBrowser, stagehandModelSchema } from './native.ts'
 import { answer } from './worker-rpc.ts'
@@ -16,7 +18,7 @@ const { extensionId, cdpEndpoint, executablePath, ...config } = z.object({
   headless: z.boolean(),
   operationTimeoutMs: z.number().int().positive(),
   shutdownGraceMs: z.number().int().positive(),
-}).parse(workerData)
+}).parse(runtimeWorkerData())
 const methodSchema = z.enum(Object.keys(browserInputs) as [keyof typeof browserInputs, ...Array<keyof typeof browserInputs>])
 const opening = openNativeBrowser(
   {

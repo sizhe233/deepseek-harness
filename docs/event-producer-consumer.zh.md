@@ -29,7 +29,7 @@
 | `api-session/error` | `emit` | [`packages/api/session-controller/src/types.ts:618`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
 | `api-session/removed` | `emit` | [`packages/api/session-controller/src/types.ts:597`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
 | `api-session/status` | `emit` | [`packages/api/session-controller/src/types.ts:604`](../packages/api/session-controller/src/types.ts) | `session-controller` (`emit`) | `remotes` |
-| `app-boot/config-reload` | `emit` | [`packages/boot/app-boot/src/index.ts:52`](../packages/boot/app-boot/src/index.ts) | [`app-boot`](../packages/boot/app-boot) (`emit`) | [`settings`](../packages/settings/settings) |
+| `app-boot/config-reload` | `emit` | [`packages/boot/app-boot/src/index.ts:59`](../packages/boot/app-boot/src/index.ts) | [`app-boot`](../packages/boot/app-boot) (`emit`) | [`settings`](../packages/settings/settings) |
 | `approval/request` | `waterfall` | [`packages/interaction/user-approval/src/types.ts:87`](../packages/interaction/user-approval/src/types.ts) | [`user-approval`](../packages/interaction/user-approval) (`waterfall`) | [`acp`](../packages/acp/acp), `remotes` |
 | `authorization/settled` | `emit` | [`packages/credentials/authorization/src/index.ts:57`](../packages/credentials/authorization/src/index.ts) | [`authorization`](../packages/credentials/authorization) (`events.dispatch`) | - |
 | `commands/change` | `emit` | [`packages/interaction/commands/src/types.ts:89`](../packages/interaction/commands/src/types.ts) | [`commands`](../packages/interaction/commands) (`events.dispatch`) | `remotes` |
@@ -59,9 +59,9 @@
 | `llm/adapters-updated` | `emit` | [`packages/llm/llm/src/types.ts:23`](../packages/llm/llm/src/types.ts) | [`llm`](../packages/llm/llm) (`events.dispatch`) | [`acp`](../packages/acp/acp), `remotes` |
 | `llm/stream` | `waterfall` | [`packages/llm/llm/src/index.ts:77`](../packages/llm/llm/src/index.ts) | [`llm`](../packages/llm/llm) (`waterfall`) | [`llm-replay`](../packages/test-support/llm-replay), [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy), [`session-title`](../packages/session/session-title) |
 | `permission-presets/catalog-changed` | `emit` | [`packages/interaction/permission-presets/src/types.ts:48`](../packages/interaction/permission-presets/src/types.ts) | [`permission-presets`](../packages/interaction/permission-presets) (`events.dispatch`) | `remotes` |
-| `plugin-manager/changed` | `emit` | [`packages/boot/plugin-manager/src/types.ts:250`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
-| `plugin-manager/install-log` | `emit` | [`packages/boot/plugin-manager/src/types.ts:256`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
-| `plugin-manager/install-state` | `emit` | [`packages/boot/plugin-manager/src/types.ts:263`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
+| `plugin-manager/changed` | `emit` | [`packages/boot/plugin-manager/src/types.ts:254`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
+| `plugin-manager/install-log` | `emit` | [`packages/boot/plugin-manager/src/types.ts:260`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
+| `plugin-manager/install-state` | `emit` | [`packages/boot/plugin-manager/src/types.ts:267`](../packages/boot/plugin-manager/src/types.ts) | [`plugin-manager`](../packages/boot/plugin-manager) (`emit`) | `remotes` |
 | `schedule/changed` | `emit` | [`packages/schedule/schedule/src/types.ts:478`](../packages/schedule/schedule/src/types.ts) | [`schedule`](../packages/schedule/schedule) (`emit`) | `remotes` |
 | `session-telemetry/record` | `waterfall` | [`packages/session/session-telemetry/src/index.ts:44`](../packages/session/session-telemetry/src/index.ts) | [`session-telemetry`](../packages/session/session-telemetry) (`waterfall`) | - |
 | `session/created` | `emit` | [`packages/core/session/src/index.ts:54`](../packages/core/session/src/index.ts) | [`session`](../packages/core/session) (`events.dispatch`) | [`permission-presets`](../packages/interaction/permission-presets), [`schedule`](../packages/schedule/schedule), `server`, `session-controller`, [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-telemetry`](../packages/session/session-telemetry) |
@@ -99,7 +99,7 @@
 <!-- BEGIN GENERATED event-producer-consumer:undeclared -->
 | Event string | Dispatchers | Listeners |
 | --- | --- | --- |
-| `internal/config` | [`config-editor`](../packages/boot/config-editor) (`waterfall`) | [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`mcp-client`](../packages/mcp/mcp-client) |
+| `internal/config` | [`app-boot`](../packages/boot/app-boot) (`waterfall`), [`config-editor`](../packages/boot/config-editor) (`waterfall`) | [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`mcp-client`](../packages/mcp/mcp-client) |
 | `internal/dispatch` | - | [`terminal-bash`](../packages/terminal/terminal-bash) |
 | `internal/plugin` | - | `computer-use-cua-driver-native`, `inspector`, `loader`, [`lsp-stdio`](../packages/lsp/lsp-stdio), [`mcp-client`](../packages/mcp/mcp-client), `modules` |
 | `internal/service` | - | `gateway` |

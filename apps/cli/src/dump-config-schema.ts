@@ -7,6 +7,7 @@
 /* v8 ignore file -- built-bin acceptance drives schema collection and output. */
 
 import { generateConfigSchema, type ConfigSchemaDump } from '@deepseek-ai/dsh-app-boot'
+import { currentRuntimeAdmission } from '@deepseek-ai/dsh-app-boot/runtime-admission'
 import { collectConfigDumpLayers } from './dump-config.ts'
 import { INSTALL_ANCHOR, prepareProfile } from './profile-boot.ts'
 
@@ -35,7 +36,9 @@ export async function runDumpConfigSchema(
   // Trusted module diagnostics must not precede the JSON document on stdout.
   process.stdout.write = process.stderr.write.bind(process.stderr)
   try {
-    dump = await generateConfigSchema(loaded, layers.map(layer => layer.patches), INSTALL_ANCHOR)
+    const admission = currentRuntimeAdmission()
+    dump = await generateConfigSchema(loaded, layers.map(layer => layer.patches), admission?.status === 'managed' ? admission.installAnchor : INSTALL_ANCHOR,
+      admission?.status === 'managed' ? admission : undefined)
   } finally {
     process.stdout.write = stdoutWrite
   }

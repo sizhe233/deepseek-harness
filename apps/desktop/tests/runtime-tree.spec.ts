@@ -46,14 +46,15 @@ it('reads file inventory records unchanged during startup', () => {
   writeFileSync(path, JSON.stringify(descriptor))
   expect(readDesktopRuntime(dsh).files).toEqual(descriptor.files)
 })
-it.each(['missing', 'directory'])('checks a %s Host entry only during build verification', async (operation) => {
-  const dsh = join(fixture(), 'dsh')
-  const path = join(dsh, 'node_modules', DESKTOP_HOST_PACKAGE, DESKTOP_HOST_RUNTIME_FILES[0])
-  rmSync(path)
-  if (operation === 'directory') mkdirSync(path)
-  expect(readDesktopRuntime(dsh).release.version).toBe('1.0.0')
-  await expect(verifyDesktopRuntime(dsh, '1.0.0')).rejects.toThrow(/integrity/u)
-})
+it.each(DESKTOP_HOST_RUNTIME_FILES.flatMap(file => ['missing', 'directory'].map(operation => ({ file, operation }))))(
+  'checks $operation Host file $file during build verification', async ({ file, operation }) => {
+    const dsh = join(fixture(), 'dsh')
+    const path = join(dsh, 'node_modules', DESKTOP_HOST_PACKAGE, file)
+    rmSync(path)
+    if (operation === 'directory') mkdirSync(path)
+    expect(readDesktopRuntime(dsh).release.version).toBe('1.0.0')
+    await expect(verifyDesktopRuntime(dsh, '1.0.0')).rejects.toThrow(/integrity/u)
+  })
 it('checks the bundled version only during build verification', async () => {
   const dsh = join(fixture(), 'dsh')
   expect(readDesktopRuntime(dsh).release.version).toBe('1.0.0')

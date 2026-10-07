@@ -1034,10 +1034,15 @@ importers:
       '@deepseek-ai/node-addon-system-linux-x64':
         specifier: workspace:~
         version: link:../linux-x64
+      '@deepseek-ai/node-addon-system-win32-x64':
+        specifier: workspace:~
+        version: link:../win32-x64
 
   native/system/packages/linux-arm64: {}
 
   native/system/packages/linux-x64: {}
+
+  native/system/packages/win32-x64: {}
 
   packages/acp/acp:
     dependencies:
@@ -1703,6 +1708,9 @@ importers:
       '@deepseek-ai/dsh-atomic-write':
         specifier: workspace:*
         version: link:../../util/atomic-write
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
       '@deepseek-ai/dsh-package-manifest':
         specifier: workspace:*
         version: link:../../util/package-manifest
@@ -7747,6 +7755,9 @@ importers:
       '@deepseek-ai/dsh-agent-loop-testkit':
         specifier: workspace:*
         version: link:../../test-support/agent-loop-testkit
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:*
         version: link:../../attachment/attachment
@@ -11417,6 +11428,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
@@ -11738,6 +11752,9 @@ importers:
       '@deepseek-ai/cosmokit':
         specifier: link:../../../vendor/cosmokit
         version: link:../../../vendor/cosmokit
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-config-editor':
         specifier: workspace:*
         version: link:../../boot/config-editor
@@ -11760,9 +11777,6 @@ importers:
       '@deepseek-ai/dsh-agent-default-model':
         specifier: workspace:*
         version: link:../../core/agent-default-model
-      '@deepseek-ai/dsh-app-boot':
-        specifier: workspace:*
-        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
@@ -12552,6 +12566,22 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:*
         version: link:../../subprocess/subprocess-local
+
+  packages/storage/private-storage:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/node-addon-system':
+        specifier: workspace:~
+        version: link:../../../native/system/packages/entry
+      koffi:
+        specifier: 3.1.1
+        version: 3.1.1
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
 
   packages/storage/storage:
     devDependencies:
@@ -14961,6 +14991,9 @@ importers:
       js-yaml:
         specifier: ^4.1.0
         version: 4.2.0
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
 
   vendor/loader:
     dependencies:

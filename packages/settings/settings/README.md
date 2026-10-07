@@ -32,7 +32,7 @@ Mount this plugin with Loader and [config-editor](../../boot/config-editor/READM
 
 This plugin has no configuration fields. Forms expose only volatile fields from active, uniquely addressed profile entries. Ordinary configuration remains editable through Cordis configuration files.
 
-Once the Loader has settled every entry after Settings starts, a `settings.yaml` left in the harness home by earlier releases is imported once: each section is written into the entry of the same id (`ui-developer-tools` → `ui-settings`, `ui-onboarding` → `ui-settings-general`, `shell` → the platform's shell executor entry, `mcp-client` → `mcp-configuration`), the file is renamed to `settings.yaml.imported` before the first write, and a section the running composition rejects is logged and stays only in the renamed file.
+For an unenrolled Profile, once the Loader has settled every entry after Settings starts, a `settings.yaml` left in the harness home by earlier releases is imported once: each section is written into the entry of the same id (`ui-developer-tools` → `ui-settings`, `ui-onboarding` → `ui-settings-general`, `shell` → the platform's shell executor entry, `mcp-client` → `mcp-configuration`), the file is renamed to `settings.yaml.imported` before the first write, and a section the running composition rejects is logged and stays only in the renamed file.
 
 Reset restores the value beneath the profile override, including schema defaults. Home patches and command-line overlays take precedence; a form write that they would override is refused.
 
@@ -69,6 +69,8 @@ Consumers that change request prefixes determine cache effects.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
+
+Managed form edits use the native document authority through ConfigEditor. The logical `documentPath` is diagnostic and cannot be handed to an external editor as current content. With qualified native drafts, external opening creates an editing copy. Save it in the editor, then use **Apply saved copy**; imports compare both the exact base view and saved-byte digest before publication, and ordinary Loader reconciliation follows. Stale or invalid copies remain available for review. Native legacy import retains per-section publication receipts and rejections in the provider’s committed-state ledger, so interruption cannot duplicate a completed import. Original files are never renamed. Missing capabilities refuse safely, while ordinary forms remain usable.
 
 - Nested Includes own separate configurations and are not editable through the active profile’s form.
 - Field-level resets restore inherited values; they cannot delete a value supplied by a lower configuration layer. Unsetting an array index removes that element.

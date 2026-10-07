@@ -12,6 +12,7 @@ import {
   type RuntimeInterception,
 } from './resolver.ts'
 import { ProfileRuntimeResolution, type RuntimeResolution } from '../profile.ts'
+import type { AdmittedPackageGraph } from '../runtime-admission.ts'
 import { readPluginMeta } from '../package-meta.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -39,6 +40,8 @@ export interface PluginPackage {
 export interface PluginPackagesConfig {
   /** Complete package table; omit it to expose native package lookup only. */
   resolution?: RuntimeResolution
+  /** Launcher-installed immutable gate: metadata only, with no second interception. */
+  admitted?: AdmittedPackageGraph
 }
 
 function readPackage(dir: string, fallbackName: string): PluginPackage | undefined {
@@ -62,9 +65,16 @@ export class PluginPackages extends Service {
   private readonly interception: RuntimeInterception | undefined
   private disposeWorkerResolution: (() => void) | undefined
   private current: RuntimeResolution | undefined
+  private readonly admitted: AdmittedPackageGraph | undefined
 
   constructor(ctx: Context, config: PluginPackagesConfig = {}) {
     super(ctx, 'pluginPackages')
+    this.admitted = config.admitted
+    if (config.admitted !== undefined) {
+      if (config.resolution !== undefined) throw new Error('plugin-packages: two runtime resolution authorities')
+      this.current = config.admitted.resolution
+      return
+    }
     if (config.resolution === undefined) return
     this.current = config.resolution
     const interception = installRuntimeInterception(config.resolution)
@@ -84,6 +94,7 @@ export class PluginPackages extends Service {
    * @param successor - fully constructed generation accepted by {@link RuntimeInterception.replace}.
    */
   replace(successor: RuntimeResolution): void {
+    if (this.admitted !== undefined) throw new Error('plugin-packages: managed code requires a new process activation')
     if (this.interception === undefined) throw new Error('plugin-packages: runtime resolution is not installed')
     this.interception.replace(successor)
     this.current = successor
@@ -99,6 +110,7 @@ export class PluginPackages extends Service {
    * reading the latest files fails, or the successor is rejected. A computed resolution without a profile can refresh.
    */
   async refresh(): Promise<void> {
+    if (this.admitted !== undefined) return // Live documents retain this process’s admitted graph.
     if (!(this.current instanceof ProfileRuntimeResolution)) {
       throw new Error('plugin-packages: the installed runtime resolution cannot be recomputed')
     }
@@ -112,6 +124,7 @@ export class PluginPackages extends Service {
    * @returns the parsed package, or undefined when no package owns the request.
    */
   packageOf(specifier: string, parentURL: string): PluginPackage | undefined {
+    if (this.admitted !== undefined) return this.admitted.packageOf(specifier, parentURL)
     const name = barePackageName(specifier)
     if (name === undefined) return undefined
     const dir = this.interception === undefined

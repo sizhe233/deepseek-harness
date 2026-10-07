@@ -36,6 +36,8 @@ dsh --help                          # the launcher's own help
 
 profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile`、其中按顺序排列的 `bundles` 列表；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。在 YAML 中启用的 `dsh-hmr` 监视 profile manifest、profile 与 home 级 patch 文件，再通过统一串行重载重新组合所有层。未启用 HMR 时，更改在重启后生效。监听器注册期间发生的编辑与后续编辑使用相同的非致命重载错误报告。[插件管理器](../../packages/boot/plugin-manager/README.zh.md) 与 `dsh plugin` 共享包操作和 profile 写锁；更新依赖会保留已停用的组合包选择。CLI 包操作继承认证环境和终端描述符，支持交互式构建批准；service 调用保留清理后的环境并捕获诊断。
 
+对于已登记的 Profile，`dsh plugin` 使用启动器现有的原生接纳结果。精确版本命令使用其文档能力；其他 pnpm 参数原样交给已安装的包操作提供方，保留 CLI 认证和终端行为。命令不初始化、锁定或改写原始逻辑 Profile。包准备与代码／文档发布共用一个持久操作 ID；即使 pnpm 以零退出，发布未确认时命令仍失败退出。能力缺失或选择不匹配时拒绝操作，不回退到原路径行为。
+
 安装和 profile 启动会按声明的 DSH peer 范围，检查与 `dsh --version` 显示值相同的运行时版本。不兼容插件需要用户明确确认精确版本豁免。[插件管理器的兼容性参考](../../packages/boot/plugin-manager/README.zh.md#version-compatibility-and-exemptions)说明 `version-exemptions`、`allow-version`、`revoke-version`、持久化规则与风险。
 
 配置树以空根为起点，依次叠加以下配置层：
@@ -53,12 +55,13 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 `config/examples/` 交付 GitHub 评审 webhook、记忆 MCP 服务器与运行时 Cordis 工具的可选覆盖层。它们绝不属于默认 profile；设置与安全说明由[用户指南](../../docs/user/guide/index.zh.md)和[开发实战指南](../../docs/user/develop/practice/index.zh.md)负责。
 
+<a id="development"></a>
 ## 开发
 
 生产运行需要已构建的包与前端产物。请在仓库根目录单独运行 `pnpm run build`，然后使用 `pnpm dsh <args...>` 运行 TypeScript 入口并转发所有参数；模块解析约定以[源码执行参考](reference/README.zh.md#source-execution)为准。
 
 `@deepseek-ai/dsh/profile-boot` 导出向 Desktop Host 提供共享 profile 生命周期。已解析的应用 profile 为运行时包解析指定自己的安装锚点，同时沿用 Harness home patch、代理环境、遥测开关、patch 热重载和有界关闭。
 
-打包安装通过同一个 `runCli()` 入口传入包管理器可执行文件。Desktop 载体还会启用其已初始化 profile 的插件操作；npm 启动不传入这些选项。安装包提供的包管理环境仅用于插件包操作；调用目录、普通 profile 选择与 agent shell 的 PATH 保留 CLI 语义。
+安装后的 `lib/bin.js` 包装入口读取真实运行时版本，解析一个不加载应用代码的载体描述，再动态调用 `lib/cli-main.js`。帮助、版本和启动器参数错误在导入应用代码前结束。描述器解析字面的 Home 路径，不创建目录，也不解析真实路径；dump 与插件命令保留原有初始化和串行化行为。打包安装通过同一个可重复调用的 `runCli()` API 传入包管理器可执行文件。Desktop 载体还会启用其已初始化 profile 的插件操作；npm 启动不传入这些选项。安装包提供的包管理环境仅用于插件包操作；调用目录、普通 profile 选择与 agent shell 的 PATH 保留 CLI 语义。
 
 [Web 失败矩阵](tests/profiles/web/tests/web-failure-matrix.expected.e2e.ts)在 `test:expected` 中通过构建后的 CLI 验证启动失败与启用 `awaitWriteFinish` 的原生配置 HMR。它不调用模型 API，而是检查经过认证的 HTTP 响应、诊断、恢复、进程退出与 dispose；[启动验收测试](tests/profiles/web/tests/web-best-effort-startup.expected.e2e.ts)还覆盖随附 Web 的必需依赖与端口冲突。

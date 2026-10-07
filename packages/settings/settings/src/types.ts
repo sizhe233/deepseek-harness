@@ -57,7 +57,7 @@ export type SettingsPathOpView =
 export interface SettingsDescribeValue {
   /** Whether the profile accepts writes; `false` disables every write control. */
   writable: boolean
-  /** Whether the configuration editor owns a local document, without exposing its Host path. */
+  /** Whether the provider can prepare an editable local document, without exposing its Host path. */
   hasDocument: boolean
   /** One view per profile plugin entry. */
   namespaces: SettingsNamespaceView[]

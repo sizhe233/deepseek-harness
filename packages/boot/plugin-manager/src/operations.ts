@@ -17,6 +17,12 @@ import { awaitTreeGone, leadsOwnGroup, treeAlive, type RunTree } from './run-tre
 import { incompatiblePlugin } from './failure.ts'
 import type { IncompatiblePlugin, PackageResult, Registry } from './types.ts'
 export { setProfileVersionExemption, readProfileVersionExemptions } from '@deepseek-ai/dsh-app-boot'
+export type * from './managed-operations.ts'
+export { createProfilePackageOperationId } from './managed-operations.ts'
+export { approveBuilds, readPendingBuilds } from './build-approval.ts'
+export { checkGithubConnection } from './github-connection.ts'
+export { parseInstallSpec } from './install-spec.ts'
+export { classifyInstallFailure } from './install-failure.ts'
 
 /** Profile and invocation locations supplied by the launcher. */
 export interface PackageOperationContext {
@@ -623,12 +629,30 @@ export function registryArguments(registry: Registry): string[] {
  * @returns pnpm's exit, output, and how the lookup ended.
  */
 export async function viewProfilePackage(dir: string, spec: string, options: PackageViewOptions): Promise<PackageViewResult> {
+  return viewPackageFields(dir, spec, ['name', 'version', 'description', 'dsh'], options)
+}
+
+/**
+ * Ask the configured registry for one archive's exact identity without installing it.
+ * @param dir The updater working directory with the operation's package configuration.
+ * @param spec Exact package name and version; the caller verifies the returned identity and lock integrity.
+ * @param options Existing executable, registry, credential inheritance, cancellation and deadline policy.
+ * @returns Bounded pnpm metadata output; no archive bytes are downloaded by this lookup.
+ */
+export async function viewProfilePackageArchive(dir: string, spec: string,
+  options: PackageViewOptions & { readonly execution: 'cli' | 'service' }): Promise<PackageViewResult> {
+  return viewPackageFields(dir, spec, ['name', 'version', 'dist'], options, options.execution)
+}
+
+/** One bounded configured pnpm metadata command; callers own interpretation of its fields. */
+async function viewPackageFields(dir: string, spec: string, fields: readonly string[], options: PackageViewOptions,
+  execution: 'cli' | 'service' = 'service'): Promise<PackageViewResult> {
   const result = await execa(options.command ?? 'pnpm', [
-    ...options.args ?? [], 'view', spec, 'name', 'version', 'description', 'dsh', '--json',
+    ...options.args ?? [], 'view', spec, ...fields, '--json',
     ...registryArguments(options.registry ?? null), '--config.fetch-retries=0',
   ], {
-    cwd: dir, env: { ...scrubbedParentEnv(), ...options.env }, extendEnv: false, reject: false, stdin: 'ignore',
-    timeout: options.timeoutMs, ...options.signal === undefined ? {} : { cancelSignal: options.signal },
+    cwd: dir, env: { ...(execution === 'cli' ? process.env : scrubbedParentEnv()), ...options.env }, extendEnv: false, reject: false, stdin: 'ignore',
+    maxBuffer: 1024 * 1024, timeout: options.timeoutMs, ...options.signal === undefined ? {} : { cancelSignal: options.signal },
   })
   const cause = result.exitCode === undefined && !result.timedOut && !result.isCanceled
     ? Object.assign(new Error(result.shortMessage), { code: result.code })

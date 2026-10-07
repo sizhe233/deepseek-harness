@@ -1,0 +1,44 @@
+{
+  "name": "@deepseek-ai/dsh-private-storage",
+  "description": "Retained-handle private byte storage and writer leases on local Windows NTFS",
+  "version": "0.2.1-alpha.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/storage/private-storage"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./streams": {
+      "types": "./lib/types/streams.d.ts",
+      "default": "./lib/streams.js"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/streams.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "dependencies": {
+    "koffi": "3.1.1",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/node-addon-system": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  }
+}

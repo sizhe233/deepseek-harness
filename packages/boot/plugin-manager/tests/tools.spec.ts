@@ -214,6 +214,9 @@ it('forwards all mutation actions and renders the returned outcome', async () =>
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { enabled: false })
   await call({ action: 'install_bundle', target: 'bundle', approvedBuilds: ['native'] })
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { approvedBuilds: ['native'] })
+  const approvalOperationId = 'a'.repeat(64)
+  await call({ action: 'install_bundle', target: 'bundle', approvedBuilds: ['native'], approvalOperationId })
+  expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { approvedBuilds: ['native'], approvalOperationId })
   await call({ action: 'install_bundle', target: 'bundle', registry: 'https://registry.npmmirror.com/' })
   expect(manager.installBundle).toHaveBeenLastCalledWith('bundle', { registry: 'https://registry.npmmirror.com/' })
   expect(resultText(await call({ action: 'remove_bundle', target: 'bundle' }))).toContain('"application":"failed"')
@@ -230,6 +233,7 @@ it.each([
   { action: 'set_plugin', enabled: true },
   { action: 'set_bundle', target: 'bundle' },
   { action: 'install_bundle' }, { action: 'remove_bundle' },
+  { action: 'install_bundle', target: 'bundle', approvalOperationId: 'not-an-operation' },
   { action: 'set_version_exemption', enabled: true, runtimeVersion: '1.0.0' },
   { action: 'set_version_exemption', target: 'plugin@1.0.0', enabled: true },
   { action: 'set_version_exemption', target: 'plugin@1.0.0', runtimeVersion: '1.0.0' },

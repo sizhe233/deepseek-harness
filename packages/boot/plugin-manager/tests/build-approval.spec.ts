@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, it, onTestFinished } from 'vitest'
 import { parse } from 'yaml'
-import { approveBuilds, readPendingBuilds } from '../src/build-approval.ts'
+import { approveBuilds, deriveBuildApprovalText, pendingBuildsFromText, readPendingBuilds } from '../src/build-approval.ts'
 
 function fixture(text?: string) {
   const dir = mkdtempSync(join(tmpdir(), 'build-approval-'))
@@ -37,6 +37,20 @@ it('preserves pnpm file dependency selectors verbatim', async () => {
   expect(await readPendingBuilds(dir)).toEqual([name])
   await approveBuilds(dir, [name])
   expect(parse(readFileSync(filename, 'utf8'))).toEqual({ allowBuilds: { [name]: true } })
+})
+
+it('derives only approved pending decisions from an admitted snapshot without changing original policy', () => {
+  const original = 'allowBuilds:\n  native: false\n'
+  const { filename } = fixture(original)
+  const admitted = '# managed policy\nallowBuilds:\n  native: set this to true or false\n  denied: false\n'
+  expect(pendingBuildsFromText(admitted)).toEqual(['native'])
+  const next = deriveBuildApprovalText(admitted, ['native'])
+  if (next === undefined) throw new Error('Expected an admitted build-policy edit')
+  expect(next).toContain('# managed policy')
+  expect(parse(next)).toEqual({ allowBuilds: { native: true, denied: false } })
+  expect(() => deriveBuildApprovalText(admitted, ['native', 'denied'])).toThrow('stale-approval')
+  expect(deriveBuildApprovalText(admitted, [])).toBeUndefined()
+  expect(readFileSync(filename, 'utf8')).toBe(original)
 })
 
 it.each([undefined, '{}\n', 'nodeLinker: hoisted\n', 'allowBuilds: {}\n'])('has no pending approval without pnpm placeholders: %s', async (text) => {

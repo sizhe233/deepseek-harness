@@ -60,6 +60,8 @@ Keep this log exhaustive — every divergence from upstream must be listed.
 
 23. **`loader/src/config/entry.ts` module identity**: retains each entry's raw import result as `moduleNamespace`, before plugin export normalization. HMR matches that object to Node's cached module namespace and updates it after a successful reload. `EntryTree.import()` keeps its existing arguments and return value; `loader/README.md` documents the additive field.
 
+24. **`include/src/{index,document-source}.ts` admitted document adapters**: adds a launcher-bound source with captured compare-and-publish handles, explicit absence and write disposition, and retired-binding refusal. Managed Includes retain logical filenames and module bases, never reopen or overwrite originals, publish missing initial documents through the native owner, surface failed managed refreshes, and discard root composition write-back. Nested Includes derive source-owned changes, preserve unchanged YAML nodes/comments and `!!js`, and verify recomposition before publication; overlay-owned changes refuse. The `yaml` dependency supports this lossless node editing. Ordinary file-backed initialization, refresh, debouncing and teardown remain unchanged. Covered by `packages/boot/app-boot/tests/include-document-source.spec.ts` and the ConfigEditor/HMR document suites.
+
 ## Sync procedure
 
 To update a vendored package from upstream:

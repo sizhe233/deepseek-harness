@@ -24,6 +24,7 @@ export interface DesktopBackendHost {
 
 interface Attempt<Host> {
   cancelled: boolean
+  initializing?: boolean
   failure?: Error
   host?: Host
   cleanup?: Promise<void>
@@ -77,7 +78,9 @@ export class DesktopBackendController<Host extends DesktopBackendHost> {
         if (attempt.cancelled) return
         const host = this.createHost((error) => { this.failed(attempt, error) })
         attempt.host = host
-        await host.start()
+        attempt.initializing = true
+        try { await host.start() }
+        finally { attempt.initializing = false }
         if (attempt.failure !== undefined) throw attempt.failure
         // stop() can cancel this attempt while the child starts.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -95,6 +98,51 @@ export class DesktopBackendController<Host extends DesktopBackendHost> {
     }).finally(() => { if (this.pending === pending) this.pending = undefined })
     this.pending = pending
     return pending
+  }
+
+  /**
+   * Keep the same shell owner while its managed coordinator replaces the child.
+   * @param host - The exact starting or ready owner; an unrelated owner cannot take over.
+   * @param operation - Replacement including drain, adoption and ordinary readiness binding.
+   * @returns The coordinator result after the replacement becomes available.
+   */
+  continueHost<T>(host: Host, operation: () => Promise<T>): Promise<T> {
+    const attempt = this.attempt
+    // Initial admission/recovery remains part of start(), whose pending promise
+    // already joins this host and whose cleanup owns cancellation.
+    if (!this.closed && this.stopping === undefined && this.pending !== undefined
+      && this.current.phase === 'starting' && attempt?.host === host && attempt.initializing === true && !attempt.cancelled) return operation()
+    if (this.closed || this.stopping !== undefined || this.pending !== undefined
+      || this.current.phase !== 'ready' || attempt?.host !== host || attempt.cancelled) {
+      return Promise.reject(new Error('desktop backend replacement is unavailable'))
+    }
+    this.update({ phase: 'starting' })
+    const result = Promise.resolve().then(async () => {
+      try {
+        if (attempt.cancelled) throw new DOMException('Desktop backend is stopping', 'AbortError')
+        const value = await operation()
+        if (attempt.failure !== undefined) throw attempt.failure
+        // stop() can cancel the owner while its replacement is being adopted.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (attempt.cancelled) throw new DOMException('Desktop backend is stopping', 'AbortError')
+        this.update({ phase: 'ready' })
+        return value
+      } catch (error) {
+        const cancelled = attempt.cancelled
+        attempt.cancelled = true
+        let failure = error
+        try { await this.cleanup(attempt) } catch (cleanupError) {
+          if (cleanupError !== error) failure = new AggregateError([error, cleanupError], 'desktop backend replacement and cleanup failed')
+        }
+        if (!cancelled) this.update(errorState(failure))
+        throw failure
+      }
+    })
+    // Track settlement without manufacturing a second rejected promise for the
+    // caller's typed result. stop() owns cleanup and joins this same operation.
+    const pending = result.then(() => {}, () => {}).finally(() => { if (this.pending === pending) this.pending = undefined })
+    this.pending = pending
+    return result
   }
 
   /**

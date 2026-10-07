@@ -17,7 +17,10 @@ import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
+export { readProfilePatches, readProfilePatchesFromView, resolveTelemetryPatch, type ProfileDocumentLayers, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
+export * from './profile-document-view.ts'
+export * from './profile-documents.ts'
+export * from './profile-document-semantics.ts'
 export { sanitizeProfile } from './profile-sanitize.ts'
 export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, type PluginCompatibility } from './plugin-compatibility.ts'
 export {
@@ -25,6 +28,10 @@ export {
   setProfileVersionExemption, type ProfileCompatibility,
 } from './profile-compatibility.ts'
 import { prepareProfilePatches } from './compatibility-preflight.ts'
+import { parsePatchList } from './patch-list.ts'
+import { currentProfileDocumentView, withProfileDocumentView } from './profile-documents.ts'
+import { readProfilePatchesFromView } from './profile-context.ts'
+export { parsePatchList } from './patch-list.ts'
 export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts'
 export { readPluginMeta } from './package-meta.ts'
 export { generateConfigSchema, type ConfigSchemaDump, type NativeConfigSchema } from './config-schema/index.ts'
@@ -257,22 +264,16 @@ export function loadLayeredEnv(
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
 
-// The include's YAML dialect (`!!js` scalars become expression nodes the
-// Loader interpolates against each entry's injection-ready context), imported
-// from the include itself so patch parsing and config dumping can never drift
-// from what the include mounts. User patch layers share it so they may
-// reference `process.env`.
-const userPatchesSchema = entryListSchema
-
 /** Apply one complete patch generation and wait for Loader activation diagnostics.
  * @param ctx Booted root context.
  * @param patches Complete ordered patch list.
  * @param binName Diagnostic prefix.
  * @param requiredIds Explicit enablement targets whose existing failures also reject reconciliation.
+ * @param refreshIncludes Refresh nested Includes from the bound admitted document view before auditing activation.
  * @returns Diagnostics for unchanged pre-existing inactive entries; new or changed failures reject.
  */
 export async function reconcileProfilePatches(
-  ctx: Context, patches: PatchOptions[], binName: string, requiredIds: readonly string[] = [],
+  ctx: Context, patches: PatchOptions[], binName: string, requiredIds: readonly string[] = [], refreshIncludes = false,
 ): Promise<string[]> {
   const entry = bootstrapIncludes.get(ctx)
   if (entry === undefined) throw new Error(`${binName}: profile reload requires the root Include entry`)
@@ -290,6 +291,12 @@ export async function reconcileProfilePatches(
   await entry.update({ config: { ...includeConfig, patches: prepared } })
   const results = await Promise.allSettled(previousFibers.map(({ fiber }) => fiber.await()))
   await ctx.loader.await()
+  if (refreshIncludes) {
+    for (const row of ctx.loader.entries()) {
+      if (row !== entry && row.subtree instanceof Include) await row.subtree.refresh()
+    }
+    await ctx.loader.await()
+  }
   const failures = await inactiveEntries(ctx)
   const introduced = failures.filter(failure => requiredIds.includes(failure.entry.options.id) || !previousFailures.some(previous =>
     previous.entry === failure.entry && previous.fiber === failure.entry.fiber
@@ -341,51 +348,6 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
     throw new Error(`${binName}: failed to read overlay ${file}: ${String(error)}`)
   }
   return parsePatchList(binName, file, content, 'overlay')
-}
-
-/** Convert inserted filesystem paths to file URLs, anchoring relative paths beside the patch; keep assertion names literal. */
-function anchorInsertedPluginNames(patches: PatchOptions[], file: string): PatchOptions[] {
-  const base = dirname(resolve(file))
-  const visit = (entry: EntryOptions): void => {
-    if (typeof entry.name === 'string' && (isAbsolute(entry.name) || entry.name.startsWith('./') || entry.name.startsWith('../'))) {
-      entry.name = pathToFileURL(resolve(base, entry.name)).href
-    }
-    if (entry.group && Array.isArray(entry.config)) entry.config.forEach(visit)
-  }
-  for (const patch of patches) patch.insert?.forEach(visit)
-  return patches
-}
-/**
- * Parse one loader patch list: a top-level YAML array of
- * `@deepseek-ai/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
- * `insert` lists, `!!js` expressions allowed). Every invalid field or value throws,
- * because a patch file that cannot be applied at all is a misconfiguration; a
- * single patch whose target row is absent stays a per-entry Loader warning, so
- * one overlay shared across surfaces does not have to match every tree.
- * @param binName - the diagnostic prefix on the thrown error.
- * @param file - the source path, quoted in errors.
- * @param content - the file's text.
- * @param label - what to call this list in errors (`patches`, `overlay`).
- * @returns the parsed patch list.
- */
-function parsePatchList(
-  binName: string, file: string, content: string, label: string,
-): PatchOptions[] {
-  let parsed: unknown
-  try {
-    parsed = yaml.load(content, { schema: userPatchesSchema })
-  } catch (error) {
-    throw new Error(`${binName}: failed to parse ${label} ${file}: ${String(error)}`)
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`${binName}: ${label} ${file} must be a top-level YAML array of loader patch entries`)
-  }
-  parsed.forEach((entry, index) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      throw new Error(`${binName}: ${label} entry ${index + 1} in ${file} must be a mapping (a loader patch entry)`)
-    }
-  })
-  return anchorInsertedPluginNames(parsed as PatchOptions[], file)
 }
 
 /** One overlay patch list with the source label printed in dump comments. */
@@ -567,7 +529,16 @@ export async function mountRootInclude(
   // diagnostics unstable across runs (and snapshot fixtures).
   // The launcher's own copy is prepared here: compatibility decisions must be made before the root
   // Include imports anything, and they change no profile patch layer, manifest, or bundle list.
-  const prepared = prepareProfilePatches(ctx, [...patches], pathToFileURL(dirname(absoluteConfigPath)).href + '/', binName)
+  const view = currentProfileDocumentView(ctx)
+  const documents = ctx.get('profileDocuments')
+  const profile = ctx.get('profileContext')
+  const parentURL = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
+  const prepared = view === undefined ? prepareProfilePatches(ctx, [...patches], parentURL, binName)
+    : (await withProfileDocumentView(ctx, view, () => {
+      if (documents === undefined || profile === undefined) throw new Error('Managed root Include requires its Profile document binding')
+      const selected = readProfilePatchesFromView(binName, profile, view, documents.bundleLayers(view))
+      return Promise.resolve(prepareProfilePatches(ctx, selected, parentURL, binName))
+    })).value
   const includeConfig: Include.Config = {
     path: pathToFileURL(absoluteConfigPath).href,
     ...prepared.length > 0 ? { patches: prepared } : {},
@@ -577,7 +548,8 @@ export async function mountRootInclude(
     name: 'cordis:include',
     config: includeConfig,
   }
-  const includeId = await ctx.loader.create(rootInclude)
+  const includeId = view === undefined ? await ctx.loader.create(rootInclude)
+    : (await withProfileDocumentView(ctx, view, () => ctx.loader.create(rootInclude))).value
   const loader = ctx.get('loader')
   if (loader === undefined) return undefined
   const entry = loader.resolve(includeId)

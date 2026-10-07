@@ -1,36 +1,30 @@
-/** Public dsh commands using the immutable runtime carried by the Desktop installation. */
+/** Application-free installed Desktop command carrier. */
 
-import { delimiter, dirname, join, resolve } from 'node:path'
-import { runCli } from '@deepseek-ai/dsh/lib/bin.js'
-import { installOfficeEngineResolution, runtimeArchivePath } from './office-engine.ts'
+import { basename, dirname, join, resolve } from 'node:path'
+import { failRuntimeCarrier } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+import { admitCarrierLaunch, prepareCarrierLaunch } from '@deepseek-ai/dsh/lib/carrier.js'
+
+async function startDesktopCli(runtimeDir: string, supportDir: string, installSignals: boolean): Promise<void> {
+  const launch = await admitCarrierLaunch(prepareCarrierLaunch({ carrier: 'desktop-cli', entryUrl: import.meta.url, manageDesktopProfile: true }))
+  try {
+    const { runDesktopCli: runCommand } = await import('./cli-main.ts')
+    await runCommand(launch, runtimeDir, supportDir, installSignals)
+  } catch (error) { await failRuntimeCarrier(launch.admission, error) }
+}
 
 /**
  * Run the ordinary CLI with Desktop's bundled package manager and reserved-profile plugin access.
  * @param runtimeDir - Prepared or ASAR-contained production DSH package tree.
  * @param supportDir - Physical Desktop runtime directory containing pnpm.
- * @returns Completion of the selected CLI command; profile plugins own their process lifetime.
+ * @returns completion of the selected CLI command; profile plugins own their process lifetime.
  */
 export async function runDesktopCli(runtimeDir: string, supportDir: string): Promise<void> {
-  installOfficeEngineResolution(runtimeDir)
-  await runCli({
-    manageDesktopProfile: true,
-    packageManager: {
-      command: process.execPath,
-      args: ['--expose-internals', join(supportDir, 'pnpm', 'bin', 'pnpm.mjs')],
-      env: {
-        ELECTRON_RUN_AS_NODE: '1',
-        DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
-        PATH: `${join(supportDir, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
-      },
-    },
-  })
+  await startDesktopCli(runtimeDir, supportDir, false)
 }
 
 if (import.meta.main) {
-  if (process.platform === 'win32') {
-    const { installWindowsCliSignals } = await import('./windows-cli-signals.ts')
-    await installWindowsCliSignals()
-  }
   const runtimeDir = resolve(import.meta.dirname, '../../../..')
-  await runDesktopCli(runtimeDir, join(dirname(runtimeArchivePath(runtimeDir) ?? runtimeDir), 'runtime'))
+  const parent = dirname(runtimeDir)
+  const installationDir = basename(parent) === 'app.asar' ? dirname(parent) : parent
+  await startDesktopCli(runtimeDir, join(installationDir, 'runtime'), true)
 }

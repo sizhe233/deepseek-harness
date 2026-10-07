@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { collectDependencyPatches } from './dependency-patches.mjs'
+import { preparePrivateStorageAcceptance } from './private-storage-artifact.mjs'
+import { prepareNativeCandidate } from './native-candidate.mjs'
 
 /** Read package identity and integrity from the archive that a consumer will install. */
 export function inspectPackageArchive(path) {
@@ -36,12 +38,13 @@ export function verifyNativeDependencyFiles(root, metadata) {
 }
 
 /** Package this clean source revision and record exact public artifact bytes; never touch a runtime or Home. */
-export function packCandidate() {
+export async function packCandidate() {
   const root = fileURLToPath(new URL('../', import.meta.url))
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
   assert.equal(git('status', '--porcelain'), '', 'candidate packaging requires a clean source revision')
   const commit = git('rev-parse', 'HEAD')
   const tree = git('rev-parse', 'HEAD^{tree}')
+  if (process.env.CANDIDATE_SHA) assert.equal(commit, process.env.CANDIDATE_SHA, 'candidate source differs from workflow head')
   const compatibility = JSON.parse(readFileSync(join(root, 'workbench/compatibility.json'), 'utf8'))
   const directory = join(root, 'workbench-artifacts')
   mkdirSync(directory, { recursive: true })
@@ -60,9 +63,11 @@ export function packCandidate() {
   })
   const chatPath = 'packages/client/ui-chat/lib/client.js'
   runtimeBundles.push({ name: '@deepseek-ai/dsh-client-ui-chat', path: 'lib/client.js', sourcePath: chatPath, sha256: createHash('sha256').update(readFileSync(join(root, chatPath))).digest('hex') })
-  const nativeDependencies = JSON.parse(readFileSync(join(root, 'workbench/native-dependencies.json'), 'utf8'))
-  verifyNativeDependencyFiles(root, nativeDependencies)
+  const nativeDependencies = await prepareNativeCandidate(root, stage, process.env.CANDIDATE_NATIVE_ARTIFACTS)
+  packages.push(...[nativeDependencies.package, ...nativeDependencies.platformPackages].map(({ name, version, file, bytes, sha256 }) => ({ name, version, file, bytes, sha256 })))
+  assertUniquePackages(packages)
   const dependencyPatches = collectDependencyPatches(root, stage)
+  const privateStorageAcceptance = await preparePrivateStorageAcceptance(root, stage, packages, { candidateNative: nativeDependencies })
   const manifest = {
     schemaVersion: 2,
     commit,
@@ -73,10 +78,11 @@ export function packCandidate() {
     runtimeBundles,
     externalNativeDependencies: nativeDependencies,
     dependencyPatches,
+    privateStorageAcceptance,
   }
   writeFileSync(join(stage, 'candidate.json'), JSON.stringify(manifest, null, 2) + '\n')
   renameSync(stage, destination)
   console.log(`Packaged ${packages.length} candidate archives for ${commit} at ${destination}`)
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) packCandidate()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await packCandidate()

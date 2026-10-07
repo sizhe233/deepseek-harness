@@ -19,6 +19,20 @@
       "napi": 8,
       "libc": "musl",
       "path": "bin/musl/system.node"
+    },
+    {
+      "tool": "private-storage",
+      "kind": "node-api",
+      "napi": 8,
+      "libc": "glibc",
+      "path": "bin/glibc/private-storage.node"
+    },
+    {
+      "tool": "private-storage",
+      "kind": "node-api",
+      "napi": 8,
+      "libc": "musl",
+      "path": "bin/musl/private-storage.node"
     }
   ]
 }

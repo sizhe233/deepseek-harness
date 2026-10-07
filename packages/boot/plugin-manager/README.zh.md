@@ -86,8 +86,12 @@ CLI 提供 `dsh plugin --profile <profile> version-exemptions`、`allow-version 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+由启动器管理的 Profile 从已接纳的原生文档视图读取配置。插件开关、bundle 选择和精确版本授权针对完整读取向量提交，保留原文件，并且只在收到确认回执后按原有 HMR／启动生命周期应用。Bundle 元数据与 patch 来自固定的已接纳依赖图。安装和依赖移除交给启动器的 `ProfilePackageOperations` 提供方，在更新器拥有的暂存区准备内容，并协调不可变代码与包文档；当前进程的代码图保持到重启。能力缺失或选择不匹配时拒绝操作，不写回原文件。受管结果保留 `operationId`；重复的安装 `requestId` 标识同一持久操作，提供方检查已保存的请求和结果，不再次执行脚本。现有的显式构建脚本同意、取消和 registry 规则继续生效；更新器回滚不隔离或撤销另行同意的脚本产生的任意副作用。 受管脚本授权重试将失败结果的 `operationId` 作为 `approvalOperationId`；新请求仍须匹配保留的待决定策略和当前包／文档选择。
+
 <details>
 <summary>实现细节——点击展开</summary>
+
+插件启用状态和依赖构建授权的修改均从一份完整文本快照推导。解析与校验不会重新打开其逻辑源文件名；结果由所属写入器单独持久化。
 
 服务与 `dsh plugin` 共用 [operations.ts](src/operations.ts) 中的包管理操作。启动器提供当前 profile；[DSH HMR](../hmr/README.zh.md) 串行执行模块重载、文件监听和管理写入。每次配置刷新重新读取组合包选择与 patch 层，更新原有根 Include，并等待已移除插件释放资源及剩余 Loader 树稳定。CLI 与 service 操作共用 profile manifest 写锁，防止并发包操作和 manifest 写入。HMR 不获取该锁。pnpm 在 HMR 队列之外执行；安装在 pnpm 成功后选入组合包，删除则在执行 pnpm 前取消选入并完成卸载。
 

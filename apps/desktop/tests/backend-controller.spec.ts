@@ -25,6 +25,80 @@ function fixture() {
 }
 
 describe('desktop backend controller', () => {
+  it('owns replacement availability and shares an in-flight continuation with start', async () => {
+    const f = fixture()
+    f.ready.resolve()
+    await f.controller.start(async () => {})
+    const entered = deferred()
+    const replaced = deferred()
+    const continuation = f.controller.continueHost(f.host, async () => { entered.resolve(); await replaced.promise; return 'B' })
+    await entered.promise
+    expect(f.controller.host).toBeUndefined()
+    expect(f.controller.state).toEqual({ phase: 'starting' })
+    const preparation = vi.fn(async () => {})
+    const same = f.controller.start(preparation)
+    await expect(f.controller.continueHost(f.host, async () => {})).rejects.toThrow('unavailable')
+    replaced.resolve()
+    await expect(continuation).resolves.toBe('B')
+    await same
+    expect(preparation).not.toHaveBeenCalled()
+    expect(f.create).toHaveBeenCalledTimes(1)
+    expect(f.controller.host).toBe(f.host)
+    f.exited.resolve()
+    await f.controller.close()
+  })
+
+  it('refuses foreign replacement owners and cancels before the operation begins', async () => {
+    const f = fixture()
+    f.ready.resolve()
+    await f.controller.start(async () => {})
+    const operation = vi.fn(async () => {})
+    await expect(f.controller.continueHost({ ...f.host }, operation)).rejects.toThrow('unavailable')
+    const pending = f.controller.continueHost(f.host, operation)
+    const rejected = expect(pending).rejects.toThrow('stopping')
+    const closed = f.controller.close()
+    f.exited.resolve()
+    await Promise.all([closed, rejected])
+    expect(operation).not.toHaveBeenCalled()
+    expect(f.host.stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('joins replacement work and cleanup when the shell closes', async () => {
+    const f = fixture()
+    f.ready.resolve()
+    await f.controller.start(async () => {})
+    const entered = deferred()
+    const finished = deferred()
+    const pending = f.controller.continueHost(f.host, async () => { entered.resolve(); await finished.promise })
+    const rejected = expect(pending).rejects.toThrow('stopping')
+    await entered.promise
+    let closed = false
+    const closing = f.controller.close().then(() => { closed = true })
+    await f.stopping.promise
+    f.exited.resolve()
+    await Promise.resolve()
+    expect(closed).toBe(false)
+    finished.resolve()
+    await Promise.all([closing, rejected])
+    expect(f.host.stop).toHaveBeenCalledTimes(1)
+    expect(f.states.at(-1)).toEqual({ phase: 'starting' })
+  })
+
+  it('cleans a failed replacement before publishing its failure', async () => {
+    const f = fixture()
+    f.ready.resolve()
+    await f.controller.start(async () => {})
+    const failure = new Error('replacement failed')
+    const pending = f.controller.continueHost(f.host, async () => { throw failure })
+    const rejected = expect(pending).rejects.toBe(failure)
+    await f.stopping.promise
+    expect(f.controller.state.phase).toBe('starting')
+    f.exited.resolve()
+    await rejected
+    expect(f.controller.state).toEqual({ phase: 'error', message: failure.message, failure })
+    expect(f.controller.host).toBeUndefined()
+  })
+
   it('shares preparation and startup between concurrent retries', async () => {
     const f = fixture()
     const prepare = vi.fn(async () => {})

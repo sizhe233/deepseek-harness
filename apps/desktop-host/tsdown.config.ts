@@ -1,13 +1,13 @@
 import { defineConfig } from 'tsdown'
 
-export default defineConfig(['index', 'cli'].map(name => ({
-  entry: ['lib/types/' + name + '.js'],
+/** Separate business entries prevent application imports from entering the installed wrappers. */
+export default defineConfig({
+  entry: ['index', 'cli', 'cli-main', 'host-main'].map(name => 'lib/types/' + name + '.js'),
   outDir: 'lib',
-  format: ['esm'] as const,
-  outputOptions: { codeSplitting: false },
+  format: ['esm'],
   platform: 'node',
   target: 'es2024',
   fixedExtension: false,
   dts: false,
-  clean: false,
-})))
+  clean: ['lib/*.js'],
+})

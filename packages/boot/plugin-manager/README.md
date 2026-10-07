@@ -86,8 +86,12 @@ The CLI exposes `dsh plugin --profile <profile> version-exemptions`, `allow-vers
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+Launcher-managed profiles read configuration from the admitted native document view. Plugin and bundle toggles and exact-version grants publish against its complete read vector, preserve original files, and apply the usual HMR/startup lifecycle only after a confirmed receipt. Bundle metadata and patches come from the fixed admitted graph. Installation and dependency removal use the launcher's `ProfilePackageOperations` provider to prepare owned staging and coordinate immutable code with package documents; the current process keeps its code graph until restart. Missing or mismatched providers refuse without original-file writes. Managed results retain `operationId`; a repeated install `requestId` identifies the same durable operation, whose provider inspects its stored payload and result without rerunning scripts. Existing explicit build-script consent, cancellation and registry policy remain in force; updater rollback does not contain or reverse separately approved scripts' arbitrary side effects. A managed script-approval retry supplies the failed result’s `operationId` as `approvalOperationId`; the new request remains bound to that retained pending policy and current package/document selection.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
+
+Patch enablement and dependency-build approvals derive changes from one complete text snapshot. Parsing and validation never reopen its logical source filename; the owning writer separately persists the result.
 
 The service and `dsh plugin` share the package operations in [operations.ts](src/operations.ts). The launcher supplies the current profile; [DSH HMR](../hmr/README.md) serializes module reloads, file watching and management writes. Each configuration refresh re-reads bundle selection and patch layers, updates the original root Include, and awaits removed plugin resources as well as the remaining Loader tree. CLI and service operations share the profile manifest writer lock to prevent concurrent package and manifest writes. HMR does not acquire that lock. Pnpm runs outside the HMR queue; installation selects the bundle after pnpm succeeds, while removal deselects and unloads the bundle before pnpm runs.
 

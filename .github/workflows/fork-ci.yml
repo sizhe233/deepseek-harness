@@ -14,7 +14,85 @@ concurrency:
   group: fork-ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  native-build-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - id: matrix
+        run: echo "value=$(node native/system/scripts/github-matrix.mjs release-prebuild)" >> "$GITHUB_OUTPUT"
+
+  native-prebuilds:
+    needs: native-build-matrix
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.native-build-matrix.outputs.matrix) }}
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --filter @deepseek-ai/node-addon-system-workspace... --frozen-lockfile
+      - name: Install the existing Linux musl toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq musl-tools
+      - name: Prepare Windows compiler environment and verified Node SDK
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Windows C compiler is unavailable' }
+          $developer = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+          $lines = & cmd.exe /d /s /c "`"$developer`" -arch=x64 -host_arch=x64 >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows C environment preparation failed' }
+          foreach ($line in $lines) {
+            if ($line -match '^(Path|INCLUDE|LIB|LIBPATH|VCINSTALLDIR|VCToolsInstallDir|WindowsSdkDir)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+          $sdk = node native/system/scripts/prepare-windows-node-sdk.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Official Node SDK verification failed' }
+          "NATIVE_SYSTEM_NODE_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build every binary declared for this native runner
+        run: pnpm --dir native/system exec tsx scripts/build.ts
+      - name: Build and check the native package metadata
+        run: |
+          pnpm --dir native/system exec tsc -b
+          node native/system/scripts/verify-launcher-binary.mjs "${{ matrix.dir }}"
+      - name: Bind complete native payload to this exact source
+        run: node workbench/native-build-artifact.mjs prepare . workbench-artifacts/native-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-native-${{ matrix.package }}
+          path: workbench-artifacts/native-output/
+          if-no-files-found: error
+          retention-days: 7
+
   linux-build-and-test:
+    needs: native-prebuilds
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -61,7 +139,13 @@ jobs:
       - run: pnpm run typecheck
       - run: node --test workbench/*.test.mjs
       - run: node workbench/apply-runtime-seams.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: candidate-native-*
+          path: workbench-artifacts/native-candidate-inputs
       - name: Package candidate host and web artifacts
+        env:
+          CANDIDATE_NATIVE_ARTIFACTS: workbench-artifacts/native-candidate-inputs
         run: |
           node workbench/package-candidate.mjs
       - uses: actions/upload-artifact@v4
@@ -194,6 +278,27 @@ jobs:
         if: ${{ runner.os == 'macOS' }}
         timeout-minutes: 2
         run: node workbench/diagnose-native-pwsh.mjs
+      - name: Prepare Windows compiler environment and verified Node SDK
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$installation) { throw 'Windows C compiler is unavailable' }
+          $developer = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+          $lines = & cmd.exe /d /s /c "`"$developer`" -arch=x64 -host_arch=x64 >nul && set"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows C environment preparation failed' }
+          foreach ($line in $lines) {
+            if ($line -match '^(Path|INCLUDE|LIB|LIBPATH|VCINSTALLDIR|VCToolsInstallDir|WindowsSdkDir)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+          $sdk = node native/system/scripts/prepare-windows-node-sdk.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Official Node SDK verification failed' }
+          "NATIVE_SYSTEM_NODE_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - run: pnpm run build:native-system
       - name: Require macOS default and configured zsh acceptance
         if: ${{ runner.os == 'macOS' }}
@@ -220,8 +325,281 @@ jobs:
       - name: Require real PowerShell PTY acceptance
         run: pnpm exec vitest run --config workbench/vitest.native-pwsh.config.ts
 
+  private-storage-artifact:
+    needs: native-prebuilds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 190
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+      artifact-digest: ${{ steps.candidate.outputs.artifact-digest }}
+      manifest-sha256: ${{ steps.candidate.outputs.manifest-sha256 }}
+    steps:
+      - name: Locate the immutable candidate from this run
+        id: candidate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const assert = require('node:assert/strict');
+            const { createHash } = require('node:crypto');
+            const { execFileSync } = require('node:child_process');
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const os = require('node:os');
+            const expected = process.env.CANDIDATE_SHA;
+            assert.match(expected, /^[0-9a-f]{40}$/);
+            const parameters = { ...context.repo, run_id: context.runId, per_page: 100 };
+            const { data: run } = await github.rest.actions.getWorkflowRun(parameters);
+            assert.equal(run.id, context.runId, 'Wrong workflow run');
+            assert.equal(run.head_sha, expected, 'Wrong workflow source');
+            const deadline = Date.now() + 185 * 60 * 1000;
+            while (Date.now() < deadline) {
+              const all = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, parameters);
+              const matches = all.filter(item => item.name === `host-candidate-${expected}`);
+              assert.ok(matches.length <= 1, 'Ambiguous same-name candidate artifacts');
+              if (matches.length === 1) {
+                const artifact = matches[0];
+                assert.ok(Number.isSafeInteger(artifact.id) && artifact.id > 0, 'Invalid artifact identity');
+                assert.equal(artifact.expired, false, 'Candidate artifact expired');
+                assert.equal(artifact.workflow_run?.id, context.runId, 'Artifact belongs to another run');
+                assert.equal(artifact.workflow_run?.head_sha, expected, 'Artifact belongs to another source');
+                assert.match(artifact.digest ?? '', /^sha256:[0-9a-f]{64}$/, 'Missing artifact digest');
+                assert.ok(Number.isSafeInteger(artifact.size_in_bytes) && artifact.size_in_bytes > 0 && artifact.size_in_bytes <= 32 * 1024 * 1024, 'Candidate exceeds download bound');
+                const response = await github.rest.actions.downloadArtifact({ ...context.repo, artifact_id: artifact.id, archive_format: 'zip' });
+                const bytes = Buffer.from(response.data);
+                assert.ok(bytes.length > 0 && bytes.length <= 32 * 1024 * 1024, 'Downloaded artifact exceeds bound');
+                assert.equal(`sha256:${createHash('sha256').update(bytes).digest('hex')}`, artifact.digest, 'Artifact ZIP digest mismatch');
+                const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-candidate-locator-'));
+                let manifestHash;
+                try {
+                  const zip = path.join(scratch, 'candidate.zip');
+                  fs.writeFileSync(zip, bytes, { flag: 'wx', mode: 0o600 });
+                  const validator = String.raw`
+            import hashlib, json, re, stat, struct, sys, zipfile
+            archive, source, repository = sys.argv[1:]
+
+            def require(condition, reason):
+                if not condition:
+                    raise ValueError(reason)
+
+            def portable(path):
+                require(isinstance(path, str) and path != '', 'Missing ZIP path')
+                parts = path.split('/')
+                for part in parts:
+                    require(re.fullmatch(r'[A-Za-z0-9_@+.-]+', part) is not None, 'Unsafe ZIP path')
+                    require(part not in ('.', '..') and not part.endswith('.'), 'Unsafe ZIP path')
+                    require(re.match(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', part, re.I) is None, 'Reserved ZIP path')
+                require(parts[0] == source, 'ZIP entry outside candidate root')
+                return parts
+
+            with zipfile.ZipFile(archive) as z:
+                entries = z.infolist()
+                require(0 < len(entries) <= 10000, 'ZIP entry count limit')
+                seen, files, directories, total = {}, {}, set(), 0
+                for item in entries:
+                    require(item.orig_filename == item.filename, 'Truncated ZIP name')
+                    name = item.filename[:-1] if item.is_dir() else item.filename
+                    parts = portable(name)
+                    key = name.lower()
+                    require(key not in seen, 'Duplicate or case-colliding ZIP entry')
+                    seen[key] = item.is_dir()
+                    kind = stat.S_IFMT(item.external_attr >> 16)
+                    require(kind in (0, stat.S_IFDIR if item.is_dir() else stat.S_IFREG), 'ZIP link or special type')
+                    require(not (item.external_attr & 16) or item.is_dir(), 'Conflicting ZIP directory type')
+                    require(item.flag_bits & ~0x808 == 0 and item.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED), 'Unsupported ZIP encoding')
+                    extra, offset, extra_ids = item.extra, 0, set()
+                    while offset < len(extra):
+                        require(offset + 4 <= len(extra), 'Malformed ZIP extra field')
+                        identity, size = struct.unpack_from('<HH', extra, offset)
+                        offset += 4
+                        require(identity in (1, 0x5455, 0x000a) and identity not in extra_ids and offset + size <= len(extra), 'Unsupported ZIP extra field')
+                        extra_ids.add(identity)
+                        offset += size
+                    require(0 <= item.file_size <= 64 * 1024 * 1024 and 0 <= item.compress_size <= 32 * 1024 * 1024, 'ZIP entry size limit')
+                    total += item.file_size
+                    require(total <= 128 * 1024 * 1024, 'ZIP total expansion limit')
+                    if item.is_dir():
+                        require(item.file_size == 0, 'Nonempty ZIP directory')
+                        directories.add(name)
+                    else:
+                        require(len(parts) > 1, 'Candidate root is a file')
+                        files[name] = item
+                for name in seen:
+                    for end in range(1, len(name.split('/'))):
+                        parent = '/'.join(name.split('/')[:end])
+                        require(seen.get(parent) is not False, 'ZIP file/directory conflict')
+                # Match the streaming extractor's local-record view to the central directory.
+                # The bounded producer archive never needs per-member ZIP64 sizes.
+                cursor = 0
+                with open(archive, 'rb') as source_file:
+                    for item in sorted(entries, key=lambda entry: entry.header_offset):
+                        require(item.header_offset == cursor, 'ZIP local records contain an orphan, prefix or gap')
+                        source_file.seek(cursor)
+                        header = source_file.read(30)
+                        require(len(header) == 30, 'Truncated ZIP local header')
+                        signature, version, flags, method, _, _, crc, compressed, expanded, name_size, extra_size = struct.unpack('<4s5H3I2H', header)
+                        require(signature == b'PK\x03\x04' and version < 45, 'Unsupported ZIP local header')
+                        require(flags == item.flag_bits and method == item.compress_type, 'ZIP local encoding differs')
+                        require(source_file.read(name_size) == item.orig_filename.encode('ascii'), 'ZIP local name differs')
+                        require(source_file.read(extra_size) == item.extra, 'ZIP local extra fields differ')
+                        if flags & 8:
+                            require(crc in (0, item.CRC) and compressed in (0, item.compress_size) and expanded in (0, item.file_size), 'ZIP local sizes differ')
+                        else:
+                            require((crc, compressed, expanded) == (item.CRC, item.compress_size, item.file_size), 'ZIP local sizes differ')
+                        cursor += 30 + name_size + extra_size + item.compress_size
+                        require(cursor <= z.start_dir, 'ZIP member overlaps central directory')
+                        if flags & 8:
+                            source_file.seek(cursor)
+                            first = source_file.read(4)
+                            require(len(first) == 4, 'Truncated ZIP data descriptor')
+                            signed = first == b'PK\x07\x08'
+                            descriptor = source_file.read(12) if signed else first + source_file.read(8)
+                            require(len(descriptor) == 12 and struct.unpack('<III', descriptor) == (item.CRC, item.compress_size, item.file_size), 'ZIP data descriptor differs')
+                            cursor += 16 if signed else 12
+                        if item.is_dir():
+                            require(z.read(item) == b'', 'Invalid ZIP directory payload')
+                require(cursor == z.start_dir, 'ZIP local records contain an orphan or trailing gap')
+                manifest_name = source + '/candidate.json'
+                require(manifest_name in files, 'Candidate manifest is missing or ambiguous')
+                require(files[manifest_name].file_size <= 4 * 1024 * 1024, 'Manifest byte limit')
+                raw = z.read(files[manifest_name])
+                manifest = json.loads(raw)
+                require(manifest.get('commit') == source and manifest.get('source', {}).get('commit') == source, 'Wrong manifest source')
+                require(manifest['source'].get('repository') == repository, 'Wrong manifest repository')
+                require(re.fullmatch('[0-9a-f]{40}', manifest['source'].get('tree', '')) is not None, 'Wrong manifest tree')
+                require(manifest.get('build', {}).get('platform') == 'linux', 'Candidate was not built once on Linux')
+                descriptor = manifest.get('privateStorageAcceptance', {})
+                require(descriptor.get('schemaVersion') == 1, 'Private storage toolkit is absent')
+                records = [(item['file'], item['sha256'], item['bytes']) for item in manifest['packages']]
+                records += [(item['patchFile'], item['patchSha256'], item['patchBytes']) for item in manifest['dependencyPatches']]
+                records += [(item['file'], item['sha256'], item['bytes']) for item in descriptor['nativeClosure']['packages']]
+                records += [(item['file'], item['sha256'], item['bytes']) for item in descriptor['ordinaryDependencies']]
+                records += [(item['path'], item['sha256'], item['bytes']) for item in descriptor['toolkit']['files']]
+                expected = {manifest_name: (hashlib.sha256(raw).hexdigest(), len(raw))}
+                for path, digest, size in records:
+                    name = source + '/' + path
+                    portable(name)
+                    require(name not in expected, 'Duplicate manifest file inventory')
+                    require(isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest) is not None, 'Missing inventory digest')
+                    require(type(size) is int and 0 <= size <= 64 * 1024 * 1024, 'Invalid inventory size')
+                    expected[name] = (digest, size)
+                require(set(files) == set(expected), 'ZIP differs from complete hashed file inventory')
+                expected_dirs = {'/'.join(name.split('/')[:end]) for name in expected for end in range(1, len(name.split('/')))}
+                require(directories <= expected_dirs, 'Unlisted ZIP directory')
+                for name, item in files.items():
+                    digest, size = expected[name]
+                    require(item.file_size == size, 'ZIP size differs from inventory')
+                    actual, count = hashlib.sha256(), 0
+                    with z.open(item) as member:
+                        while chunk := member.read(1024 * 1024):
+                            count += len(chunk)
+                            require(count <= size, 'ZIP expansion exceeds declared size')
+                            actual.update(chunk)
+                    require(count == size and actual.hexdigest() == digest, 'ZIP bytes differ from inventory')
+                print(hashlib.sha256(raw).hexdigest())
+            `;
+                  manifestHash = execFileSync('python3', ['-c', validator, zip, expected, `${context.repo.owner}/${context.repo.repo}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1024 * 1024, timeout: 60000 }).trim();
+                  assert.match(manifestHash, /^[0-9a-f]{64}$/, 'Invalid ZIP verification result');
+                } finally { fs.rmSync(scratch, { recursive: true, force: true }); }
+                core.setOutput('artifact-id', String(artifact.id));
+                core.setOutput('artifact-digest', artifact.digest);
+                core.setOutput('manifest-sha256', manifestHash);
+                return;
+              }
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, { ...parameters, filter: 'latest' });
+              const producers = jobs.filter(job => job.name === 'linux-build-and-test');
+              assert.ok(producers.length <= 1, 'Ambiguous candidate producer');
+              assert.ok(!producers.some(job => job.status === 'completed'), 'Candidate producer terminated without an artifact');
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            throw new Error('Candidate artifact unavailable within the producer execution window');
+
+  private-storage-packed:
+    needs: [private-storage-artifact]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            node: '24'
+          - os: macos-15
+            node: '24'
+          - os: windows-2025
+            node: '22.19.0'
+          - os: windows-2025
+            node: '24'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      EXPECTED_MANIFEST_SHA256: ${{ needs.private-storage-artifact.outputs.manifest-sha256 }}
+      CANDIDATE_ARTIFACT_ID: ${{ needs.private-storage-artifact.outputs.artifact-id }}
+      CANDIDATE_ARTIFACT_DIGEST: ${{ needs.private-storage-artifact.outputs.artifact-digest }}
+      CANDIDATE_REPOSITORY: ${{ github.repository }}
+      DSH_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.private-storage-artifact.outputs.artifact-id }}
+          merge-multiple: true
+          path: candidate
+      - name: Verify toolkit bytes before executing artifact code
+        shell: pwsh
+        run: |
+          @'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const { createHash } = require('node:crypto');
+          const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+          assert.equal(fs.existsSync('.git'), false, 'Packed acceptance must not have a repository checkout');
+          const root = fs.realpathSync(path.join('candidate', process.env.CANDIDATE_SHA));
+          const raw = fs.readFileSync(path.join(root, 'candidate.json'));
+          assert.equal(hash(raw), process.env.EXPECTED_MANIFEST_SHA256, 'Manifest differs from verified artifact ZIP');
+          const manifest = JSON.parse(raw);
+          assert.equal(manifest.commit, process.env.CANDIDATE_SHA);
+          assert.equal(manifest.source.commit, process.env.CANDIDATE_SHA);
+          assert.equal(manifest.source.repository, process.env.CANDIDATE_REPOSITORY);
+          const toolkit = manifest.privateStorageAcceptance.toolkit;
+          assert.equal(toolkit.entry, 'private-storage-tests/workbench/private-storage-packed.mjs');
+          assert.ok(toolkit.files.length >= 8, 'Incomplete generic acceptance toolkit');
+          const seen = new Set();
+          for (const item of toolkit.files) {
+            assert.match(item.path, /^private-storage-tests\/[A-Za-z0-9._/-]+$/);
+            assert.ok(!item.path.split('/').some(part => part === '..' || part === '.' || !part));
+            assert.ok(!seen.has(item.path), 'Duplicate toolkit entry');
+            seen.add(item.path);
+            const file = path.join(root, item.path);
+            assert.ok(fs.lstatSync(file).isFile() && !fs.lstatSync(file).isSymbolicLink());
+            assert.ok(fs.realpathSync(file).startsWith(root + path.sep));
+            const bytes = fs.readFileSync(file);
+            assert.equal(bytes.length, item.bytes);
+            assert.equal(hash(bytes), item.sha256, 'Toolkit hash mismatch');
+          }
+          assert.ok(seen.has(toolkit.entry), 'Toolkit entry has no digest');
+          '@ | node
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate toolkit verification failed' }
+      - name: Require isolated packed storage and native conformance
+        shell: pwsh
+        run: |
+          node "candidate/$env:CANDIDATE_SHA/private-storage-tests/workbench/private-storage-packed.mjs" "candidate/$env:CANDIDATE_SHA" "private-storage-evidence"
+          if ($LASTEXITCODE -ne 0) { throw 'Packed private-storage acceptance failed' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: private-storage-${{ env.CANDIDATE_SHA }}-${{ matrix.os }}-node-${{ matrix.node }}
+          path: private-storage-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
   build-and-test:
-    needs: [linux-build-and-test, source-coverage, node-22-compatibility, native-platforms]
+    needs: [linux-build-and-test, source-coverage, node-22-compatibility, native-platforms, private-storage-packed]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

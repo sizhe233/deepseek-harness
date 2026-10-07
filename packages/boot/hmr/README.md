@@ -56,7 +56,7 @@ Chokidar options, including polling, retain their existing meaning. Exact config
 
 `watchConfig()` registers an awaited configuration handler. `runExclusive()` serializes configuration changes and Loader updates with automatic reloads and rejects nested transactions. Package installation and removal run outside this queue. HMR does not acquire the package writer lock; manifest notifications reload only when the ordered `dsh.profile.bundles` list changes. Profile and home patch changes also trigger recomposition. File events received during a configuration transaction are processed afterward. Include refreshes and profile reconciliation reach plugins through ordinary Loader entry updates; Loader commits volatile-only changes in place.
 
-App-boot owns profile parsing and patch precedence. HMR reads the launcher’s data-only `profileContext`, registers the profile manifest and both user patch watches during initialization, and waits for application readiness before processing changes. Its disposal closes the watchers and cancels reloads waiting for startup. Configuration watchers start outside the active transaction context so later notifications can enter the queue.
+App-boot owns profile parsing and patch precedence. HMR reads the launcher’s data-only `profileContext`, registers the profile manifest and both user patch watches during initialization, and waits for application readiness before processing changes. The fixed `profileContext.applicationEntry` URL identifies the business module whose static dependencies require a host reload; callers that omit it retain the process-entry lookup. Its disposal closes the watchers and cancels reloads waiting for startup. Configuration watchers start outside the active transaction context so later notifications can enter the queue.
 
 A changed `package.json` outside `node_modules` expires that package's cached configuration. A configuration-only manifest triggers no module reload; a manifest imported as a JSON module retains dependency-driven reloads, and one in the host dependency graph retains host reloads. Dedicated configuration watches keep their existing ownership. A new package entry takes effect when its Loader entry restarts.
 
@@ -69,6 +69,8 @@ Entries sharing a runtime are replaced together, with each entry receiving the i
 Watched module paths use Node ESM resolution's `realpathSync()` spelling, including Windows short directory names, so file events match the module cache.
 
 The module replacement implementation derives from `@cordisjs/plugin-hmr` 1.0.15, with Harness Node-loader and lazy-config changes. Its [MIT license](LICENSE) is retained.
+
+With an explicit `profileDocuments` binding, HMR subscribes to native revision notifications instead of watching original Profile files. Replay and rescan notifications reread the admitted view; duplicate successfully applied references are skipped. Nested Includes refresh within the same held view, and failures retain the previous applied reference. Subscription cancellation is synchronous, so a reload that removes HMR does not wait on its own queue. Source observation, external import and draft watches remain the native provider’s responsibility.
 
 </details>
 

@@ -9,11 +9,13 @@ import { homedir, tmpdir } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execa } from 'execa'
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterAll, beforeAll, expect, it, onTestFinished, vi } from 'vitest'
 import {
   boot, composeEntries, initProfile, loadProfileDirectory, readProfilePatches, readProfileManifest,
   reconcileProfilePatches, OPTIONAL_BUNDLES, PluginPackages, readPluginMeta, getDshRuntimeVersion,
   type ProfileContext, type RuntimeResolution,
+  createProfileDocumentView, type ProfileDocuments, type ProfileDocumentReference, type ProfileDocumentViewReference,
 } from '@deepseek-ai/dsh-app-boot'
 import PluginManager, { type Config, type PluginChange, type PluginInstallLogChunk, type PluginInstallProgress, type PluginInstallRequestId } from '../src/index.ts'
 import Hmr from '@deepseek-ai/dsh-hmr'
@@ -24,6 +26,7 @@ import * as operations from '../src/operations.ts'
 import * as githubConnection from '../src/github-connection.ts'
 import { parse, parseDocument } from 'yaml'
 import { isolateGitCommandLineConfig } from './git-environment.ts'
+import { documentProviderFixture } from '../../app-boot/tests/document-provider-fixture.ts'
 
 // These cases install through real Git and pnpm, so the host's command-line configuration group must not reach their children.
 let restoreGitCommandLineConfig: () => void
@@ -82,6 +85,287 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
   }
   return { ctx, dir, manager: ctx.pluginManager, bundle, profile, stopHmr, overlays, connection }
 }
+
+it('reads admitted managed documents and refuses a missing native writer before original-path mutations', async () => {
+  const { ctx, dir, manager, profile } = await fixture('startup')
+  const logicalManifest = join(dir, 'package.json')
+  const layers = loadProfileDirectory('test', dir, profile.installAnchor).layers
+  const selection: ProfileDocuments['selection'] = {
+    profileDir: dir, home: profile.home,
+    codeBinding: brandString<ProfileDocuments['selection']['codeBinding']>('fixture-code'),
+    packageDocuments: brandString<ProfileDocuments['selection']['packageDocuments']>('fixture-packages'),
+  }
+  const view = createProfileDocumentView({
+    reference: brandString<ProfileDocumentViewReference>('fixture-view'), selection,
+    documents: ([
+      { logicalPath: logicalManifest, state: 'present', text: readFileSync(logicalManifest, 'utf8') },
+      { logicalPath: profile.patchPath, state: 'present', text: '[]\n' },
+      { logicalPath: join(profile.home, 'cordis.patch.yml'), state: 'absent' },
+      { logicalPath: join(dir, 'compatibility.json'), state: 'present', text: '{"fixture@1.0.0":["1.0.0"]}' },
+    ] as const).map((document, index) => ({ ...document, reference: brandString<ProfileDocumentReference>(`fixture-document-${index}`) })),
+  })
+  const documents: ProfileDocuments = {
+    selection, domainId: brandString<ProfileDocuments['domainId']>('fixture-domain'),
+    current: () => view, refresh: async () => view, readView: async () => view,
+    bundleLayers: () => ({ codeBinding: selection.codeBinding, packageDocuments: selection.packageDocuments, layers }),
+    withWriteSnapshot: async () => { throw new Error('No native writer installed in this reader fixture') },
+    inspectOperation: async () => undefined, subscribe: () => () => {},
+  }
+  ctx.provide('profileDocuments', documents)
+  writeFileSync(logicalManifest, 'poisoned original manifest\n')
+  writeFileSync(profile.patchPath, 'poisoned original patch\n')
+  writeFileSync(join(dir, 'compatibility.json'), 'poisoned original compatibility\n')
+  expect(manager.listVersionExemptions()).toEqual({ exemptions: { 'fixture@1.0.0': ['1.0.0'] }, warnings: [] })
+  const row = (await manager.listPlugins()).find(entry => entry.moduleName.endsWith('/plugin.mjs'))
+  if (row === undefined) throw new Error('Expected the existing managed fixture plugin')
+  expect(await manager.setPluginEnabled(row.entryId, false)).toMatchObject({ changed: false, application: 'failed' })
+  expect(readFileSync(logicalManifest, 'utf8')).toBe('poisoned original manifest\n')
+  expect(readFileSync(profile.patchPath, 'utf8')).toBe('poisoned original patch\n')
+  expect(existsSync(join(dir, 'package.json.lock'))).toBe(false)
+})
+
+async function managedFixture(reload: 'live' | 'startup') {
+  const result = await fixture(reload)
+  const { ctx, dir, profile } = result
+  const filename = join(dir, 'package.json')
+  const layers = loadProfileDirectory('test', dir, profile.installAnchor).layers
+  const provider = documentProviderFixture(profile, [], { [filename]: readFileSync(filename, 'utf8') })
+  provider.documents.bundleLayers = view => ({ ...view.selection,
+    layers: (readProfileManifest('test', dir, view).dsh?.profile?.bundles ?? []).map((name) => {
+      const layer = layers.find(layer => layer.packageName === name)
+      if (layer === undefined) throw new Error(`Bundle is outside the fixture graph: ${name}`)
+      return layer
+    }),
+  })
+  const packages = new Map(layers.map(layer => [layer.packageName, {
+    name: layer.packageName, version: '1.0.0', dir: layer.packageDir, manifestPath: join(layer.packageDir, 'package.json'),
+    manifest: JSON.parse(readFileSync(join(layer.packageDir, 'package.json'), 'utf8')) as Record<string, unknown>,
+  }]))
+  await ctx.plugin(PluginPackages, { admitted: {
+    resolution: { profilesDir: join(profile.home, 'profiles'), profileDir: dir, localPackageNames: [...packages.keys()],
+      entries: [], linkedRoots: [] },
+    packageOf: name => packages.get(name),
+  } })
+  ctx.provide('profileDocuments', provider.documents)
+  writeFileSync(filename, 'poisoned original manifest\n')
+  writeFileSync(profile.patchPath, 'poisoned original patch\n')
+  for (const layer of layers) for (const path of layer.patchPaths) writeFileSync(path, 'poisoned original bundle patch\n')
+  return { ...result, provider, filename, packages }
+}
+
+it.each(['live', 'startup'] as const)('managed plugin toggles retain originals and honor %s reconciliation', async (mode) => {
+  const { ctx, dir, manager, profile, provider } = await managedFixture(mode)
+  const row = (await manager.listPlugins()).find(entry => entry.entryId === 'include:managed')
+  if (row === undefined) throw new Error('Expected the fixture plugin')
+  expect(await manager.setPluginEnabled(row.entryId, false)).toMatchObject({ changed: true,
+    application: mode === 'live' ? 'applied' : 'restart-required' })
+  expect(provider.contents.get(profile.patchPath)).toContain('disabled: true')
+  if (mode === 'live') expect(ctx.get('managedProbe')).toBeUndefined()
+  expect(await manager.setPluginEnabled(row.entryId, false)).toMatchObject({ changed: false })
+  expect(provider.receipts.size).toBe(1)
+  expect(readFileSync(profile.patchPath, 'utf8')).toBe('poisoned original patch\n')
+  expect(existsSync(join(dir, 'package.json.lock'))).toBe(false)
+})
+
+it.each(['live', 'startup'] as const)('managed bundle toggles use only admitted graph layers with %s lifecycle', async (mode) => {
+  const { ctx, dir, manager, provider, filename } = await managedFixture(mode)
+  expect(await manager.setBundleEnabled('extra', false)).toMatchObject({ changed: true,
+    application: mode === 'live' ? 'applied' : 'restart-required' })
+  expect(readProfileManifest('test', provider.documents.selection.profileDir, provider.documents.current()).dsh?.profile?.bundles).toEqual(['core'])
+  if (mode === 'live') expect(ctx.get('managedProbe')).toBeUndefined()
+  expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: true })
+  expect(readProfileManifest('test', provider.documents.selection.profileDir, provider.documents.current()).dsh?.profile?.bundles).toEqual(['core', 'extra'])
+  if (mode === 'live') expect(ctx.get('managedProbe')).toBe(true)
+  expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false })
+  expect(await manager.setBundleEnabled('core', false)).toMatchObject({ changed: false, application: 'failed', error: { code: 'management-required' } })
+  expect(await manager.setBundleEnabled('outside', true)).toMatchObject({ changed: false, application: 'failed' })
+  expect(provider.receipts.size).toBe(2)
+  expect(readFileSync(filename, 'utf8')).toBe('poisoned original manifest\n')
+  expect(existsSync(join(dir, 'package.json.lock'))).toBe(false)
+})
+
+it('managed plugin publication keeps an unconfirmed receipt from triggering a live reload or retry', async () => {
+  const { ctx, manager, provider } = await managedFixture('live')
+  const row = (await manager.listPlugins()).find(entry => entry.entryId === 'include:managed')
+  if (row === undefined) throw new Error('Expected the fixture plugin')
+  provider.unconfirmed()
+  expect(await manager.setPluginEnabled(row.entryId, false)).toMatchObject({ changed: true, application: 'failed' })
+  expect(provider.receipts.size).toBe(1)
+  expect(ctx.get('managedProbe')).toBe(true)
+})
+
+it('managed installation requires a provider for this document selection before any package write', async () => {
+  const { ctx, manager, provider, filename } = await managedFixture('startup')
+  const pnpm = vi.spyOn(operations, 'runProfilePnpm')
+  onTestFinished(() => { pnpm.mockRestore() })
+  expect(await manager.installBundle('extra@2.0.0')).toMatchObject({ changed: false, application: 'failed' })
+  const run = vi.fn()
+  ctx.provide('profilePackageOperations', { selection: { ...provider.documents.selection, profileDir: '/another/profile' },
+    run, inspectOperation: async () => undefined })
+  expect(await manager.installBundle('extra@2.0.0')).toMatchObject({ changed: false, application: 'failed' })
+  expect(run).not.toHaveBeenCalled()
+  expect(pnpm).not.toHaveBeenCalled()
+  expect(readFileSync(filename, 'utf8')).toBe('poisoned original manifest\n')
+})
+
+it('managed installation forwards consent, registry and output policy and retains a durable operation identity', async () => {
+  const { ctx, manager, provider, filename } = await managedFixture('startup')
+  const log: PluginInstallLogChunk[] = [], progress: PluginInstallProgress[] = []
+  ctx.on('plugin-manager/install-log', (value) => { log.push(value) })
+  ctx.on('plugin-manager/install-state', (value) => { progress.push(value) })
+  const ids: string[] = []
+  ctx.provide('profilePackageOperations', { selection: provider.documents.selection,
+    async run(request, policy) {
+      expect(request).toMatchObject({ kind: 'install', spec: 'extra@2.0.0', expected: provider.documents.current().reference,
+        options: { enabled: false, approvedBuilds: ['buildable'], registry: 'https://custom.example/' } })
+      expect(policy).toMatchObject({ execution: 'service', command: 'pnpm', outputBytes: 16384,
+        idleTimeoutMs: 600000, lookupTimeoutMs: 20000, githubConnectionTimeoutMs: 5000, lockWaitMs: 120000,
+        registries: { registry: null, resolved: 'https://registry.npmjs.org/' } })
+      ids.push(request.operationId)
+      policy.onProgress?.('installing', { registry: 'https://custom.example/', index: 1, total: 1 })
+      policy.onOutput?.('prepared new package', 'stdout')
+      policy.onProgress?.('applying')
+      return { operationId: request.operationId, changed: true, application: 'restart-required', stage: 'install',
+        target: 'extra@2.0.0', bundle: 'extra', version: '2.0.0', approvedBuilds: ['buildable'] }
+    }, inspectOperation: async () => undefined,
+  })
+  const requestId = brandString<PluginInstallRequestId>('retained-managed-install')
+  const options = { requestId, enabled: false, approvedBuilds: ['buildable'], registry: 'https://custom.example/' }
+  const result = await manager.installBundle('extra@2.0.0', options)
+  expect(result).toMatchObject({ changed: true, application: 'restart-required', bundle: 'extra', version: '2.0.0' })
+  expect(result.operationId).toMatch(/^[a-f0-9]{64}$/)
+  expect(log[0]).toMatchObject({ requestId, text: 'prepared new package', stream: 'stdout' })
+  expect(progress.map(value => value.phase)).toEqual(['installing', 'applying'])
+  expect(await manager.waitForInstall(requestId)).toBeNull()
+  await manager.installBundle('extra@2.0.0', options)
+  expect(ids).toEqual([result.operationId, result.operationId])
+  expect(readFileSync(filename, 'utf8')).toBe('poisoned original manifest\n')
+})
+
+it('managed cancellation waits for the provider and retains its operation result', async () => {
+  const { ctx, manager, provider } = await managedFixture('startup')
+  const entered = Promise.withResolvers<undefined>()
+  ctx.provide('profilePackageOperations', { selection: provider.documents.selection,
+    async run(request, policy) {
+      if (policy.signal === undefined) throw new Error('Expected owned cancellation')
+      const signal = policy.signal
+      entered.resolve(undefined)
+      await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+      return { operationId: request.operationId, changed: false, application: 'cancelled', stage: 'install', target: 'extra' }
+    }, inspectOperation: async () => undefined,
+  })
+  const requestId = brandString<PluginInstallRequestId>('cancel-managed-install')
+  const installing = manager.installBundle('extra', { requestId })
+  await entered.promise
+  expect(await manager.cancelInstall(requestId)).toEqual({ status: 'cancelled' })
+  const cancelled = await installing
+  expect(cancelled).toMatchObject({ changed: false, application: 'cancelled' })
+  expect(cancelled.operationId).toMatch(/^[a-f0-9]{64}$/)
+})
+
+it('managed package removal stages a successor while keeping the current graph and running plugin intact', async () => {
+  const { ctx, manager, provider, filename } = await managedFixture('live')
+  let received = ''
+  ctx.provide('profilePackageOperations', { selection: provider.documents.selection,
+    async run(request) {
+      expect(request).toMatchObject({ kind: 'remove', name: 'extra' })
+      received = request.operationId
+      return { operationId: request.operationId, changed: true, application: 'restart-required', stage: 'remove', target: 'extra' }
+    }, inspectOperation: async () => undefined,
+  })
+  const removed = await manager.removeBundle('extra')
+  expect(removed).toMatchObject({ changed: true, application: 'restart-required' })
+  expect(removed.operationId).toMatch(/^[a-f0-9]{64}$/)
+  expect(received).toMatch(/^[a-f0-9]{64}$/)
+  expect(ctx.get('managedProbe')).toBe(true)
+  expect(readProfileManifest('test', provider.documents.selection.profileDir, provider.documents.current()).dsh?.profile?.bundles).toEqual(['core', 'extra'])
+  expect(readFileSync(filename, 'utf8')).toBe('poisoned original manifest\n')
+})
+
+it.each(['absent', 'changed'] as const)('managed plugin toggles initialize admitted absence and refuse a target that became %s', async (mode) => {
+  const { manager, provider, profile, filename } = await managedFixture('startup')
+  provider.external({ [profile.patchPath]: undefined })
+  const row = (await manager.listPlugins()).find(entry => entry.entryId === 'include:managed')
+  if (row === undefined) throw new Error('Expected the fixture plugin')
+  expect(await manager.setPluginEnabled(row.entryId, false)).toMatchObject({ changed: true })
+  const before = provider.receipts.size
+  const refresh = provider.documents.refresh.bind(provider.documents)
+  provider.documents.refresh = async () => {
+    const manifest = readProfileManifest('test', profile.dir, provider.documents.current())
+    manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles: ['core'] } }
+    provider.external({ [filename]: JSON.stringify(manifest), [profile.patchPath]: mode === 'absent' ? '[]\n'
+      : '- insert:\n    - id: managed\n      name: other-plugin\n' })
+    return refresh()
+  }
+  expect(await manager.setPluginEnabled(row.entryId, true)).toMatchObject({ changed: true, application: 'failed', error: { code: 'unaddressable' } })
+  expect(provider.receipts.size).toBe(before)
+})
+
+it('managed package requests retain refusals, uncertain operation identity and original files', async () => {
+  const { ctx, manager, provider, filename } = await managedFixture('startup')
+  let runs = 0
+  ctx.provide('profilePackageOperations', { selection: provider.documents.selection,
+    async run() {
+      runs++
+      return { operationId: brandString('wrong-operation'), changed: true, application: 'restart-required', stage: 'install', target: 'extra' }
+    }, inspectOperation: async () => undefined,
+  })
+  for (const spec of ['', '--global']) expect(await manager.installBundle(spec)).toMatchObject({ changed: false, application: 'failed', error: { code: 'invalid-spec' } })
+  expect(runs).toBe(0)
+  const wrong = await manager.installBundle('extra')
+  expect(wrong).toMatchObject({ changed: false, application: 'failed' })
+  expect(wrong.operationId).toMatch(/^[a-f0-9]{64}$/)
+  expect(runs).toBe(1)
+  expect(readFileSync(filename, 'utf8')).toBe('poisoned original manifest\n')
+})
+
+it('managed removal handles deselection-only names and refuses unknown or protected bundles', async () => {
+  const { manager, provider, filename } = await managedFixture('startup')
+  expect(await manager.removeBundle('unknown')).toMatchObject({ changed: false, application: 'failed', error: { code: 'not-removable' } })
+  expect(await manager.removeBundle('core')).toMatchObject({ changed: false, application: 'failed', error: { code: 'not-removable' } })
+  const manifest = readProfileManifest('test', provider.documents.selection.profileDir, provider.documents.current())
+  manifest.dependencies = {}
+  provider.external({ [filename]: JSON.stringify(manifest) })
+  expect(await manager.removeBundle('extra')).toMatchObject({ changed: true, application: 'restart-required' })
+  expect(readProfileManifest('test', provider.documents.selection.profileDir, provider.documents.current()).dsh?.profile?.bundles).toEqual(['core'])
+})
+
+it('managed bundle readers retain non-bundle and missing-layer refusals without reopening originals', async () => {
+  const { manager, provider, profile, packages } = await managedFixture('startup')
+  const extra = packages.get('extra')!
+  packages.set('plain', { ...extra, name: 'plain', manifest: { name: 'plain', version: '1.0.0' } })
+  expect(await manager.setBundleEnabled('plain', true)).toMatchObject({ changed: false, application: 'failed', error: { code: 'not-bundle' } })
+  const layers = provider.documents.bundleLayers.bind(provider.documents)
+  let readOther = false
+  provider.documents.bundleLayers = (view) => {
+    readOther = view.read(profile.patchPath).state === 'present'
+    return layers(view)
+  }
+  expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false })
+  expect(readOther).toBe(true)
+  provider.documents.bundleLayers = view => ({ ...view.selection, layers: [] })
+  expect(await manager.setBundleEnabled('extra', true)).toMatchObject({ changed: false, application: 'failed' })
+})
+
+it('routes a managed version grant through native publication without locking or replacing original files', async () => {
+  const { ctx, dir, manager, profile } = await fixture('startup')
+  const filename = join(dir, 'compatibility.json')
+  const original = 'original compatibility document\n'
+  const provider = documentProviderFixture(profile, [])
+  ctx.provide('profileDocuments', provider.documents)
+  writeFileSync(filename, original)
+  const version = getDshRuntimeVersion()
+  expect(await manager.setVersionExemption('fixture@1.0.0', version, true, false))
+    .toMatchObject({ changed: false, application: 'failed' })
+  expect(provider.receipts.size).toBe(0)
+  expect(await manager.setVersionExemption('fixture@1.0.0', version, true, true))
+    .toMatchObject({ changed: true, application: 'restart-required' })
+  expect(manager.listVersionExemptions()).toEqual({ exemptions: { 'fixture@1.0.0': [version] }, warnings: [] })
+  expect(provider.receipts.size).toBe(1)
+  expect(readFileSync(filename, 'utf8')).toBe(original)
+  expect(existsSync(join(dir, 'package.json.lock'))).toBe(false)
+  expect(existsSync(filename + '.lock')).toBe(false)
+})
 
 it.each(['network', 'timeout'] as const)('stops a GitHub %s before pnpm and attributes it to the repository', async (kind) => {
   const { manager, dir, connection } = await fixture()

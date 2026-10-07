@@ -14,25 +14,30 @@ import { pluginEntryId, readPluginInventory } from '@deepseek-ai/dsh-host-plugin
 import {
   readPluginMeta, readProfileManifest, resolveBundleDir, loadOverlayPatches, composeEntries,
   reconcileProfilePatches, readProfilePatches, OPTIONAL_BUNDLES, bundlePatchPaths,
-  evaluatePluginCompatibility, readProfileCompatibility, readProfileVersionExemptions,
+  evaluatePluginCompatibility, readProfileCompatibility,
   setProfileVersionExemption, PROFILE_COMPATIBILITY_FILENAME,
+  currentProfileDocumentView, readProfilePatchesFromView,
+  markProfileDocumentsApplied, withProfileDocumentView,
+  createProfileDocumentOperationId, publishedProfileDocumentView,
 } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-hmr'
-import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
+import type { ProfileContext, ProfileManifest, ProfileDocumentView, ProfileDocuments, PluginPackage } from '@deepseek-ai/dsh-app-boot'
 import { bundleManifest, readProfileRegistry, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
 import { classifyInstallFailure } from './install-failure.ts'
 import { dependencySpec, InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 import { attributeFailure, normalizeRegistry, NPMMIRROR_REGISTRY, registryPlan } from './registry.ts'
-import { writePluginEnabled } from './patch.ts'
+import { derivePluginEnabledText, writePluginEnabled } from './patch.ts'
 import { incompatiblePlugin, ManagementFailure } from './failure.ts'
 import { approveBuilds, readPendingBuilds } from './build-approval.ts'
 import { checkGithubConnection } from './github-connection.ts'
+import { createProfilePackageOperationId, type ManagedPackageRequest } from './managed-operations.ts'
 import type {
   BundleInfo, BundleRowInfo, ChangeResult, InspectOptions, InstallBundleOptions, ManagementError, PackageResult, PluginChange,
   PluginEntryId, PluginInfo, PluginInspectProblem, PluginInstallCancellation, PluginInstallProgress, PluginInstallRequestId,
   PluginRegistries, PluginSpecInspection, Registry,
 } from './types.ts'
 export type * from './types.ts'
+export type * from './managed-operations.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
 export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 
@@ -230,7 +235,7 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   listVersionExemptions(): { exemptions: Record<string, string[]>; warnings: string[] } {
-    const { exemptions, warnings } = readProfileCompatibility(this.profile.dir)
+    const { exemptions, warnings } = readProfileCompatibility(this.profile.dir, currentProfileDocumentView(this.ownerContext))
     return { exemptions, warnings }
   }
 
@@ -244,7 +249,8 @@ export class PluginManager extends TypertRemoteService {
   @Remote
   setVersionExemption(packageVersion: string, runtimeVersion: string, enabled: boolean, acceptRisk?: boolean): Promise<ChangeResult> {
     return this.change(result => this.configure(async () => {
-      await setProfileVersionExemption(this.profile.dir, packageVersion, runtimeVersion, enabled, acceptRisk === true)
+      await setProfileVersionExemption(this.profile.dir, packageVersion, runtimeVersion, enabled, acceptRisk === true,
+        this.ownerContext.get('profileDocuments'))
       result.warnings = await this.reload()
     }), { stage: 'enable', target: packageVersion, enabled }, 'bundle')
   }
@@ -254,7 +260,7 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   async listPlugins(): Promise<PluginInfo[]> {
-    const rows = flatten(composeEntries([readProfilePatches('dsh', this.profile)]))
+    const rows = flatten(composeEntries([this.profilePatches()]))
     const snapshot = await readPluginInventory(this.ctx)
     return snapshot.entries.map((entry) => {
       const actual = [...this.ctx.loader.entries()].find(row => row.id === entry.entryId)
@@ -278,8 +284,8 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   listBundles(): Promise<BundleInfo[]> {
-    const manifest = readProfileManifest('dsh', this.profile.dir)
-    const exemptions = readProfileVersionExemptions(this.profile.dir)
+    const manifest = this.profileManifest()
+    const exemptions = this.profileExemptions()
     const selected = manifest.dsh?.profile?.bundles ?? []
     const recorded = manifest.dependencies ?? {}
     const dependencies = Object.keys(recorded)
@@ -300,7 +306,7 @@ export class PluginManager extends TypertRemoteService {
         owned ? { source: dependencySpec(name, recorded[name] as string, this.profile.dir, packageName) } : {}
       const readOnlyReason = this.protectsManager(name) ? 'management-required' as const : undefined
       try {
-        const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
+        const info = this.bundleManifest(name)
         if (info === undefined) {
           if (enabled) bundles.push({ name, ...sourceOf(), enabled, installed, optional,
             removable: removable && readOnlyReason === undefined,
@@ -309,7 +315,7 @@ export class PluginManager extends TypertRemoteService {
         }
         const compatibility = evaluatePluginCompatibility(info, exemptions)
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
-        const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
+        const dir = this.bundleDirectory(name)
         const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, 'package.json')).href)
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
@@ -356,7 +362,7 @@ export class PluginManager extends TypertRemoteService {
       if (!(error instanceof InvalidInstallSpecError)) throw error
       return refused('invalid-spec', error.reason)
     }
-    const manifest = readProfileManifest('dsh', this.profile.dir)
+    const manifest = this.profileManifest()
     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
     const known = new Set([
       ...manifest.dsh?.profile?.bundles ?? [], ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
@@ -436,7 +442,15 @@ export class PluginManager extends TypertRemoteService {
       const row = (await this.listPlugins()).find(item => item.entryId === id)
       if (row === undefined) throw new ManagementFailure('unknown-plugin')
       if (row.readOnlyReason !== undefined) throw new ManagementFailure(row.readOnlyReason)
-      await writePluginEnabled(this.profile.patchPath, row.patchId, row.moduleName, enabled)
+      const documents = this.ownerContext.get('profileDocuments')
+      if (documents === undefined) await writePluginEnabled(this.profile.patchPath, row.patchId, row.moduleName, enabled)
+      else await this.writeManagedDocument(documents, this.profile.patchPath, (view) => {
+        const entries = flatten(composeEntries([readProfilePatchesFromView('dsh', this.profile, view, documents.bundleLayers(view))]))
+          .filter(entry => entry.id === row.patchId)
+        if (entries.length !== 1 || entries[0]?.name !== row.moduleName) throw new ManagementFailure('unaddressable')
+        const snapshot = view.read(this.profile.patchPath)
+        return derivePluginEnabledText(this.profile.patchPath, snapshot.state === 'present' ? snapshot.text : '[]\n', row.patchId, row.moduleName, enabled)
+      })
       result.warnings = await this.reload(enabled ? [row.patchId] : [])
       const current = (await this.listPlugins()).find(item => item.entryId === id)
       return current?.enabled !== enabled && this.ownerContext.get('hmr') !== undefined ? 'overridden' : undefined
@@ -478,6 +492,18 @@ export class PluginManager extends TypertRemoteService {
     const announce = (phase: PluginInstallProgress['phase'], attempt?: PluginInstallProgress['attempt']): void => {
       if (requestId !== undefined) this.ownerContext.emit('plugin-manager/install-state', { requestId, phase, ...attempt === undefined ? {} : { attempt } })
     }
+    if (this.ownerContext.get('profileDocuments') !== undefined) {
+      const result = this.change(async (result) => {
+        if (spec.trim() === '' || spec.startsWith('-')) throw new ManagementFailure('invalid-spec')
+        return this.runManagedPackage({ kind: 'install', spec, ...options === undefined ? {} : { options } }, result,
+          control.abort.signal, (phase, attempt) => {
+            if (phase === 'applying') control.phase = 'applying'
+            announce(phase, attempt)
+          })
+      }, { stage: 'install', target: spec, enabled: options?.enabled !== false }, 'install')
+      control.result = result
+      return result.finally(() => { if (requestId !== undefined) this.installs.delete(requestId) })
+    }
     const result = this.change(async (result) => {
       if (spec.trim() === '' || spec.startsWith('-')) throw new ManagementFailure('invalid-spec')
       if (stopped()) throw new InstallCancelledError()
@@ -486,7 +512,7 @@ export class PluginManager extends TypertRemoteService {
         result.approvedBuilds = options.approvedBuilds
       }
       const files = await this.readRestoredFiles()
-      const before = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
+      const before = this.profileManifest().dependencies ?? {}
       let name: string
       let version: string | undefined
       try {
@@ -545,17 +571,17 @@ export class PluginManager extends TypertRemoteService {
           }
           throw new Error(run.output)
         }
-        const after = readProfileManifest('dsh', this.profile.dir).dependencies ?? {}
+        const after = this.profileManifest().dependencies ?? {}
         const installed = Object.keys(after).filter(name => before[name] !== after[name])
         // Registry retries can retain the saved range after a partial installation.
         if (installed.length === 0) installed.push(...Object.keys(after).filter(name => spec === name || spec.startsWith(`${name}@`)))
         const target = installed[0]
         if (installed.length !== 1 || target === undefined) throw new ManagementFailure('ambiguous-install')
         name = target
-        const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-        const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
+        const dir = this.bundleDirectory(name)
+        const manifest = this.bundleManifest(name)
         if (manifest?.dsh?.bundle === undefined) throw new ManagementFailure('not-bundle')
-        const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir))
+        const compatibility = evaluatePluginCompatibility(manifest, this.profileExemptions())
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches('dsh', file)
         version = manifest.version
@@ -615,6 +641,17 @@ export class PluginManager extends TypertRemoteService {
    */
   @Remote
   removeBundle(name: string): Promise<ChangeResult> {
+    if (this.ownerContext.get('profileDocuments') !== undefined) {
+      return this.change(async (result) => {
+        const bundle = (await this.listBundles()).find(item => item.name === name)
+        if (bundle === undefined || !bundle.removable) throw new ManagementFailure('not-removable')
+        if (!bundle.installed) {
+          await this.configure(async () => { await this.selectBundle(name, false); result.warnings = await this.reload() })
+          return
+        }
+        return this.runManagedPackage({ kind: 'remove', name }, result)
+      }, { stage: 'remove', target: name }, 'remove')
+    }
     return this.change(async (result) => {
       const installed = await this.configure(async () => {
         const bundle = (await this.listBundles()).find(item => item.name === name)
@@ -649,8 +686,8 @@ export class PluginManager extends TypertRemoteService {
     const bundle = info.dsh?.bundle
     /* v8 ignore next -- bundleManifest answers only manifests that declare a patch */
     if (bundle === undefined) return { rows: [], overrides: [] }
-    const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-    const patches: PatchOptions[] = bundlePatchPaths(dir, bundle).flatMap(file => loadOverlayPatches('dsh', file))
+    const dir = this.bundleDirectory(name)
+    const patches = this.bundlePatches(name)
     // One entry per row id: the Loader keeps a single entry for an id, whichever layer declared it last.
     const live = new Map<string, { entryId: PluginEntryId; baseUrl: string | undefined }>()
     for (const entry of this.ctx.loader.entries()) {
@@ -713,6 +750,43 @@ export class PluginManager extends TypertRemoteService {
     }
   }
 
+  /** The installed provider owns preparation and coordinated activation; this consumer retains cancellation and diagnostics. */
+  private async runManagedPackage(
+    request: Omit<Extract<ManagedPackageRequest, { kind: 'install' }>, 'operationId' | 'expected'>
+      | Omit<Extract<ManagedPackageRequest, { kind: 'remove' }>, 'operationId' | 'expected'>,
+    result: ChangeResult, signal?: AbortSignal,
+    progress?: (phase: PluginInstallProgress['phase'], attempt?: PluginInstallProgress['attempt']) => void,
+  ): Promise<ChangeResult['application']> {
+    const documents = this.ownerContext.get('profileDocuments'), provider = this.ownerContext.get('profilePackageOperations')
+    if (documents === undefined || provider === undefined) throw new Error('Managed package workflow is unavailable; the installed native provider is required')
+    for (const key of ['profileDir', 'home', 'codeBinding', 'packageDocuments'] as const) {
+      if (provider.selection[key] !== documents.selection[key]) throw new Error('Package workflow belongs to another admitted Profile selection')
+    }
+    const view = await documents.refresh()
+    const requestId = request.kind === 'install' ? request.options?.requestId : undefined
+    const operationId = createProfilePackageOperationId(JSON.stringify([documents.domainId, request.kind, requestId ?? randomUUID()]))
+    result.operationId = operationId
+    const identity = requestId === undefined ? {} : { requestId }
+    const jobId = randomUUID(), argv = request.kind === 'install' ? ['pnpm', 'add', request.spec] : ['pnpm', 'remove', request.name]
+    const task = provider.run({ ...request, operationId, expected: view.reference }, {
+      execution: 'service', ...this.profile.packageManager ?? { command: this.pnpmCommand },
+      signal: signal === undefined ? this.abort.signal : AbortSignal.any([this.abort.signal, signal]),
+      outputBytes: this.outputBytes, idleTimeoutMs: this.idleTimeoutMs, lookupTimeoutMs: this.inspectTimeoutMs,
+      githubConnectionTimeoutMs: this.githubConnectionTimeoutMs, lockWaitMs: this.lockWaitMs,
+      registries: await this.registries(),
+      onOutput: (text, stream) => {
+        this.ownerContext.emit('plugin-manager/install-log', { ...identity, jobId, argv, cwd: this.profile.dir, stream, text })
+      }, ...progress === undefined ? {} : { onProgress: progress },
+    })
+    this.packageOperations.add(task)
+    try {
+      const outcome = await task
+      if (outcome.operationId !== operationId) throw new Error('Managed package receipt names another operation')
+      Object.assign(result, outcome)
+      return outcome.application
+    } finally { this.packageOperations.delete(task) }
+  }
+
   /** The profile files an installation may rewrite, as they are now; absent files read as undefined. */
   private async readRestoredFiles(): Promise<Map<string, string | undefined>> {
     const files = new Map<string, string | undefined>()
@@ -732,32 +806,75 @@ export class PluginManager extends TypertRemoteService {
   }
 
   private async selectBundle(name: string, enabled: boolean): Promise<void> {
-    const manifest = readProfileManifest('dsh', this.profile.dir)
-    const previous = manifest.dsh?.profile?.bundles ?? []
-    if (enabled || !previous.includes(name)) {
-      const metadata = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
-      if (metadata === undefined) throw new ManagementFailure('not-bundle')
-      if (enabled) {
-        const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir))
-        if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
-        this.bundleRows(name)
+    const documents = this.ownerContext.get('profileDocuments')
+    const derive = (view?: ProfileDocumentView): ProfileManifest | undefined => {
+      const manifest = readProfileManifest('dsh', this.profile.dir, view)
+      const previous = manifest.dsh?.profile?.bundles ?? []
+      if (enabled || !previous.includes(name)) {
+        const metadata = this.bundleManifest(name)
+        if (metadata === undefined) throw new ManagementFailure('not-bundle')
+        if (enabled) {
+          const compatibility = evaluatePluginCompatibility(metadata, readProfileCompatibility(this.profile.dir, view).exemptions)
+          if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
+          this.bundleRows(name)
+        }
       }
+      if (!enabled && previous.includes(name) && this.protectsManager(name)) throw new ManagementFailure('management-required')
+      const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter(item => item !== name)
+      if (JSON.stringify(previous) === JSON.stringify(bundles)) return undefined
+      manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } }
+      return manifest
     }
-    if (!enabled && previous.includes(name)) {
-      if (this.protectsManager(name)) throw new ManagementFailure('management-required')
-    }
-    const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter(item => item !== name)
-    if (JSON.stringify(previous) === JSON.stringify(bundles)) return
-    manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } }
-    await saveManifest(this.profile.dir, manifest)
+    if (documents === undefined) {
+      const manifest = derive()
+      if (manifest !== undefined) await saveManifest(this.profile.dir, manifest)
+    } else await this.writeManagedDocument(documents, join(this.profile.dir, 'package.json'), (view) => {
+      const manifest = derive(view)
+      return manifest === undefined ? undefined : JSON.stringify(manifest, undefined, 2) + '\n'
+    })
     if (enabled) this.protectsManager(name)
   }
 
+  private bundleManifest(name: string): ProfileManifest | undefined {
+    if (this.ownerContext.get('profileDocuments') === undefined) return bundleManifest(name, this.profile.dir, this.profile.installAnchor)
+    const manifest = this.managedPackage(name).manifest as ProfileManifest
+    return manifest.dsh?.bundle?.patch === undefined ? undefined : manifest
+  }
+
+  private bundleDirectory(name: string): string {
+    if (this.ownerContext.get('profileDocuments') === undefined) return resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
+    return this.managedPackage(name).dir
+  }
+
+  private managedPackage(name: string): PluginPackage {
+    const info = this.ownerContext.get('pluginPackages')?.packageOf(name, pathToFileURL(this.profile.installAnchor).href)
+    if (info === undefined) throw new Error(`Managed package metadata is unavailable: ${name}`)
+    return info
+  }
+
+  private bundlePatches(name: string): PatchOptions[] {
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents === undefined) {
+      const info = this.bundleManifest(name)
+      if (info?.dsh?.bundle === undefined) return []
+      return bundlePatchPaths(this.bundleDirectory(name), info.dsh.bundle).flatMap(file => loadOverlayPatches('dsh', file))
+    }
+    const view = currentProfileDocumentView(this.ownerContext) as ProfileDocumentView
+    const filename = join(this.profile.dir, 'package.json')
+    const manifest = readProfileManifest('dsh', this.profile.dir, view)
+    manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles: [name] } }
+    const original = view.read(filename)
+    const candidate: ProfileDocumentView = Object.freeze({ ...view,
+      read: (logicalPath: string) => logicalPath === filename
+        ? Object.freeze({ ...original, state: 'present' as const, text: JSON.stringify(manifest) }) : view.read(logicalPath),
+    })
+    const layer = documents.bundleLayers(candidate).layers.find(layer => layer.packageName === name)
+    if (layer === undefined) throw new Error(`Bundle is outside the admitted package graph: ${name}`)
+    return layer.patches
+  }
+
   private bundleRows(name: string): EntryOptions[] {
-    const info = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
-    if (info?.dsh?.bundle === undefined) return []
-    const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
-    return flatten(composeEntries([bundlePatchPaths(dir, info.dsh.bundle).flatMap(file => loadOverlayPatches('dsh', file))]))
+    return flatten(composeEntries([this.bundlePatches(name)]))
   }
 
   private protectsManager(name: string): boolean {
@@ -772,6 +889,38 @@ export class PluginManager extends TypertRemoteService {
     return protectedBundle
   }
 
+  private profileManifest(): ProfileManifest {
+    return readProfileManifest('dsh', this.profile.dir, currentProfileDocumentView(this.ownerContext))
+  }
+
+  /** Derive from a fresh view and commit only against that exact native read vector. */
+  private async writeManagedDocument(
+    documents: ProfileDocuments, logicalPath: string, derive: (view: ProfileDocumentView) => string | undefined,
+  ): Promise<void> {
+    const view = await documents.refresh()
+    // A no-op linearizes at this admitted read without allocating a new document generation.
+    const text = derive(view)
+    if (text === undefined) return
+    const result = await documents.withWriteSnapshot({
+      operationId: createProfileDocumentOperationId(), expected: view.reference,
+    }, (current) => {
+      const snapshot = current.read(logicalPath)
+      return [{ logicalPath, expected: snapshot.reference, text }]
+    })
+    publishedProfileDocumentView(result)
+  }
+
+  private profileExemptions(): Record<string, string[]> {
+    return readProfileCompatibility(this.profile.dir, currentProfileDocumentView(this.ownerContext)).exemptions
+  }
+
+  private profilePatches(): PatchOptions[] {
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents === undefined) return readProfilePatches('dsh', this.profile)
+    const view = currentProfileDocumentView(this.ownerContext) as ProfileDocumentView
+    return readProfilePatchesFromView('dsh', this.profile, view, documents.bundleLayers(view))
+  }
+
   private configure<T>(operation: () => Promise<T>): Promise<T> {
     const hmr = this.ownerContext.get('hmr')
     const apply = () => { this.abort.signal.throwIfAborted(); return operation() }
@@ -780,7 +929,7 @@ export class PluginManager extends TypertRemoteService {
 
   private async refreshPackages(): Promise<void> {
     if (this.ownerContext.get('hmr') === undefined) {
-      const selected = readProfileManifest('dsh', this.profile.dir).dsh?.profile?.bundles ?? []
+      const selected = this.profileManifest().dsh?.profile?.bundles ?? []
       // Deselected startup bundles still run without HMR and need the existing package table.
       if (this.profile.startedBundles.some(name => !selected.includes(name))) return
     }
@@ -789,6 +938,15 @@ export class PluginManager extends TypertRemoteService {
 
   private async reload(requiredIds: readonly string[] = []): Promise<string[]> {
     if (this.ownerContext.get('hmr') === undefined) return []
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents !== undefined) {
+      const view = documents.current()
+      const patches = readProfilePatchesFromView('dsh', this.profile, view, documents.bundleLayers(view))
+      const applied = await withProfileDocumentView(this.ownerContext, view,
+        () => reconcileProfilePatches(this.ownerContext.root, patches, 'dsh', requiredIds, true))
+      markProfileDocumentsApplied(this.ownerContext, applied.view.reference)
+      return applied.value
+    }
     return reconcileProfilePatches(this.ownerContext.root, readProfilePatches('dsh', this.profile), 'dsh', requiredIds)
   }
 
@@ -797,7 +955,8 @@ export class PluginManager extends TypertRemoteService {
     request: Pick<ChangeResult, 'stage' | 'target' | 'enabled'>,
     reason: PluginChange['reason'],
   ): Promise<ChangeResult> {
-    return withFileLock(join(this.profile.dir, 'package.json'), async () => {
+    const documents = this.ownerContext.get('profileDocuments')
+    const run = async (): Promise<ChangeResult> => {
       this.abort.signal.throwIfAborted()
       const before = this.diskState()
       const result: ChangeResult = { ...request, changed: false,
@@ -812,13 +971,17 @@ export class PluginManager extends TypertRemoteService {
           result.error = managementError(error)
         }
       }
-      result.changed = before !== this.diskState()
+      result.changed ||= before !== this.diskState()
       this.ownerContext.emit('plugin-manager/changed', { reason })
       return result
-    }, { waitMs: this.lockWaitMs })
+    }
+    return documents === undefined
+      ? withFileLock(join(this.profile.dir, 'package.json'), run, { waitMs: this.lockWaitMs }) : run()
   }
 
   private diskState(): string {
+    const view = currentProfileDocumentView(this.ownerContext)
+    if (view !== undefined) return view.reference
     return ['package.json', 'cordis.patch.yml', 'pnpm-workspace.yaml', PROFILE_COMPATIBILITY_FILENAME].map((file) => {
       try { return readFileSync(join(this.profile.dir, file), 'utf8') }
       catch (error) {

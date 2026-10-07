@@ -79,6 +79,8 @@ Web 与桌面端的通用设置底部显示当前发布版本，使用构建注�
 
 在 loopback 页面上，Client 通过 `settings/describe` 加载提供方的 `hasDocument` 能力，且只有在 Host 确认可准备好一份由提供方持有的本地文档时才渲染**打开配置文件**操作。该操作调用无路径参数且经浏览器认证的 `settings/openSettingsDocument` Remote；Host 会再次解析提供方路径、在文档缺失时将其创建出来，并交给原生文本编辑器（macOS 上使用 `open -t`，绕过浏览器文件关联；Linux 和 Windows 上使用桌面文件关联；WSL 上经 `wslpath -w` 转换后使用 Windows 文件关联）。打开失败时该操作仍可使用，并渲染本地化错误。临时读取失败或 Host 拓扑变化后，重新打开对话框或重新连接会刷新可用性。非 loopback 页面保留 Client 策略，不提供该原生操作及其 settings 读取。
 
+托管编辑副本打开后显示**应用已保存的副本**。请先在原生编辑器中保存，再应用；过期基线或被拒绝的保存会保留供检查。Client 仅发送原生草稿 id，Host 在导入前重新观察其字节。
+
 ### 宿主端
 
 宿主端在 `ui-settings-general` 条目的 Config 中把 `welcomeNoticeVersion` 声明为 volatile 字段。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`；外壳本身仍不持有产品策略。

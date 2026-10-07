@@ -6,4 +6,4 @@ kind: "package-library"
 
 English | [中文](README.zh.md)
 
-This platform package supplies `bin/system.node`, a stable Node-API v8 addon used by `@deepseek-ai/node-addon-system/flock`. It contains no Landlock executable, JavaScript loader, or installation build script. The native workflow builds it on macOS arm64 and owns its installed-artifact validation.
+This platform package supplies the stable Node-API v8 addons `bin/system.node` for `@deepseek-ai/node-addon-system/flock` and `bin/private-storage.node` for the independent retained-storage entry. It contains no Landlock executable, JavaScript loader, or installation build script. The native workflow builds it on macOS arm64 and owns its installed-artifact validation.

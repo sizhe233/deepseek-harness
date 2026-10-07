@@ -5,6 +5,10 @@ import { access, constants, readFile, rename, writeFile } from 'node:fs/promises
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as yaml from 'js-yaml'
+import { isDeepStrictEqual } from 'node:util'
+import { deriveOwnedEntryDocument } from './owned-document.ts'
+import { getIncludeDocumentSource, type EntryDocumentHandle, type EntryDocumentSource } from './document-source.ts'
+export { bindIncludeDocumentSource, getIncludeDocumentSource, type EntryDocumentSource, type EntryDocumentHandle } from './document-source.ts'
 
 const JsExpr = new yaml.Type('tag:yaml.org,2002:js', {
   kind: 'scalar',
@@ -174,9 +178,12 @@ export class Include extends EntryTree {
   private writeTask?: NodeJS.Timeout | undefined
   private pendingWrite?: EntryOptions[]
   private writeQueue: Promise<void> = Promise.resolve()
+  private readonly documentSource: EntryDocumentSource | undefined
+  private documentHandle: EntryDocumentHandle | undefined
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
+    this.documentSource = getIncludeDocumentSource(ctx)
     this.enableLogs = config.enableLogs ?? ctx.fiber.entry?.parent.tree.enableLogs ?? false
     this.filename = fileURLToPath(new URL(this.config.path, this.ctx.baseUrl))
     const ext = extname(this.filename)
@@ -202,6 +209,7 @@ export class Include extends EntryTree {
   }
 
   private async checkAccess() {
+    if (this.documentSource !== undefined) return
     if (!this.type) return
     try {
       await access(this.filename, constants.W_OK)
@@ -211,7 +219,10 @@ export class Include extends EntryTree {
   }
 
   private async read(forced = false) {
-    const content = await readFile(this.filename, 'utf8')
+    const handle = await this.documentSource?.read(this.filename)
+    if (handle !== undefined) this.documentHandle = handle
+    if (handle?.state === 'absent') throw Object.assign(new Error(`config file not found: ${this.filename}`), { code: 'ENOENT' })
+    const content = handle === undefined ? await readFile(this.filename, 'utf8') : handle.text
     if (!forced && this.content === content) return false
     let data: any
     if (this.type === 'application/yaml') {
@@ -237,7 +248,7 @@ export class Include extends EntryTree {
   }
 
   private applyPatches(data: EntryOptions[], patches = this.config.patches): EntryOptions[] {
-    return applyEntryPatches(data, patches, (message, ...args) => {
+    return applyEntryPatches(this.documentSource === undefined ? data : structuredClone(data), patches, (message, ...args) => {
       this.ctx.root.logger?.('loader').warn(message, ...args)
     })
   }
@@ -251,7 +262,7 @@ export class Include extends EntryTree {
       // never be mislabelled as absent or silently overwritten.
       if ((error as NodeJS.ErrnoException | null)?.code !== 'ENOENT') throw error
       if (this.config.initial) {
-        await this._writeFile(this.config.initial as any)
+        await this._writeFile(this.config.initial as any, true)
         await this.read(true)
       } else {
         throw new Error(`config file not found: ${this.filename}`)
@@ -283,19 +294,38 @@ export class Include extends EntryTree {
     } catch (error) {
       this.ctx.logger.warn('config reload at %C failed; keeping the running tree', this.filename)
       this.ctx.logger.warn(error)
+      if (this.documentSource !== undefined) throw error
     }
   }
 
-  private async _writeFile(config: EntryOptions[]) {
+  private async _writeFile(config: EntryOptions[], initial = false) {
+    const handle = this.documentHandle
+    if (handle?.writeback === 'discard') return
+    if (handle?.writeback === 'readonly') throw new Error('cannot overwrite readonly config')
     if (this.readonly) {
       throw new Error(`cannot overwrite readonly config`)
     }
-    if (this.type === 'application/yaml') {
-      this.content = yaml.dump(config, { schema })
+    let content: string | undefined
+    let sourceData = config
+    if (handle?.writeback === 'persist' && !initial && this.content !== undefined && this.data !== undefined
+      && (this.type === 'application/yaml' || this.type === 'application/json')) {
+      const candidate = deriveOwnedEntryDocument(this.content, this.type, this.data, this.applyPatches(this.data), config)
+      if (!isDeepStrictEqual(this.applyPatches(candidate.data), config)) throw new Error('Managed Include edit cannot be represented without changing patch ownership')
+      content = candidate.text; sourceData = candidate.data
+    } else if (this.type === 'application/yaml') {
+      content = yaml.dump(config, { schema })
     } else if (this.type === 'application/json') {
-      this.content = JSON.stringify(config, null, 2)
+      content = JSON.stringify(config, null, 2)
     }
-    await writeFile(this.filename + '.tmp', this.content!)
+    if (this.documentSource !== undefined) {
+      if (handle?.writeback !== 'persist' || content === undefined) throw new Error('Include document publication is unavailable')
+      this.documentHandle = await handle.publish(content)
+      this.content = content
+      this.data = structuredClone(sourceData)
+      return
+    }
+    this.content = content
+    await writeFile(this.filename + '.tmp', content!)
     for (let retry = 0; ; retry++) {
       try {
         await rename(this.filename + '.tmp', this.filename)
@@ -309,7 +339,7 @@ export class Include extends EntryTree {
 
   private writeFile(config: EntryOptions[]) {
     clearTimeout(this.writeTask)
-    this.pendingWrite = config
+    this.pendingWrite = this.documentSource === undefined ? config : structuredClone(config)
     this.writeTask = setTimeout(() => {
       void this.flushWrite()
     }, 0)

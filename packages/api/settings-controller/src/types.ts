@@ -31,4 +31,6 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 /** Confirmation that the settings document was handed to the native editor. */
 export interface SettingsDocumentOpenValue {
   readonly opened: true
+  /** Editing copies need an explicit import after saving; no local path is exposed. */
+  readonly draft?: { readonly id: string; readonly saveBehavior: 'explicit-import' }
 }

@@ -136,6 +136,7 @@ describe('runProfile with an application-owned profile', () => {
     const runtime = { profile, installAnchor: join(home, 'runtime/package.json') }
     try {
       const { shutdown } = await runProfile({
+        applicationEntry: import.meta.url,
         environment, profile: 'desktop', resolvedProfile: runtime,
         patchFiles: [overlay], args: ['--port', '0', '--no-open'],
       })
@@ -163,7 +164,9 @@ describe('runProfile with an application-owned profile', () => {
       ])
       expect(rows.find(row => row.id === 'target')?.config).toEqual({ overlay: true, priority: 'overlay' })
       expect(rows.find(row => row.id === 'session-telemetry-otel')?.disabled).toBe(true)
-      expect(ctx.profileContext).toMatchObject({ dir: home, patchPath: profilePatch, installAnchor: runtime.installAnchor })
+      expect(ctx.profileContext).toMatchObject({
+        dir: home, patchPath: profilePatch, installAnchor: runtime.installAnchor, applicationEntry: import.meta.url,
+      })
       await shutdown.shutdown(0)
       expect(dispose).toHaveBeenCalledOnce()
       expect(disposeProxy).toHaveBeenCalledOnce()

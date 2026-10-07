@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/storage/private-storage/README.md
+/:
+  en: 4d05ba3a723a52d2
+  zh: 4ba6020cae1f5495
+/deepseek-ai-dsh-private-storage:
+  en: d3cf146aef9869ac
+  zh: 7bf4280b4f1ce8a7
+/deepseek-ai-dsh-private-storage/summary:
+  en: 8ba40d299b96f802
+  zh: f052e103d1512f5b
+/deepseek-ai-dsh-private-storage/table-of-contents:
+  en: 65663b0d5dfa1600
+  zh: dc8dd4f5941b9f74
+/deepseek-ai-dsh-private-storage/use-this-package:
+  en: 12abf8d2c8e7a99c
+  zh: a53f80ac0f4c73d3
+/deepseek-ai-dsh-private-storage/use-this-package/directory-and-byte-operations:
+  en: d114a93de62c3423
+  zh: 0a840b1f736dbb62
+/deepseek-ai-dsh-private-storage/use-this-package/publication-and-recovery:
+  en: 5415cbc4b46df4f4
+  zh: 60f8a8cf7d70122b
+/deepseek-ai-dsh-private-storage/use-this-package/leases-audit-and-cleanup:
+  en: d7b1e75613f84156
+  zh: 0f601994921a8f9b
+/deepseek-ai-dsh-private-storage/understand-the-implementation:
+  en: e64d2ac64302ef0b
+  zh: de756733e455f75b
+/deepseek-ai-dsh-private-storage/further-exploration:
+  en: 862937ca20bc1a02
+  zh: b01c20b72ac88f53
+/deepseek-ai-dsh-private-storage/model-experience:
+  en: 7db078a4c31849f9
+  zh: 93b07cf2c2000998
+/deepseek-ai-dsh-private-storage/model-experience/kv-cache-effect:
+  en: 419bc0f88ae2b229
+  zh: 44e95968c6a122ce
+/deepseek-ai-dsh-private-storage/known-limitations-and-deferred-work:
+  en: 717a6eba6b82d867
+  zh: d9ca1cd55587858e
+/deepseek-ai-dsh-private-storage/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { expect, it, onTestFinished } from 'vitest'
 import { applyEntryPatches } from '@deepseek-ai/cordis-plugin-include'
 import { loadOptionalPatches } from '@deepseek-ai/dsh-app-boot'
-import { writePluginEnabled } from '../src/patch.ts'
+import { derivePluginEnabledText, writePluginEnabled } from '../src/patch.ts'
 
 async function fixture(text?: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'manager-patch-'))
@@ -61,6 +61,24 @@ it('reports read failures without replacing a directory with configuration', asy
   const file = await fixture()
   await mkdir(file)
   await expect(writePluginEnabled(file, 'tool', 'package', true)).rejects.toThrow()
+})
+
+it('derives from admitted text while leaving a different original document untouched', async () => {
+  const original = 'not a valid patch mapping\n'
+  const file = await fixture(original)
+  const admitted = '# managed revision\n- id: tool\n  disabled: false # keep comment\n'
+  const next = derivePluginEnabledText(file, admitted, 'tool', 'package', false)
+  if (next === undefined) throw new Error('Expected an admitted enablement edit')
+  expect(next).toContain('# managed revision')
+  expect(next).toContain('disabled: true # keep comment')
+  expect(await readFile(file, 'utf8')).toBe(original)
+  expect(derivePluginEnabledText(file, next, 'tool', 'package', false)).toBeUndefined()
+})
+
+it('refuses malformed admitted text even when the original file is a valid patch', async () => {
+  const file = await fixture('[]\n')
+  expect(() => derivePluginEnabledText(file, '- scalar\n', 'tool', 'package', true)).toThrow('must be a mapping')
+  expect(await readFile(file, 'utf8')).toBe('[]\n')
 })
 
 it('updates the last matching named override and leaves mismatched names untouched', async () => {

@@ -6,6 +6,30 @@ import { defineConfig } from 'tsdown'
  */
 export default defineConfig([
   {
+    entry: ['lib/types/runtime-admission.js'], outDir: 'lib', format: ['esm'],
+    platform: 'node', target: 'es2024', fixedExtension: false, dts: false, clean: false,
+  },
+  {
+    entry: { 'profile-documents': 'lib/types/profile-document-view.js' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  },
+  {
+    entry: ['lib/types/runtime-version.js'],
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  },
+  {
     entry: ['lib/types/index.js'],
     outDir: 'lib',
     format: ['esm'],

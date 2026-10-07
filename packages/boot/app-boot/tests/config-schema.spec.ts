@@ -18,6 +18,7 @@ import { generateConfigSchema } from '../src/config-schema/index.ts'
 import * as profileOperations from '../src/profile.ts'
 import type { Profile, RuntimeResolution } from '../src/profile.ts'
 import { installRuntimeInterception } from '../src/profile-resolution/resolver.ts'
+import { documentProviderFixture } from './document-provider-fixture.ts'
 
 const dispose = vi.hoisted(() => vi.fn())
 vi.mock('node:fs/promises', { spy: true })
@@ -103,6 +104,33 @@ describe('generateConfigSchema', () => {
 })
 
 describe('collectConfigSchemas', () => {
+  it('collects nested admitted documents without reading or canonicalizing their poisoned original paths', async () => {
+    const filename = join(dir, 'managed.yml')
+    writeFileSync(filename, 'invalid: [')
+    const context = { name: profile.name, dir, patchPath: profile.patchPath, home: dir, cwd: dir, installAnchor: join(dir, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
+    const provider = documentProviderFixture(context, [], { [filename]: '- id: native\n  name: noop\n  config: { value: !!js process.env.NEVER_EXECUTE }\n' })
+    const result = await collectConfigSchemas(profile, [row('cordis:include', { path: './managed.yml' })], resolution, [], provider.documents.current())
+    expect(result['x-cordis'].entries.map(entry => entry.id)).toContain('native')
+    expect(fs.readFile).not.toHaveBeenCalled()
+    expect(fs.realpath).not.toHaveBeenCalled()
+    const missing = await collectConfigSchemas(profile, [row('cordis:include', { path: './unlisted.yml', initial: [] })], resolution, [], provider.documents.current())
+    expect(missing['x-cordis'].diagnostics.some(row => row.message.includes('outside the admitted view'))).toBe(true)
+    expect(fs.readFile).not.toHaveBeenCalled()
+  })
+
+  it('uses a managed admission graph without installing or disposing a second runtime interception', async () => {
+    const context = { name: profile.name, dir, patchPath: profile.patchPath, home: dir, cwd: dir, installAnchor: join(dir, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined }
+    const provider = documentProviderFixture(context, [])
+    const packages = { resolution, packageOf: () => undefined }
+    const result = await collectConfigSchemas(profile, [row('noop')], resolution, [], provider.documents.current(), packages)
+    expect(result['x-cordis'].entries[0]?.name).toBe('noop')
+    expect(installRuntimeInterception).not.toHaveBeenCalled()
+    expect(dispose).not.toHaveBeenCalled()
+    await expect(collectConfigSchemas(profile, [row('noop')], { ...resolution }, [], provider.documents.current(), packages))
+      .rejects.toThrow('admitted package resolution')
+    await expect(collectConfigSchemas(profile, [row('noop')], resolution, [], undefined, packages))
+      .rejects.toThrow('document view')
+  })
   it('serializes namespace and class Config exports, retaining descriptions, defaults, and shared refs', async () => {
     const port = Schema.number().default(3080).description('Listening port')
     const config = Schema.object({ port, anotherPort: port })

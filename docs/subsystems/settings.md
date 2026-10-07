@@ -38,9 +38,23 @@ Project Config schemas into forms and own optional instance-level UI policy.
 configure(presentation: { auto?: boolean }, owner: Fiber = this.ctx.fiber): () => void
 
 /** Locate the profile patch for native editing.
- * @returns The existing profile patch path.
+ * @returns The ordinary Profile path or an exclusive native editing copy.
+ * @throws When native draft preparation is unavailable or its base is stale.
  */
-prepareDocument(): Promise<string>
+async prepareDocument(): Promise<string>
+
+/** Identify a prepared copy without exposing its physical path to remote clients.
+ * @param path Host-only path returned by prepareDocument.
+ * @returns Draft identity when native explicit import is required.
+ */
+preparedDocumentDraft(path: string): { id: string; saveBehavior: 'explicit-import' } | undefined
+
+/** Import an editor save against its immutable base, then use ordinary Loader reconciliation.
+ * @param draftId Native draft identity returned when opening the editor.
+ * @returns The published view reference after successful Loader reconciliation.
+ * @throws For stale bases, invalid saves, unavailable drafts or failed reconciliation.
+ */
+async importDocumentDraft(draftId: string): Promise<string>
 
 /** Read active plugin schemas and their live values.
  * @param options Redaction required for remote callers.
@@ -82,7 +96,7 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
 /**
  * Describe every registered namespace for a configuration page: redacted
  * layered values plus the serialized schema the page renders its form from.
- * @returns provider writability, local-document presence, and one view per namespace.
+ * @returns provider writability, editable-document availability, and one view per namespace.
  * @throws RemoteError when no settings provider is mounted.
  */
 @Remote describe(): SettingsDescribeValue
@@ -126,6 +140,13 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
  * @throws RemoteError when no document exists, preparation fails, or opening fails.
  */
 @Remote async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>
+
+/** Publish a saved native editing copy and reconcile the active configuration.
+ * @param draftId Identity returned by openSettingsDocument; never a client supplied filename.
+ * @returns Confirmation after publication and ordinary Loader reconciliation.
+ * @throws RemoteError when the save is stale, invalid or cannot be applied.
+ */
+@Remote async importSettingsDocumentDraft(draftId: string): Promise<{ imported: true }>
 ```
 
 Source: [`packages/api/settings-controller/src/index.ts`](../../packages/api/settings-controller/src/index.ts)

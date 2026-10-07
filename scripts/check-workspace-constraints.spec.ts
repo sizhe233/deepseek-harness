@@ -410,3 +410,13 @@ it('requires the standalone shortcut protocol and rejects unrelated runtime file
       .toEqual([expect.stringContaining('package.json files must be')])
   }
 })
+
+it.each([
+  { dir: 'apps/desktop-host', omitted: 'lib/*.js' },
+  { dir: 'packages/boot/app-boot', omitted: 'lib/runtime-version.js' },
+])('requires the carrier publication files in $dir', ({ dir, omitted }) => {
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
+  expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
+  expect(checkWorkspaceManifest({ dir, manifest: { ...manifest, files: manifest.files!.filter(file => file !== omitted) } }))
+    .toEqual([expect.stringContaining('package.json files must be')])
+})
