@@ -192,6 +192,8 @@ static NTSTATUS NTAPI of_NtQueryInformationFile(HANDLE h, PIO_STATUS_BLOCK ios, 
 static NTSTATUS NTAPI of_NtQueryVolumeInformationFile(HANDLE h, PIO_STATUS_BLOCK ios, PVOID data, ULONG length, ULONG cls) { return of_query_call(of_real_volume, "NtQueryVolumeInformationFile", "native-volume", h, ios, data, length, cls); }
 static NTSTATUS NTAPI of_NtSetInformationFile(HANDLE h, PIO_STATUS_BLOCK ios, PVOID data, ULONG length, ULONG cls) {
   NTSTATUS result = of_real_set(h, ios, data, length, cls); of_event *event = of_event_new("NtSetInformationFile", result, true);
+  of_resource *resource = of_find(of_state.handles, h);
+  if (event && cls == 13 && resource != NULL) event->role = resource->role;
   if (result == OF_PENDING) of_state.actual_pending = true;
   if (result == 0 && cls == 13 && of_take("staging-disposition")) { of_state.cleanup_fired = true; if (event) event->released = true; result = OF_FAILURE; of_inject(event, result, "test-owned-return"); }
   return result;
@@ -369,7 +371,7 @@ static napi_value of_report(napi_env env, napi_callback_info info) {
 #define OF_NUMBER(object, name, number) do { if (napi_create_double(env, (double)(number), &value) != napi_ok || napi_set_named_property(env, object, name, value) != napi_ok) return NULL; } while (0)
 #define OF_BOOL(object, name, boolean) do { if (napi_get_boolean(env, boolean, &value) != napi_ok || napi_set_named_property(env, object, name, value) != napi_ok) return NULL; } while (0)
 #define OF_TEXT(object, name, text) do { if (napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &value) != napi_ok || napi_set_named_property(env, object, name, value) != napi_ok) return NULL; } while (0)
-  OF_TEXT(result, "productionSourceSha256", "4bbd66634eb5f1215d62c65b745c6483c2578f2ec762d54e4afd394eb419b77f");
+  OF_TEXT(result, "productionSourceSha256", "35b98bc2a0b577e9a680535b199bcf12fd52d41a9fff112bfe19705b53d773e8");
   OF_NUMBER(result, "allocations", of_state.allocs); OF_NUMBER(result, "exposures", of_state.exposures);
   OF_NUMBER(result, "queryCalls", of_state.queries); OF_NUMBER(result, "injections", of_state.injections);
   OF_NUMBER(result, "protocolViolations", of_state.violations); OF_BOOL(result, "overflow", of_state.overflow);

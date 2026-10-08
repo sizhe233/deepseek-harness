@@ -621,7 +621,127 @@ static int hold_reader(const wchar_t *path, BOOL shareDelete) {
   return result;
 }
 
+/* Only caller-derived primary tokens launch this bounded, job-owned synthetic child. */
+static BOOL primary_append_argument(wchar_t *command, size_t capacity, size_t *used, const wchar_t *value) {
+  size_t i, slashes;
+  if (*used && *used + 1 < capacity) command[(*used)++] = L' ';
+  if (*used + 2 >= capacity) return FALSE;
+  command[(*used)++] = L'"';
+  for (i = 0; ; i++) {
+    slashes = 0;
+    while (value[i] == L'\\') { slashes++; i++; }
+    if (value[i] == L'"' || value[i] == L'\0') slashes *= 2;
+    while (slashes--) { if (*used + 2 >= capacity) return FALSE; command[(*used)++] = L'\\'; }
+    if (value[i] == L'\0') break;
+    if (value[i] == L'"') { if (*used + 2 >= capacity) return FALSE; command[(*used)++] = L'\\'; }
+    if (*used + 2 >= capacity) return FALSE;
+    command[(*used)++] = value[i];
+  }
+  command[(*used)++] = L'"'; command[*used] = L'\0'; return TRUE;
+}
+
+static int primary_process(int argc, wchar_t **argv) {
+  HANDLE original = NULL, restrictedToken = NULL, childToken = NULL, threadToken = NULL, job = NULL;
+  TOKEN_USER *user = NULL, *childUser = NULL;
+  TOKEN_GROUPS *groups = NULL;
+  TOKEN_TYPE type = TokenImpersonation;
+  SID_AND_ATTRIBUTES restrictions[2];
+  BYTE everyone[SECURITY_MAX_SID_SIZE];
+  DWORD everyoneBytes = sizeof(everyone), bytes, error = ERROR_SUCCESS, exitCode = STILL_ACTIVE, threadError = 0;
+  DWORD restrictedCount = 0, waited, childPid = 0;
+  BOOL restricted = wcscmp(argv[2], L"restricted") == 0, blocked = FALSE, started = FALSE, exited = FALSE;
+  BOOL tokenRestricted = FALSE, sameUser = FALSE, threadAbsent = FALSE, jobEmpty = FALSE, cleanupOk = TRUE;
+  const char *operation = "primary process fixture";
+  STARTUPINFOW startup;
+  PROCESS_INFORMATION child;
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits;
+  JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting;
+  wchar_t command[32768]; size_t used = 0; int i;
+  ULONGLONG deadline;
+  ZeroMemory(&startup, sizeof(startup)); startup.cb = sizeof(startup);
+  ZeroMemory(&child, sizeof(child)); ZeroMemory(&limits, sizeof(limits));
+  if (!restricted && wcscmp(argv[2], L"ordinary") != 0) return failure("primary process mode", ERROR_INVALID_PARAMETER, FALSE);
+  for (i = 3; i < argc; i++) if (!primary_append_argument(command, 32768, &used, argv[i])) return failure("primary process arguments", ERROR_BAD_LENGTH, FALSE);
+  if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &threadToken)) {
+    if (GetLastError() != ERROR_NO_TOKEN) { error = GetLastError(); goto cleanup; }
+  } else { error = ERROR_BAD_TOKEN_TYPE; operation = "fixture caller impersonation"; goto cleanup; }
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY, &original)) {
+    error = GetLastError(); operation = "OpenProcessToken primary fixture"; blocked = token_fixture_unavailable(error); goto cleanup;
+  }
+  user = (TOKEN_USER *)token_information(original, TokenUser);
+  if (!user || IsTokenRestricted(original)) { error = ERROR_BAD_TOKEN_TYPE; operation = "ordinary caller primary token"; goto cleanup; }
+  if (restricted) {
+    if (!CreateWellKnownSid(WinWorldSid, NULL, everyone, &everyoneBytes)) { error = GetLastError(); operation = "primary restricting SID"; goto cleanup; }
+    ZeroMemory(restrictions, sizeof(restrictions)); restrictions[0].Sid = user->User.Sid; restrictions[1].Sid = everyone;
+    if (!CreateRestrictedToken(original, DISABLE_MAX_PRIVILEGE, 0, NULL, 0, NULL, 2, restrictions, &restrictedToken)) {
+      error = GetLastError(); operation = "CreateRestrictedToken primary"; blocked = token_fixture_unavailable(error); goto cleanup;
+    }
+  }
+  job = CreateJobObjectW(NULL, NULL);
+  limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  if (!job || !SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
+    error = GetLastError(); operation = "primary child job"; goto cleanup;
+  }
+  started = restricted
+    ? CreateProcessAsUserW(restrictedToken, argv[3], command, NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &startup, &child)
+    : CreateProcessW(argv[3], command, NULL, NULL, FALSE, CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &startup, &child);
+  if (!started) { error = GetLastError(); operation = "create primary child"; blocked = token_fixture_unavailable(error); goto cleanup; }
+  childPid = child.dwProcessId;
+  if (!AssignProcessToJobObject(job, child.hProcess)) { error = GetLastError(); operation = "assign primary child job"; goto cleanup; }
+  if (!OpenProcessToken(child.hProcess, TOKEN_QUERY, &childToken)) { error = GetLastError(); operation = "query actual child primary token"; goto cleanup; }
+  childUser = (TOKEN_USER *)token_information(childToken, TokenUser);
+  groups = (TOKEN_GROUPS *)token_information(childToken, TokenRestrictedSids);
+  if (!childUser || !groups || !GetTokenInformation(childToken, TokenType, &type, sizeof(type), &bytes)) {
+    error = GetLastError(); operation = "actual child primary token facts"; goto cleanup;
+  }
+  sameUser = EqualSid(user->User.Sid, childUser->User.Sid); tokenRestricted = IsTokenRestricted(childToken); restrictedCount = groups->GroupCount;
+  threadAbsent = !OpenThreadToken(child.hThread, TOKEN_QUERY, TRUE, &threadToken);
+  threadError = threadAbsent ? GetLastError() : ERROR_SUCCESS;
+  if (!sameUser || type != TokenPrimary || tokenRestricted != restricted || (restricted && restrictedCount != 2)
+      || !threadAbsent || threadError != ERROR_NO_TOKEN) {
+    error = ERROR_BAD_TOKEN_TYPE; operation = "actual primary child identity mismatch"; goto cleanup;
+  }
+  if (ResumeThread(child.hThread) == (DWORD)-1) { error = GetLastError(); operation = "resume primary child"; goto cleanup; }
+  waited = WaitForSingleObject(child.hProcess, 15000);
+  if (waited != WAIT_OBJECT_0) { error = waited == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError(); operation = "primary child completion"; goto cleanup; }
+  exited = TRUE;
+  if (!GetExitCodeProcess(child.hProcess, &exitCode)) { error = GetLastError(); operation = "primary child exit code"; goto cleanup; }
+cleanup:
+  if (started && !exited) {
+    if (!TerminateProcess(child.hProcess, 87) || WaitForSingleObject(child.hProcess, 5000) != WAIT_OBJECT_0) cleanupOk = FALSE;
+    else exited = TRUE;
+  }
+  if (job) {
+    if (!TerminateJobObject(job, 87)) cleanupOk = FALSE;
+    deadline = GetTickCount64() + 5000;
+    do {
+      ZeroMemory(&accounting, sizeof(accounting));
+      if (!QueryInformationJobObject(job, JobObjectBasicAccountingInformation, &accounting, sizeof(accounting), NULL)) { cleanupOk = FALSE; break; }
+      if (accounting.ActiveProcesses == 0) { jobEmpty = TRUE; break; }
+      Sleep(10);
+    } while (GetTickCount64() < deadline);
+    if (!jobEmpty) cleanupOk = FALSE;
+  }
+  if (threadToken && !CloseHandle(threadToken)) cleanupOk = FALSE;
+  if (childToken && !CloseHandle(childToken)) cleanupOk = FALSE;
+  if (child.hThread && !CloseHandle(child.hThread)) cleanupOk = FALSE;
+  if (child.hProcess && !CloseHandle(child.hProcess)) cleanupOk = FALSE;
+  if (job && !CloseHandle(job)) cleanupOk = FALSE;
+  if (restrictedToken && !CloseHandle(restrictedToken)) cleanupOk = FALSE;
+  if (original && !CloseHandle(original)) cleanupOk = FALSE;
+  free(groups); free(childUser);
+  if (!cleanupOk) { free(user); return failure("primary child cleanup unconfirmed", ERROR_BUSY, FALSE); }
+  if (error != ERROR_SUCCESS) { free(user); return failure(operation, error, blocked); }
+  printf("{\"complete\":true,\"pid\":%lu,\"userSid\":", (unsigned long)childPid); hex(user->User.Sid, GetLengthSid(user->User.Sid));
+  printf(",\"restricted\":%s,\"tokenType\":%u,\"restrictedSidCount\":%lu,\"sameUser\":%s,\"threadTokenAbsent\":%s,\"threadTokenError\":%lu,"
+    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false}\n",
+    json_boolean(tokenRestricted), (unsigned)type, (unsigned long)restrictedCount, json_boolean(sameUser), json_boolean(threadAbsent),
+    (unsigned long)threadError, (unsigned long)exitCode, json_boolean(exited), json_boolean(jobEmpty));
+  free(user); return 0;
+}
+
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 9 && wcscmp(argv[1], L"primary-process") == 0) return primary_process(argc, argv);
   if (argc == 4 && wcscmp(argv[1], L"hold-descriptor") == 0) return hold_descriptor(argv[2], argv[3]);
   if (argc == 6 && wcscmp(argv[1], L"token-access") == 0) return token_access(argv[2], argv[3], argv[4], argv[5]);
   if (argc == 4 && wcscmp(argv[1], L"hold-reader") == 0) {

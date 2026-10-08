@@ -201,3 +201,11 @@ test('extracted artifact resolves source-owner and SDK imports without the sourc
   assert.ifError(sdk.error); assert.equal(sdk.signal, null); assert.equal(sdk.status, 0, sdk.stderr)
   for (const file of descriptor.toolkit.files) assert.equal(hash(readFileSync(join(stage, file.path))), file.sha256)
 })
+
+for (const name of ['primary-token-worker.mjs', 'primary-token-evidence.mjs']) {
+  test(`artifact preparer requires ${name} for actual primary-token evidence`, async t => {
+    const { root, stage, cache, packages } = fixture(t)
+    rmSync(join(root, nativePath, name))
+    await assert.rejects(preparePrivateStorageAcceptance(root, stage, packages, { archiveDirectory: cache }), /primary-token/u)
+  })
+}

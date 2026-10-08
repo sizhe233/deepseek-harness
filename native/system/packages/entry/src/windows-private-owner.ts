@@ -14,6 +14,8 @@ export interface WindowsPrivateOwner {
   tokenUser(): Uint8Array
   /**
    * Open one no-reparse component with native lifetime ownership.
+   * Failed exposure of a confirmed newly created file attempts retained-handle deletion before close.
+   * Unsettled cleanup preserves native quarantine and the original exposure error.
    * @param parent Retained parent, or null only for a literal NT drive-root inspection.
    * @param name Literal component or permitted NT drive root.
    * @param kind Required object kind.

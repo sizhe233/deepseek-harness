@@ -8,6 +8,8 @@ import { release } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startPrimaryProcess } from './primary-process.mjs'
+import { validatePrimaryTokenPair } from './primary-token-evidence.mjs'
+import { ownerBinding } from './owner-observer.mjs'
 
 const options = new Map()
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -70,15 +72,20 @@ async function check(name, operation) {
     report.results.push({ name, status: 'passed', ...(detail === undefined ? {} : { detail }) })
   } catch (error) {
     report.results.push({ name, status: error instanceof Blocked ? 'blocked' : 'failed', reason: String(error.message),
-      ...(error.code === undefined ? {} : { code: error.code }), ...(error.receipt === undefined ? {} : { receipt: error.receipt }) })
+      ...(error.code === undefined ? {} : { code: error.code }), ...(error.receipt === undefined ? {} : { receipt: error.receipt }),
+      ...(error.observation === undefined ? {} : { observation: error.observation }) })
   }
 }
 
 function oracle(...args) {
   const child = spawnSync(oraclePath, args, { encoding: 'utf8', env: childEnv, timeout: 30_000, windowsHide: true })
+  if (args[0] === 'primary-process' && (child.error || child.signal)) processCleanupUncertain = true
   assert.ifError(child.error)
   assert.equal(child.signal, null, `Oracle ${args[0]} was interrupted`)
-  const result = JSON.parse(child.stdout)
+  let result
+  try { result = JSON.parse(child.stdout) }
+  catch (error) { if (args[0] === 'primary-process') processCleanupUncertain = true; throw error }
+  if (args[0] === 'primary-process' && result.operation === 'primary child cleanup unconfirmed') processCleanupUncertain = true
   if (child.status === 3 && result.status === 'blocked') throw new Blocked(`Native fixture ${result.operation} unavailable, Win32 ${result.win32Error ?? 'n/a'}, NTSTATUS ${result.nativeStatus ?? 'n/a'}`)
   assert.equal(child.status, 0, `Oracle ${args[0]} failed: ${child.stdout || child.stderr}`)
   assert.equal(result.complete, true)
@@ -296,6 +303,27 @@ try {
       } finally { await worker.kill() }
     })
   }
+  await check('restricted-primary-process-token-rejection', () => {
+    requireRoot()
+    const before = snapshot(join(rootPath, 'record.bin')), parentBefore = snapshot(rootPath)
+    const entriesBefore = readdirSync(rootPath).sort(), recordSha256 = sha256(join(rootPath, 'record.bin'))
+    const worker = fileURLToPath(new URL('primary-token-worker.mjs', import.meta.url))
+    const pair = {}
+    try {
+      for (const mode of ['ordinary', 'restricted']) {
+        const observation = join(sandbox, `primary-token-${mode}.json`)
+        const launch = oracle('primary-process', mode, process.execPath, worker, entry, rootPath, observation, mode)
+        pair[mode] = { launch }
+        pair[mode].child = JSON.parse(readFileSync(observation, 'utf8'))
+      }
+      validatePrimaryTokenPair(pair, { userSid: token.userSid, entrySha256: report.entrySha256,
+        nativeBinarySha256: ownerBinding(entry).sha256, recordSha256 })
+      assert.deepEqual(snapshot(join(rootPath, 'record.bin')), before)
+      assert.deepEqual(snapshot(rootPath), parentBefore); assert.deepEqual(readdirSync(rootPath).sort(), entriesBefore)
+      assert.equal(sha256(join(rootPath, 'record.bin')), recordSha256)
+      return { ...pair, originalIdentitiesDescriptorsAndBytesRetained: true }
+    } catch (error) { error.observation = pair; throw error }
+  })
   await check('collision-preserves-first-publication', () => {
     requireRoot()
     const before = snapshot(join(rootPath, 'record.bin'))
@@ -732,7 +760,6 @@ try {
     })
   }
   for (const [name, reason] of [
-    ['restricted-primary-process-token-rejection', 'Restricted-thread and anonymous-token cases are exercised separately; a restricted primary-process fixture has not run, and no privilege-enabling process creation is used'],
     ['conditional-malformed-acl-native-fixtures', 'Malformed serialized decoder fixtures belong to separate parser tests; conditional native ACLs have not run'],
     ['junction-mount-cloud-unknown-reparse-fixtures', 'Symlink fixtures are real; additional reparse-tag fixtures have not run'],
     ['deterministic-race-and-crash-boundary-matrix', 'No mock or timing-only stress is counted as deterministic native fault-boundary evidence'],

@@ -101,6 +101,31 @@ test('pending quarantine requires a real wait/cancel trace and rejects later nat
   ]) { const changed = structuredClone(value); mutate(changed); assert.throws(() => validateOwnerFaultResult(changed, changed.scenario)) }
 })
 
+test('publish exposure ordinal 17 requires successful retained staging deletion before close', () => {
+  const value = detail('native-one-shot-publish-view:17')
+  Object.assign(value, { outcome: { ok: false, cleanupFailed: false }, faultInjected: true, injections: 1 })
+  value.trace = [
+    { ...event, name: 'NtCreateFile', role: 'staging' },
+    { ...event, name: 'napi_create_external', forwarded: false, injected: true, visibleReturn: 9,
+      ordinal: 17, injectionOrigin: 'test-owned-result-exposure-refusal' },
+    { ...event, name: 'NtSetInformationFile', role: 'staging' },
+    { ...event, name: 'CloseHandle', role: 'staging', actualReturn: 1, visibleReturn: 1, actuallyReleased: true },
+  ]
+  validateOwnerFaultResult(value, value.scenario)
+  for (const mutate of [
+    changed => { changed.trace.splice(2, 1) },
+    changed => { [changed.trace[2], changed.trace[3]] = [changed.trace[3], changed.trace[2]] },
+    changed => { changed.trace[2].role = 'file' },
+    changed => { changed.trace[2].actualReturn = 0xc0000001 },
+    changed => { changed.trace[2].visibleReturn = 259 },
+    changed => { changed.trace[3].actuallyReleased = false },
+    changed => { changed.outcome.cleanupFailed = true },
+  ]) {
+    const changed = structuredClone(value); mutate(changed)
+    assert.throws(() => validateOwnerFaultResult(changed, changed.scenario))
+  }
+})
+
 test('source fixture includes production directly, scopes macros to the include, and has no environment fault activation', () => {
   const source = readFileSync(join(here, 'owner-fault-fixture.c'), 'utf8')
   assert.match(source, /#include "\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/native\/system\/packages\/entry\/src\/windows-private-owner\.c"/u)

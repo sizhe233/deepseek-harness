@@ -18,7 +18,7 @@ export function ownerLibraryDirectories(text) {
   return directories
 }
 
-export const ownerProductionSha256 = '4bbd66634eb5f1215d62c65b745c6483c2578f2ec762d54e4afd394eb419b77f'
+export const ownerProductionSha256 = '35b98bc2a0b577e9a680535b199bcf12fd52d41a9fff112bfe19705b53d773e8'
 export const ownerDirectoryCases = Object.freeze([
   'directory-enumeration-baseline',
   ...['truncated-header', 'overlong-buffer', 'odd-name-length', 'zero-name-length', 'name-overruns-page',
@@ -156,6 +156,21 @@ export function validateOwnerFaultResult(detail, scenario) {
     assert.equal(injected.length, 1); assert.equal(injected[0].ordinal, Number(ordinal))
     assert.equal(injected[0].injectionOrigin, ownerOrdinalMapping[kind].injection)
     assert.equal(detail.quarantinedOwners, 0)
+    if (injected[0].name === 'napi_create_external') {
+      const exposureIndex = detail.trace.indexOf(injected[0])
+      const opened = detail.trace.slice(0, exposureIndex).findLast(row => row.name === 'NtCreateFile')
+      if (opened?.role === 'staging' && opened.forwarded && opened.visibleReturn === 0) {
+        const remaining = detail.trace.slice(exposureIndex + 1)
+        const disposition = remaining.findIndex(row => row.name === 'NtSetInformationFile' && row.role === 'staging')
+        const close = remaining.findIndex(row => row.name === 'CloseHandle' && row.role === 'staging')
+        assert.ok(disposition >= 0 && close > disposition, 'Unexposed staging requires retained-handle disposition before close')
+        assert.deepEqual([remaining[disposition].forwarded, remaining[disposition].injected,
+          remaining[disposition].actualReturn, remaining[disposition].visibleReturn], [true, false, 0, 0])
+        assert.deepEqual([remaining[close].forwarded, remaining[close].actuallyReleased,
+          remaining[close].actualReturn, remaining[close].visibleReturn], [true, true, 1, 1])
+        assert.equal(detail.outcome.cleanupFailed, false)
+      }
+    }
   }
   for (const field of ['fixtureBinarySha256', 'fixtureSourceSha256', 'entrySha256', 'productionBinarySha256']) assert.match(detail[field], /^[a-f0-9]{64}$/u)
   return detail

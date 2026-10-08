@@ -614,7 +614,7 @@ static napi_value owner_open(napi_env env, napi_callback_info info) {
   WCHAR name[NAME_LIMIT + 1];
   size_t length, descriptor_length = 0, descriptor_offset;
   char kind[16], mode[16];
-  bool root, creating, logging;
+  bool root, creating, logging, created_staging = false;
   void *descriptor = NULL;
   napi_valuetype type;
   ACCESS_MASK access;
@@ -696,6 +696,7 @@ static napi_value owner_open(napi_env env, napi_callback_info info) {
     state->live_file_count++;
     InterlockedIncrement64(&counters.open_files);
   }
+  created_staging = creating && strcmp(kind, "file") == 0 && context->ios.Information == 2; /* FILE_CREATED. */
   if (napi_create_external(env, file, finalize_file, NULL, &result) != napi_ok) {
     error = fail("native file exposure", "native"); goto failed;
   }
@@ -705,6 +706,18 @@ static napi_value owner_open(napi_env env, napi_callback_info info) {
   }
   return result_or_error(env, context, error, result);
 failed:
+  if (created_staging && !state->quarantined) {
+    failure cleanup = { 0 };
+    /* Reuse the settled create context; only this retained, newly-created file may be removed. */
+    context->data[0] = 1;
+    context->ios.Status = PS_PENDING;
+    context->ios.Information = 0;
+    if (!call_succeeded(context, file->handle, nt_set(file->handle, &context->ios,
+      context->data, 1, 13), "NtSetInformationFile exposure rollback", &cleanup)) {
+      error.cleanup_failed = true;
+      error.pending = cleanup.pending;
+    }
+  }
   if (file->handle == INVALID_HANDLE_VALUE && !state->quarantined) file->handle = NULL;
   (void)retire_file(file, &error);
   if (!file->exposed && !state->quarantined) unlink_file(file);

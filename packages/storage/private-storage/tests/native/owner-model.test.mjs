@@ -10,7 +10,10 @@ import { fileURLToPath } from 'node:url'
 const fixture = fileURLToPath(new URL('owner-model.c', import.meta.url))
 const header = fileURLToPath(new URL('owner-windows-model.h', import.meta.url))
 const nodeHeaders = process.argv[2] ?? join(dirname(process.execPath), '../include/node')
-const scenarios = ['reparse-copied', 'reparse-refusal', 'reparse-pending', 'reparse-exposure', 'reparse-truncated', 'reparse-overlong',
+const rollbackScenarios = ['exposure', 'tag', 'log-existing', 'log-created', 'read-existing', 'directory',
+  'create-refused', 'create-pending', 'create-unconfirmed', 'disposition-refused', 'close-unconfirmed',
+  'disposition-pending-settled', 'disposition-pending-cancelled', 'disposition-pending-quarantine']
+const scenarios = [...rollbackScenarios.map(name => `open-rollback-${name}`), 'reparse-copied', 'reparse-refusal', 'reparse-pending', 'reparse-exposure', 'reparse-truncated', 'reparse-overlong',
   'open-policy-read-link', 'process-running', 'process-exited', 'process-open-refusal', 'process-query-refusal',
   'process-identity-refusal', 'process-zero-birth', 'process-invalid-pid', 'process-wait-refusal', 'process-unexpected-wait',
   'process-close-unconfirmed', 'open-policy-create', 'open-policy-log', 'open-policy-read-source', 'open-policy-read',

@@ -12,7 +12,12 @@ static unsigned complete_wait;
 static NTSTATUS completed_status;
 static NTSTATUS create_status;
 static HANDLE created_handle;
-static bool exposure_ok;
+static bool exposure_ok, tag_ok = true;
+static uintptr_t create_information = 2;
+static NTSTATUS disposition_status;
+static unsigned disposition_calls;
+static bool reported_cleanup_failed, reported_pending;
+static char reported_operation[96];
 static bool exposure_registered;
 static owner *current_owner;
 static owned_file *exposed_file;
@@ -184,7 +189,7 @@ napi_status napi_create_external(napi_env env, void *data, napi_finalize finaliz
   return napi_ok;
 }
 napi_status napi_type_tag_object(napi_env env, napi_value value, const napi_type_tag *tag) {
-  (void)env; assert(value == JS_RESULT); assert(tag == &file_tag); return napi_ok;
+  (void)env; assert(value == JS_RESULT); assert(tag == &file_tag); return tag_ok ? napi_ok : napi_generic_failure;
 }
 napi_status napi_is_exception_pending(napi_env env, bool *result) { (void)env; *result = false; return napi_ok; }
 napi_status napi_get_and_clear_last_exception(napi_env env, napi_value *result) { (void)env; return create_stub_value(result); }
@@ -215,6 +220,9 @@ napi_status napi_get_boolean(napi_env env, bool value, napi_value *result) {
 }
 napi_status napi_set_named_property(napi_env env, napi_value object, const char *name, napi_value value) {
   (void)env; (void)object; (void)value;
+  if (strcmp(name, "operation") == 0) snprintf(reported_operation, sizeof(reported_operation), "%s", last_operation);
+  if (strcmp(name, "cleanupFailed") == 0) reported_cleanup_failed = last_cleanup_failed;
+  if (strcmp(name, "pending") == 0) reported_pending = last_cleanup_failed;
   if (process_case && strcmp(name, "creationTime100ns") == 0) snprintf(observed_birth, sizeof(observed_birth), "%s", last_operation);
   if (process_case && strcmp(name, "state") == 0) snprintf(observed_process_state, sizeof(observed_process_state), "%s", last_operation);
   return napi_ok;
@@ -242,8 +250,21 @@ static NTSTATUS modeled_create(PHANDLE handle, ACCESS_MASK access, POBJECT_ATTRI
   created_handle = (HANDLE)((uintptr_t)created_handle + 4);
   *handle = created_handle;
   if (create_status != PS_PENDING) ios->Status = create_status;
+  ios->Information = create_information;
   waiting_context = current_owner->contexts;
   return create_status;
+}
+
+static NTSTATUS modeled_disposition(HANDLE handle, PIO_STATUS_BLOCK ios, PVOID data, ULONG length, ULONG cls) {
+  assert(strcmp(modeled_mode, "create") == 0 && strcmp(modeled_kind, "file") == 0);
+  assert(handle == created_handle && handle == current_owner->files->handle && close_calls == 0);
+  assert(ios == &current_owner->contexts->ios && data == current_owner->contexts->data);
+  assert(ios->Status == PS_PENDING && ios->Information == 0);
+  assert(length == 1 && cls == 13 && ((unsigned char *)data)[0] == 1);
+  assert(create_status == PS_SUCCESS && create_information == 2);
+  disposition_calls++;
+  if (disposition_status != PS_PENDING) ios->Status = disposition_status;
+  return disposition_status;
 }
 
 static owner *make_owner(void) {
@@ -420,6 +441,63 @@ int main(int argc, char **argv) {
       assert(counters.heap_blocks == 3 && counters.open_files == 1 && close_calls == 0);
       assert(quarantined_owners == state && state->contexts == context && state->files == file);
     }
+  } else if (strncmp(argv[1], "open-rollback-", 14) == 0) {
+    const char *scenario = argv[1] + 14;
+    modeled_child = true; modeled_parent = make_file(state);
+    modeled_kind = "file"; modeled_mode = "create";
+    expected_options = 0x200062; expected_share = 1; expected_access = 0x130083; expected_disposition = 2;
+    modeled_descriptor.Revision = SECURITY_DESCRIPTOR_REVISION;
+    modeled_descriptor.Control = SE_SELF_RELATIVE;
+    nt_create = modeled_create; nt_set = modeled_disposition;
+    created_handle = (HANDLE)(uintptr_t)103;
+    exposure_ok = strcmp(scenario, "tag") == 0; tag_ok = !exposure_ok;
+    if (strcmp(scenario, "log-existing") == 0 || strcmp(scenario, "log-created") == 0) {
+      modeled_mode = "log"; expected_disposition = 3; expected_access = 0x40120080;
+      create_information = strcmp(scenario, "log-existing") == 0 ? 1 : 2;
+    } else if (strcmp(scenario, "read-existing") == 0) {
+      modeled_mode = "read"; expected_disposition = 1; expected_access = 0x120081;
+      expected_options = 0x200060; expected_share = 5; create_information = 1;
+    } else if (strcmp(scenario, "directory") == 0) {
+      modeled_kind = "directory"; expected_access = 0x1300a1; expected_share = 3; expected_options = 0x200023;
+    } else if (strcmp(scenario, "create-refused") == 0) create_status = (NTSTATUS)0xc0000034u;
+    else if (strcmp(scenario, "create-pending") == 0) create_status = PS_PENDING;
+    else if (strcmp(scenario, "create-unconfirmed") == 0) create_information = 0;
+    else if (strcmp(scenario, "disposition-refused") == 0) disposition_status = (NTSTATUS)0xc0000022u;
+    else if (strncmp(scenario, "disposition-pending-", 20) == 0) {
+      disposition_status = PS_PENDING;
+      if (strcmp(scenario, "disposition-pending-settled") == 0) complete_wait = 1;
+      else if (strcmp(scenario, "disposition-pending-cancelled") == 0) {
+        complete_wait = 2; completed_status = (NTSTATUS)0xc0000120u;
+      } else assert(strcmp(scenario, "disposition-pending-quarantine") == 0);
+    } else if (strcmp(scenario, "close-unconfirmed") == 0) close_ok = false;
+    else assert(strcmp(scenario, "exposure") == 0 || strcmp(scenario, "tag") == 0);
+    bool delete_expected = strcmp(modeled_mode, "create") == 0 && strcmp(modeled_kind, "file") == 0
+      && create_status == PS_SUCCESS && create_information == 2;
+    bool pending = create_status == PS_PENDING || (disposition_status == PS_PENDING && complete_wait == 0);
+    bool quarantined = pending || !close_ok;
+    assert(owner_open(state->env, NULL) == NULL && throws == 1);
+    assert(disposition_calls == (delete_expected ? 1u : 0u));
+    assert(strcmp(reported_operation, create_status != PS_SUCCESS ? "NtCreateFile"
+      : exposure_ok ? "native file tag" : "native file exposure") == 0);
+    assert(reported_cleanup_failed == (quarantined || (delete_expected && (disposition_status == (NTSTATUS)0xc0000022u
+      || (disposition_status == PS_PENDING && completed_status != PS_SUCCESS)))));
+    assert(reported_pending == pending);
+    assert(close_calls == (pending ? 0u : 1u));
+    assert(state->quarantined == quarantined);
+    if (pending) {
+      assert(wait_calls == 2 && cancel_calls == 1 && counters.pending_contexts == 1);
+      assert(state->contexts != NULL && counters.open_files == 2);
+    } else if (disposition_status == PS_PENDING) {
+      assert(wait_calls == complete_wait && cancel_calls == complete_wait - 1 && counters.pending_contexts == 0);
+    }
+    cleanup_owner(state); finalize_owner(state->env, state, NULL);
+    if (exposed_file != NULL) finalize_file(NULL, exposed_file, NULL);
+    finalize_file(NULL, modeled_parent, NULL);
+    if (quarantined) {
+      assert(close_calls == (pending ? 0u : 1u));
+      assert(disposition_calls == (delete_expected ? 1u : 0u));
+      assert(counters.unconfirmed_releases == 1 && state->contexts != NULL);
+    } else { assert(close_calls == 2); assert_empty(); }
   } else if (strncmp(argv[1], "open-policy-", 12) == 0) {
     const char *policy = argv[1] + 12;
     modeled_child = true; modeled_parent = make_file(state);
