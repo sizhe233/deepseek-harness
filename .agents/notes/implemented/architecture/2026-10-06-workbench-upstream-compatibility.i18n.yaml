@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-06-workbench-upstream-compatibility.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-06-workbench-upstream-compatibility.md
+/agent-note-preserve-workbench-behavior-across-upstream-apis:
+  en: f085805433d66517
+  zh: 7971b9457d31e942
+/agent-note-preserve-workbench-behavior-across-upstream-apis/problem:
+  en: 34097d63a7cbdf8a
+  zh: 2f813fecb023b79b
+/agent-note-preserve-workbench-behavior-across-upstream-apis/decision:
+  en: 12a57ea3c909bba8
+  zh: ccf1a380963fbdf2
+/agent-note-preserve-workbench-behavior-across-upstream-apis/alternatives-considered:
+  en: 0bab2fbccee9d339
+  zh: 50e4c7972d7fb60f
+/agent-note-preserve-workbench-behavior-across-upstream-apis/consequences:
+  en: 957a0f1e8ec91df6
+  zh: 7072342aff5fc8c7

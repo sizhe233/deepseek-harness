@@ -27,7 +27,7 @@ English | [中文](README.zh.md)
 
 ### When to use it
 
-Use this library from persistence or format-catalog code that must classify a physical Session header, restore current logical values, or compose released adjacent migrations. It is not a Cordis plugin and has no profile mount row. No runtime invariant companion is published because each completed operation validates its result; decoder and transformer state belongs to one unfinished streaming restore and is never shared across restores.
+Use this library from persistence or format-catalog code that must classify a physical Session header, restore current logical values, or compose released adjacent migrations. It is not a Cordis plugin and has no profile mount row.
 
 ### Entry point
 
@@ -46,6 +46,8 @@ const eventRecords = current.events.map(catalog.encodeCurrentEvent)
 The `recovery` option selects strict row failure or recoverable suffix handling. `validation: 'current'` applies all installed current-format validation. `validation: 'transformed'` applies released current-format validation after historical migration, while already-current input receives only its codec's physical validation.
 
 The recoverable decoder returns the accepted logical prefix. A codec may drop one malformed or sequence-gapped row and its uncommitted suffix, but a later decoded `turn/end` makes the original issue fatal.
+
+An optional `admitRow()` hook on the artifact decoder and restore performs pure structural admission without consuming decoder state. An outer parser calls it for each parsed row before suppressing a damaged suffix, including after a preceding JSON parse error. Codec-owned hard refusals therefore remain errors instead of being discarded as recoverable tail data.
 
 -----
 

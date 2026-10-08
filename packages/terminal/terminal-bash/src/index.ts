@@ -89,14 +89,15 @@ function childEnvironment(spec: TerminalBackendSpawnSpec, dialect: ShellDialect)
 }
 
 /**
- * The pwsh prompt function that emits the shared OSC `133;D;` + BEL marker
- * before every prompt, mirroring bash's PROMPT_COMMAND. `[char]27`/`[char]7`
- * build the control bytes inside the startup command instead of argv.
+ * Initialize an already-loaded line editor before publishing the pwsh prompt;
+ * its lazy macOS accessibility probe can restore canonical input for a child.
+ * Prime console input without consuming a key so queued Enter remains CR.
+ * `[char]27`/`[char]7` build the shared OSC marker in the child.
  */
 export const PWSH_PROMPT_SETUP =
-  "function prompt { [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
+  "if (Get-Module PSReadLine) { $null = PSReadLine\\Get-PSReadLineOption }; function prompt { $null = [Console]::KeyAvailable; [Console]::Write([char]27 + ']133;D;' + [int]$LASTEXITCODE + [char]7); '" + CONTROLLED_PROMPT + "' }"
 
-function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy): string[] {
+async function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutionPolicy, signal?: AbortSignal): Promise<string[]> {
   const argv = [config.shellPath, ...config.shellArgs, ...(config.shellDialect === 'pwsh' && config.pwshBootstrap === 'argv'
     ? ['-NoExit', '-Command', ENCODING_PREAMBLE + PWSH_PROMPT_SETUP]
     : [])]
@@ -106,7 +107,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
     throw new Error(`terminal-bash: sandbox mode "${policy.mode}" requires a ctx.sandbox provider in the execution world`)
   }
   // Re-state the discriminant because object spread does not preserve its narrowed type.
-  return sandbox.confine(argv, { ...policy, mode: policy.mode }).argv
+  return (await sandbox.confine(argv, { ...policy, mode: policy.mode }, signal)).argv
 }
 
 // TODO(pty-initialize-race-home): Fold this outer abort race into
@@ -115,6 +116,7 @@ function spawnArgv(ctx: Context, config: ResolvedConfig, policy: SandboxExecutio
 async function startupSession(
   session: LocalPtySession,
   config: ResolvedConfig,
+  setupEnter: '\r' | '\x1bOM',
   signal?: AbortSignal,
 ): Promise<void> {
   const races: Promise<void>[] = []
@@ -130,12 +132,22 @@ async function startupSession(
     await Promise.race([
       session.initialize(signal, config.shellDialect === 'pwsh' && config.pwshBootstrap === 'stdin'
         ? ENCODING_PREAMBLE + PWSH_PROMPT_SETUP
-        : undefined),
+        : undefined, setupEnter),
       ...races,
     ])
   } finally {
     if (signal !== undefined && onAbort !== undefined) signal.removeEventListener('abort', onAbort)
   }
+}
+
+/** Reject a failed startup only after its unpublished resources reach quiescence. */
+async function rejectAfterStartupCleanup(error: unknown, cleanup: () => Promise<void>): Promise<never> {
+  try {
+    await cleanup()
+  } catch (cleanupError: unknown) {
+    throw new TerminalBackendCleanupError(error, cleanupError)
+  }
+  throw error
 }
 
 /** Local shell backend registered under the configured type. */
@@ -160,7 +172,14 @@ export class BashTerminalBackend implements TerminalBackend {
     spec.signal?.throwIfAborted()
     ensureSandboxModeFence(this.ctx, spec.owner)
     const policy = this.ctx.sandboxPolicy.resolve({ session: spec.owner.session })
-    const argv = spawnArgv(this.ctx, this.config, policy)
+    // POSIX canonical input can convert CR before pwsh's first console read.
+    // SS3 keypad Enter survives that transition; ConPTY requires the ordinary CR.
+    const setupEnter = this.config.shellDialect === 'pwsh' && this.config.pwshBootstrap === 'stdin'
+      && (await this.ctx.subprocess.terminalEnvironment(spec.signal)).platform === 'posix'
+      ? '\x1bOM' : '\r'
+    spec.signal?.throwIfAborted()
+    const argv = await spawnArgv(this.ctx, this.config, policy, spec.signal)
+    spec.signal?.throwIfAborted()
     if (argv[0] === undefined) throw new Error('terminal-bash: sandbox returned empty argv')
     const terminal = await this.spawnTerminal({
       argv,
@@ -168,20 +187,21 @@ export class BashTerminalBackend implements TerminalBackend {
       env: childEnvironment(spec, this.config.shellDialect),
       rows: this.config.rows,
       cols: this.config.cols,
+      terminalType: 'dumb',
       graceMs: this.config.disposeGraceMs,
       signal: spec.signal,
     })
-    const session = this.createSession(terminal, this.config)
+    let session: LocalPtySession
     try {
-      await startupSession(session, this.config, spec.signal)
+      session = this.createSession(terminal, this.config)
+    } catch (error) {
+      return rejectAfterStartupCleanup(error, () => terminal.terminate())
+    }
+    try {
+      await startupSession(session, this.config, setupEnter, spec.signal)
       return session
     } catch (error) {
-      try {
-        await session.close('PTY startup failed')
-      } catch (closeError: unknown) {
-        throw new TerminalBackendCleanupError(error, closeError)
-      }
-      throw error
+      return rejectAfterStartupCleanup(error, () => session.close('PTY startup failed'))
     }
   }
 }

@@ -30,6 +30,12 @@ test('the real Landlock subpath imports without platform packages or dlopen, whi
         dlopenCalls++;
         throw new Error('Landlock import attempted dlopen');
       };
+      const storage = await import('@deepseek-ai/node-addon-system/private-storage');
+      assert.equal(typeof storage.loadPosixStoragePrimitives, 'function');
+      assert.equal(dlopenCalls, 0);
+      const windows = await import('@deepseek-ai/node-addon-system/windows-private-owner');
+      assert.equal(typeof windows.loadWindowsPrivateOwner, 'function');
+      assert.equal(dlopenCalls, 0);
       const api = await import('@deepseek-ai/node-addon-system/landlock-run');
       assert.equal(api.LAUNCHER_BIN, 'landlock-run');
       assert.deepEqual(api.grantArgs({}), []);
@@ -63,16 +69,20 @@ function fixture(t, { platform = 'linux', arch = 'x64', kind = 'node-api' } = {}
   const executable = kind === 'static-musl';
   const binary = executable
     ? { tool: 'landlock-run', kind, path: 'bin/landlock-run' }
-    : { tool: 'flock', kind, napi: 8, ...(platform === 'linux' ? { libc: 'glibc' } : {}), path: 'bin/system.node' };
+    : { tool: platform === 'win32' ? 'windows-private-owner' : 'flock', kind, napi: 8, ...(platform === 'linux' ? { libc: 'glibc' } : {}), path: 'bin/system.node' };
   const spec = { platform: `${platform}-${arch}`, binaries: [binary] };
   const manifest = { name: 'fixture', os: [platform], cpu: [arch] };
-  const bytes = Buffer.alloc(256);
+  const bytes = Buffer.alloc(512);
   if (platform === 'linux') {
     bytes.writeUInt32LE(0x464c457f, 0);
     bytes[4] = 2;
     bytes[5] = 1;
     bytes.writeUInt16LE(executable ? 2 : 3, 16);
     bytes.writeUInt16LE(arch === 'x64' ? 62 : 183, 18);
+  } else if (platform === 'win32') {
+    bytes.writeUInt16LE(0x5a4d, 0); bytes.writeUInt32LE(128, 60);
+    bytes.writeUInt32LE(0x4550, 128); bytes.writeUInt16LE(0x8664, 132);
+    bytes.writeUInt16LE(240, 148); bytes.writeUInt16LE(0x2000, 150); bytes.writeUInt16LE(0x20b, 152);
   } else {
     bytes.writeUInt32LE(0xfeedfacf, 0);
     bytes.writeUInt32LE(arch === 'x64' ? 0x01000007 : 0x0100000c, 4);
@@ -98,12 +108,22 @@ for (const platform of ['linux', 'darwin']) {
   }
 }
 
+test('accepts a separate retained-storage Node-API payload and rejects unknown addon tools', (t) => {
+  const f = fixture(t);
+  f.binary.tool = 'private-storage';
+  f.save();
+  assert.equal(verifyPlatformBinaries(f.dir).count, 1);
+  f.binary.tool = 'unreviewed-storage';
+  f.save();
+  assert.throws(() => verifyPlatformBinaries(f.dir), /kind\/tool\/NAPI/);
+});
+
 test('accepts the Linux static launcher format', (t) => {
   assert.equal(verifyPlatformBinaries(fixture(t, { kind: 'static-musl' }).dir).count, 1);
 });
 
 for (const [name, change, expected] of [
-  ['unknown platform', (f) => { f.manifest.os = ['win32']; }, /os\/cpu/],
+  ['unknown platform', (f) => { f.manifest.os = ['freebsd']; }, /os\/cpu/],
   ['mismatched platform', (f) => { f.spec.platform = 'linux-arm64'; }, /disagrees/],
   ['path outside bin', (f) => { f.binary.path = '../system.node'; }, /inside bin/],
   ['duplicate binary', (f) => { f.spec.binaries.push({ ...f.binary }); }, /duplicate/],
@@ -183,4 +203,34 @@ test('entry prepack rejects a missing exported flock file even when the Landlock
   assert.equal(complete.error, undefined);
   assert.equal(complete.signal, null);
   assert.equal(complete.status, 0, complete.stderr);
+});
+
+test('accepts the Windows x64 Node-API owner payload', t => {
+  assert.equal(verifyPlatformBinaries(fixture(t, { platform: 'win32' }).dir).count, 1);
+});
+for (const [offset, value] of [[0,0],[60,0xffffffff],[128,0],[132,0xaa64],[148,0],[150,0],[152,0x10b]]) {
+  test(`rejects invalid Windows PE header at ${offset}`, t => {
+    const f = fixture(t,{platform:'win32'});
+    if (offset === 60 || offset === 128) f.bytes.writeUInt32LE(value,offset); else f.bytes.writeUInt16LE(value,offset);
+    fs.writeFileSync(f.file,f.bytes); assert.throws(()=>verifyPlatformBinaries(f.dir),/PE32/);
+  });
+}
+test('Windows owner metadata cannot substitute a POSIX binary or libc', t=>{
+  const f=fixture(t,{platform:'win32'}); f.binary.tool='flock'; f.save(); assert.throws(()=>verifyPlatformBinaries(f.dir),/kind\/tool/);
+  f.binary.tool='windows-private-owner'; f.binary.libc='glibc'; f.save(); assert.throws(()=>verifyPlatformBinaries(f.dir),/must not declare/);
+});
+
+test('entry prepack refuses missing declared auditable native source', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'system-entry-source-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(dir, 'lib')); fs.mkdirSync(path.join(dir, 'src'));
+  fs.writeFileSync(path.join(dir, 'lib/owner.js'), 'export {};\n');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'entry-fixture', files: ['lib/', 'src/windows-private-owner.c'], exports: { './owner': './lib/owner.js' } }));
+  const script = fileURLToPath(new URL('../scripts/verify-entry-lib.mjs', import.meta.url));
+  const options = { cwd: dir, encoding: 'utf8', timeout: 30000 };
+  const missing = spawnSync(process.execPath, [script], options);
+  assert.equal(missing.error, undefined); assert.equal(missing.status, 1); assert.match(missing.stderr, /auditable native source/);
+  fs.writeFileSync(path.join(dir, 'src/windows-private-owner.c'), '/* test source */\n');
+  const present = spawnSync(process.execPath, [script], options);
+  assert.equal(present.error, undefined); assert.equal(present.status, 0, present.stderr);
 });

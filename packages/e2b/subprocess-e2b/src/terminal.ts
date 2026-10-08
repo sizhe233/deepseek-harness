@@ -15,6 +15,7 @@ import type { CommandHandle, CommandResult, Sandbox } from '@deepseek-ai/dsh-e2b
 import type {
   SubprocessOutcome,
   SubprocessTerminalForeground,
+  SubprocessTerminalActivity,
   SubprocessTerminalHandle,
   SubprocessTerminalSignal,
   SubprocessTerminalSpawnSpec,
@@ -279,6 +280,8 @@ export class E2BTerminalHandle implements SubprocessTerminalHandle {
   readonly pid: number
   readonly done: Promise<SubprocessOutcome>
 
+  private activityRevision = 0
+  private observedForeground: number | undefined
   private topLevelExited = false
   private cleanup: Promise<void> | undefined
   private readonly operationController = new AbortController()
@@ -307,6 +310,29 @@ export class E2BTerminalHandle implements SubprocessTerminalHandle {
     return this.trackOperation(async (signal) => {
       if (this.topLevelExited) throw new Error('terminal process has exited')
       await this.sandbox.pty.sendInput(this.pid, Buffer.from(data, 'utf8'), { signal })
+      this.activityRevision += 1
+    })
+  }
+
+  /** @inheritdoc */
+  resize(cols: number, rows: number): Promise<void> {
+    return this.trackOperation(async (signal) => {
+      if (this.topLevelExited) throw new Error('terminal process has exited')
+      await this.sandbox.pty.resize(this.pid, { cols, rows }, { signal })
+      this.activityRevision += 1
+    })
+  }
+
+  /** @inheritdoc */
+  inspectActivity(): Promise<SubprocessTerminalActivity> {
+    return this.trackOperation(async (signal) => {
+      const foreground = await this.inspectForegroundOnce(signal)
+      if (foreground?.processGroupId !== this.observedForeground) {
+        this.observedForeground = foreground?.processGroupId
+        this.activityRevision += 1
+      }
+      // E2B has no shell-prompt or background-job observation, so silence cannot prove idle.
+      return { state: foreground !== undefined && foreground.processGroupId !== this.pid ? 'busy' : 'unknown', revision: this.activityRevision }
     })
   }
 
@@ -479,7 +505,7 @@ export async function spawnE2BTerminal(
   try {
     const ambient = await readRemoteEnvironment(sandbox, spec.signal)
     controlEnvs = bootstrapEnvironment(ambient)
-    const environment = serializeRemoteEnvironment(ambient, spec.env)
+    const environment = serializeRemoteEnvironment(ambient, { ...spec.env, TERM: spec.terminalType })
     const argv = serializeValues(spec.argv, 'argv')
     stateDirectoryCreated = true
     await sandbox.files.makeDir(stateDir, signalOpts(spec.signal))

@@ -1,0 +1,38 @@
+- tabpanel "MCP":
+  - list:
+    - listitem:
+      - 'button "Hide settings: MCP, 1 configured" [expanded]': MCP Configured MCP servers and bridge status. 1 configured
+      - list:
+        - listitem:
+          - 'button "Hide settings: mcp-settings-fixture, Disabled" [expanded]': mcp-settings-fixture Edit this bridge and reload only its connection. Disabled
+          - code: include:mcp-settings-fixture
+          - term: Bridge module
+          - definition: "@deepseek-ai/dsh-mcp-client"
+          - term: Cordis status
+          - definition: Not mounted
+          - text: Server name
+          - textbox "Server name": settings-fixture
+          - text: Transport
+          - combobox "Transport":
+            - option "Local process (stdio)" [selected]
+            - option "Streamable HTTP"
+          - text: Command
+          - textbox "Command": node
+          - text: Arguments
+          - textbox "Arguments One argument per line. Values are passed without shell expansion."
+          - text: One argument per line. Values are passed without shell expansion. Working directory
+          - textbox "Working directory"
+          - group "Environment variables":
+            - text: Environment variables
+            - paragraph: Values are write-only. Leave an existing value blank to keep it; remove a row to clear it.
+            - button "Add key"
+          - text: Tool call timeout (ms)
+          - spinbutton "Tool call timeout (ms)": "{{timeout}}"
+          - checkbox "Fail startup when the first connection fails"
+          - text: Fail startup when the first connection fails
+          - group: Reconnect policy
+          - status: Saved and reloaded this MCP connection.
+          - checkbox "Enable this MCP entry"
+          - text: Enable this MCP entry
+          - button "Discard" [disabled]
+          - button "Save" [disabled]

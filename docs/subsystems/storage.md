@@ -6,6 +6,10 @@ The storage subsystem persists everything that is not a session event log (sessi
 
 Source: [`packages/storage/storage/src/backend.ts`](../../packages/storage/storage/src/backend.ts) · [`packages/storage/storage-domain/src/spec.ts`](../../packages/storage/storage-domain/src/spec.ts) · [`packages/storage/storage-domain/src/events.ts`](../../packages/storage/storage-domain/src/events.ts)
 
+## Private byte storage
+
+The [private-storage library](../../packages/storage/private-storage/README.md) is an independent Host byte-storage primitive for exact owner-only Windows NTFS state. It exposes opaque retained directories, bounded same-handle reads, whole-file publication receipts and process-owned kernel leases; it neither mounts a backend nor owns domain schemas. Its [public source](../../packages/storage/private-storage/src/index.ts) owns the operation signatures, while its [types](../../packages/storage/private-storage/src/types.ts) define independent publication, durability and cleanup facts.
+
 ## The hub: `ctx.storage`
 
 `Storage` ([signatures](#ctxstorage--storage)) is a meeting point, not a store. `ctx.storage.backend` is a name → backend table: multiple backends stay mounted side by side, and which backend serves which consumer is that consumer's configuration (the domain layer's route table), never a hub-global choice. `register(name, backend)` returns the disposer; duplicate names and unknown lookups throw `StorageError`. Disposal only unregisters the name — the owning plugin closes the backend after unregistering. Each backend plugin also publishes a lifecycle-only service key (`storageBackendServiceKey(name)`), which form providers inject so their activation cannot race backend registration.
@@ -215,8 +219,7 @@ The mounted domain facility. Opens declared domains over routed backends; one fa
 async open<S extends DomainSpec>(spec: S): Promise<Domain<S>>
 
 /**
- * Look up an open domain by name, untyped. Diagnostic surface (the package
- * invariant cross-checks change events against live domain state); typed
+ * Look up an open domain by name, untyped. Diagnostic surface; typed
  * consumers hold the handle returned by {@link open}.
  * @param name - Domain name.
  * @returns the open domain runtime, or `undefined` when not open.

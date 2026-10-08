@@ -1,5 +1,7 @@
 /** Host controller that owns the Inspector Worker and Host observation source. */
 
+import { createRuntimeWorker } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+
 import { randomBytes, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { MessageChannel, Worker, type MessagePort, type WorkerOptions } from 'node:worker_threads'
@@ -292,7 +294,7 @@ function spawnWorker(boot: InspectorWorkerBoot<MessagePort>): Worker {
     execArgv: [],
   }
   if (!import.meta.url.endsWith('.ts')) {
-    return new Worker(new URL('./worker.js', import.meta.url), options)
+    return createRuntimeWorker(new URL('./worker.js', import.meta.url), options)
   }
   const workerEntry = new URL('../../worker/entry.ts', import.meta.url)
   const tsxEsmApiEntry = import.meta.resolve('tsx/esm/api')
@@ -301,7 +303,7 @@ function spawnWorker(boot: InspectorWorkerBoot<MessagePort>): Worker {
     'register()',
     `await import(${JSON.stringify(workerEntry.href)})`,
   ].join('\n')
-  return new Worker(new URL(`data:text/javascript,${encodeURIComponent(bootstrap)}`), {
+  return createRuntimeWorker(new URL(`data:text/javascript,${encodeURIComponent(bootstrap)}`), {
     ...options,
     env: sourceWorkerEnv(),
   })

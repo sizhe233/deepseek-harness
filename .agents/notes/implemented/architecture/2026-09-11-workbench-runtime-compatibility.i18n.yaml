@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-11-workbench-runtime-compatibility.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-11-workbench-runtime-compatibility.md
-2026-09-11-workbench-runtime-compatibility.md: c3eb1c93acca39081c9fa5043d6b7527aedbc775
-2026-09-11-workbench-runtime-compatibility.zh.md: b1a7a0d6008dfdbc48b90ce690deaa8f9fdd1a75
+/agent-note-workbench-runtime-compatibility:
+  en: 8372d0018ce874fe
+  zh: c01310d488974165
+/agent-note-workbench-runtime-compatibility/problem:
+  en: b64d4cbbbe101b49
+  zh: c57b3868d90edbfd
+/agent-note-workbench-runtime-compatibility/decision:
+  en: 642153d71dccf97b
+  zh: d5ef9f81fef2693e
+/agent-note-workbench-runtime-compatibility/alternatives-considered:
+  en: 2d972c10dfc49486
+  zh: d097f93c48831013
+/agent-note-workbench-runtime-compatibility/consequences:
+  en: e1ee3a23f891c36f
+  zh: a340a279522f2313

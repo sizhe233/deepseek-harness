@@ -92,7 +92,7 @@ Read these when the chooser's contract is not enough: the seam definition first,
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the GUI-host picking chooser only mounts a backend row and registers nothing model-facing.
+None, as the GUI host's directory-selection chooser only mounts a backend row and registers nothing model-facing.
 
 #### KV Cache effect
 
@@ -118,5 +118,3 @@ These limits define when the boot-time sample can misjudge the host. They are cu
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The sole effect is one boot-time Loader-entry mount owned by the plugin fiber; the store is authoritative.

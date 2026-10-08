@@ -1,163 +1,65 @@
 /**
- * Plugins settings surface, browser half — one section whose feature-owned
- * tabs include configurable Host plugin cards and editable MCP configuration.
- *
- * The section declares `settings.plugins.tab`; its own `configurable` tab then
- * declares `settings.plugin.item` and renders whatever cards were registered
- * into it. The cards this package ships are the host-plane sections the
- * deployment already exposes; each binds its namespace through the client
- * settings scope, which keeps them unaware of one another and of other tabs.
+ * Built-in plugins settings section, browser half: the shell around the
+ * feature-owned tabs registered into `settings.plugins.tab` (the read-only
+ * inventory ships one). The configuration pages of the host-plane plugins
+ * live in their own companion packages, which register into the Plugins
+ * page; this section owns the Settings navigation entry and the tab chrome
+ * and the editable MCP tab when its Host Remote is available.
  */
 
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: the settings shell's SlotMap merge (the 'settings.section' entry)
-// and the ctx.settingsScope Context merge. Cross-plugin collaboration goes
-// through the service, never a value import (client bundle purity gate).
+// Type-only: the settings shell's SlotMap merge (the 'settings.section'
+// entry). Cross-plugin collaboration goes through slots, never a value import
+// (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the ctx.remote Context merge and the forwarded-event key face.
-import type {
-  McpConfigurationPatch, McpConfigurationSnapshot,
-} from '@deepseek-ai/dsh-api-remotes/client'
-import { AgentLoopCard } from './AgentLoopCard.tsx'
-import { BashCard } from './BashCard.tsx'
-import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
-import { McpInventoryController } from './mcp-inventory-controller.ts'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
-import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
-import { WebSearchCard } from './WebSearchCard.tsx'
-import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
-import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
-import { ConfigurablePluginsTabController, type ConfigurablePluginsTabFace } from './tab-store.ts'
-import {
-  SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
-} from './subagent-model-selection-card-controller.ts'
-import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import { McpSettingsTab } from './McpSettingsTab.tsx'
+import { McpInventoryController } from './mcp-inventory-controller.ts'
 import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
-export type { ConfigurablePluginsTabProps } from './ConfigurablePluginsTab.tsx'
-export type {
-  ConfigurablePluginsTabBaseFace, ConfigurablePluginsTabFace, ConfigurablePluginsTabState,
-} from './tab-store.ts'
-export type { McpInventoryEntry, McpInventoryFace, McpInventoryState } from './mcp-inventory-controller.ts'
-export type { PluginCardProps } from './PluginCard.tsx'
-export type { SettingsPluginItemOwnerProps } from './slot-contract.ts'
-export type { FieldProps } from './fields.tsx'
-export type {
-  CardActions, CardFieldSpec, CardFieldState, CardSecretSpec, CardShell,
-} from './card-form.ts'
-export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-controller.ts'
-export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
-export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
-export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'remote.mcpConfiguration', 'settingsScope',
-]
+export const inject = ['slots', 'locale']
 
 /**
- * Mount the plugin configuration section and the cards this package ships.
+ * Mount the built-in plugins section.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugins: section dictionaries')
 
-  const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
-  const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
-  const webSearch = new WebSearchCardController(
-    ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), ctx)
-  const subagentModelSelection = new SubagentModelSelectionCardController(
-    ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
-    ctx,
-  )
-
-  // The credential a card reports is not part of any settings section, so its
-  // scope publishes nothing when one is written. This is the only signal that
-  // a key written on another surface reached the Host.
-  ctx.effect(
-    () => ctx.remote.$on('credentials/reference-updated', (ref) => { webSearch.refreshCredential(ref) }),
-    'ui-settings-plugins: credential invalidations',
-  )
-  ctx.effect(
-    () => ctx.remote.$on('llm/adapters-updated', () => { subagentModelSelection.refreshCatalog() }),
-    'ui-settings-plugins: subagent adapter invalidations',
-  )
-  ctx.effect(
-    () => ctx.remote.$on('settings/document-updated', () => { subagentModelSelection.refreshCatalog() }),
-    'ui-settings-plugins: subagent settings invalidations',
-  )
-  ctx.effect(
-    () => ctx.on('connection/reset', () => { subagentModelSelection.resetConnection() }),
-    'ui-settings-plugins: subagent connection generation',
-  )
-  ctx.effect(() => () => { subagentModelSelection.dispose() }, 'ui-settings-plugins: subagent preference')
-
-  // The shared SettingsScope mirror updates after document commits and reconnects.
-  const configurable = new ConfigurablePluginsTabController(
-    ctx.settingsScope.describe(), () => ctx.slots.entries('settings.plugin.item'))
-  type McpRemote = {
-    list: () => Promise<{
-      ok: true
-      value: McpConfigurationSnapshot
-    } | {
-      ok: false
-      error: { code: string; message: string }
-    }>
-    update: (
-      entryId: string,
-      patch: McpConfigurationPatch,
-      expectedRevision: number,
-    ) => Promise<{
-      ok: true
-      value: McpConfigurationSnapshot
-    } | {
-      ok: false
-      error: { code: string; message: string }
-    }>
-  }
-  // The generated API is present in the production web composition. The
-  // defensive lookup keeps older compositions from taking down this section
-  // while they are upgraded.
-  const mcpRemote = (ctx.remote as unknown as { mcpConfiguration?: McpRemote }).mcpConfiguration
-  const listMcp = mcpRemote === undefined ? undefined : async (): Promise<McpConfigurationSnapshot> => {
-    const result = await mcpRemote.list()
-    if (!result.ok) {
-      throw new Error(`mcpConfiguration.list failed: ${result.error.code}: ${result.error.message}`)
-    }
-    return result.value
-  }
-  const updateMcp = mcpRemote === undefined ? undefined : async (
-    entryId: string,
-    patch: McpConfigurationPatch,
-    expectedRevision: number,
-  ): Promise<McpConfigurationSnapshot> => {
-    const result = await mcpRemote.update(entryId, patch, expectedRevision)
-    if (!result.ok) {
-      throw new Error(`mcpConfiguration.update failed: ${result.error.code}: ${result.error.message}`)
-    }
-    return result.value
-  }
-  const mcpInventory = new McpInventoryController(listMcp, updateMcp)
-  ctx.effect(() => () => { mcpInventory.dispose() }, 'ui-settings-plugins: MCP inventory')
-  ctx.effect(
-    () => ctx.on('connection/reset', () => { mcpInventory.refresh() }),
-    'ui-settings-plugins: MCP inventory generation',
-  )
-  ctx.effect(() => () => { configurable.dispose() }, 'ui-settings-plugins: tab directory')
-  // A card registered after the first read joins the list without a wire call.
-  ctx.effect(
-    () => ctx.slots.subscribe('settings.plugin.item', () => { configurable.refresh() }),
-    'ui-settings-plugins: card ledger',
-  )
+  ctx.inject(['remote', 'remote.mcpConfiguration'], (scope) => {
+    const inventory = new McpInventoryController(async () => {
+      const result = await scope.remote.mcpConfiguration.list()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value
+    }, async (entryId, patch, expectedRevision) => {
+      const result = await scope.remote.mcpConfiguration.update(entryId, patch, expectedRevision)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value
+    })
+    scope.effect(() => () => { inventory.dispose() }, 'ui-settings-plugins: MCP configuration')
+    scope.on('connection/reset', () => { inventory.refresh() })
+    scope.slots.inject('settings.plugins.tab', () => scope.slots.register({
+      name: 'settings.plugins.tab',
+      id: 'mcp',
+      order: 0,
+      label: () => t('mcpTitle'),
+      locale: NS,
+      inject: () => inventory.inject(),
+    }, McpSettingsTab))
+  })
 
   let tabsVersion = -1
   let tabsRevision = -1
@@ -194,8 +96,8 @@ export function apply(ctx: ClientContext): void {
     },
   })
 
-  // This package owns the one Plugins navigation entry and the tab chrome;
-  // feature plugins contribute pages without competing for Settings nav rows.
+  // This package owns the one Built-in plugins navigation entry and the tab
+  // chrome; feature plugins contribute pages without competing for Settings nav rows.
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'plugins',
@@ -205,51 +107,4 @@ export function apply(ctx: ClientContext): void {
     inject: sectionInjected,
     children: { 'settings.plugins.tab': { kind: 'list', scope: 'root' } },
   }, PluginsSettingsSection))
-
-  // The existing configuration page is one ordinary tab. It keeps ownership
-  // of the card slot and the shipped card contributions below.
-  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-    name: 'settings.plugins.tab',
-    id: 'configurable',
-    order: 0,
-    label: () => t('configurableTab'),
-    locale: NS,
-    inject: (): ConfigurablePluginsTabFace => {
-      const base = configurable.inject()
-      const mcp = mcpInventory.inject()
-      return {
-        hooks: { ...base.hooks, ...mcp.hooks },
-        retryMcp: mcp.retryMcp,
-        updateMcp: mcp.updateMcp,
-      }
-    },
-    children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
-  }, ConfigurablePluginsTab))
-
-  ctx.slots.inject('settings.plugin.item', function* () {
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: SHELL_NS,
-      locale: NS,
-      inject: () => bash.inject(),
-    }, BashCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: AGENT_LOOP_NS,
-      locale: NS,
-      inject: () => agentLoop.inject(),
-    }, AgentLoopCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: SUBAGENT_MODEL_SELECTION_NS,
-      locale: NS,
-      inject: () => subagentModelSelection.inject(),
-    }, SubagentModelSelectionCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
-      key: WEB_SEARCH_NS,
-      locale: NS,
-      inject: () => webSearch.inject(),
-    }, WebSearchCard)
-  })
 }

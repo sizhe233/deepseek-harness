@@ -138,6 +138,8 @@ No direct invalidation: the consumer seams own any request-prefix changes; this 
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- Separate subprocess control channels are unsupported by the pinned E2B SDK and are rejected before remote allocation. Ordinary shell, filesystem, PTY and LSP paths remain available; PTC Node confinement needs a transport with an independent control channel.
+- Terminal dimensions are forwarded through the E2B PTY API. Activity reports a positively observed foreground process as busy; it reports unknown without shell-prompt/background-job evidence and never infers idle from silence.
 
 These limits define when the provider is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 

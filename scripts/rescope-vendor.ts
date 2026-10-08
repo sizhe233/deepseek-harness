@@ -78,25 +78,26 @@ interface GenericSkip {
 const GENERIC_SKIPS: readonly GenericSkip[] = [
   // `Symbol.for('schemastery')` and the `vendor:` metadata field are upstream identifiers.
   { file: 'vendor/schemastery/src/index.ts', upstream: ['schemastery'] },
+  // Narrows a Standard Schema by the same upstream `vendor:` identifier.
+  { file: 'vendor/loader/src/config/diff.ts', upstream: ['schemastery'] },
+  // Native schema detection and its fixture share the vendored runtime's Symbol.for identifier.
+  { file: 'packages/boot/app-boot/src/config-schema/native.ts', upstream: ['schemastery'] },
+  { file: 'packages/boot/app-boot/tests/config-schema.spec.ts', upstream: ['schemastery'] },
   // Asserts the vendored-manifest table, which gains an upstream-name column.
   { file: 'scripts/gen-third-party-notices.spec.ts', upstream: RENAMES.map(rename => rename.upstream) },
-  // `cordis` is also an agent-preset id — the directory name under
-  // packages/preset/agent-presets/presets/ — so in these files the bare name is
+  // `cordis` is also an agent-preset id, so in these files the bare name is
   // product data, not a package reference. Renaming it changed which preset
   // the creator flow stages and which id the roster reports.
   { file: 'packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx', upstream: ['cordis'] },
-  { file: 'packages/preset/agent-presets/tests/shipped-root.spec.ts', upstream: ['cordis'] },
+  { file: 'packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/src/client/index.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/apply.client.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/section.client.spec.tsx', upstream: ['cordis'] },
   { file: 'apps/cli/tests/web-agent-presets.e2e.ts', upstream: ['cordis'] },
+  { file: 'apps/cli/tests/profiles/web/tests/fixtures/creator-plugin-manager.mjs', upstream: ['cordis'] },
   { file: 'apps/web/tests/agent-preset-authoring.e2e.ts', upstream: ['cordis'] },
-  { file: 'packages/preset/agent-presets/tests/session.spec.ts', upstream: ['cordis'] },
-  // The preset's own composition: its header comment and its system prompt name
-  // the preset a model mounts, so the scoped name would send the model after an
-  // id no roster reports.
-  { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', upstream: ['cordis'] },
+  { file: 'packages/preset/agent-preset-registry/tests/session.spec.ts', upstream: ['cordis'] },
   // The preset-roster loop names the `cordis` preset id, not a package.
   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
@@ -134,8 +135,38 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/extensions/ui-cordis/src/client/CordisActionRow.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/CordisDefineRow.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/CordisPanel.tsx', upstream: ['cordis'] },
+  { file: 'packages/extensions/ui-cordis/src/client/CordisPreparingRow.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/CordisRunRow.tsx', upstream: ['cordis'] },
   { file: 'packages/extensions/ui-cordis/src/client/locales.ts', upstream: ['cordis'] },
+]
+
+/**
+ * Reviewed product identifiers, not npm specifiers. Preserve only these complete
+ * tokens in these files; other framework packages and subpaths remain checked.
+ * Forward post-state cardinalities make a moved or new identifier require review.
+ * Reverse output can contain additional bare tokens from restored npm imports.
+ */
+const PRODUCT_TOKENS: readonly { file: string; token: string; count: number }[] = [
+  { file: 'apps/web/tests/agent-preset-selection.e2e.ts', token: 'cordis', count: 4 },
+  { file: 'apps/web/tests/developer-tools-settings.e2e.ts', token: 'cordis', count: 8 },
+  { file: 'docs/subsystems/schedule.md', token: 'cordis', count: 1 },
+  { file: 'docs/subsystems/schedule.zh.md', token: 'cordis', count: 1 },
+  { file: 'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md', token: 'cordis', count: 1 },
+  { file: 'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.zh.md', token: 'cordis', count: 1 },
+  { file: 'docs/user/guide/schedule.md', token: 'cordis', count: 1 },
+  { file: 'docs/user/guide/schedule.zh.md', token: 'cordis', count: 1 },
+  { file: 'packages/bundle/web-app/cordis.patch.yml', token: 'cordis', count: 1 },
+  { file: 'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx', token: 'cordis', count: 1 },
+  { file: 'packages/client/ui-agent-preset/tests/components.client.spec.tsx', token: 'cordis', count: 3 },
+  { file: 'packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx', token: 'cordis', count: 1 },
+  { file: 'packages/client/ui-agent-preset/tests/section-store.client.spec.ts', token: 'cordis', count: 1 },
+  { file: 'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts', token: 'cordis/inspect-query', count: 1 },
+  { file: 'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts', token: 'cordis/inspect-query-resolved', count: 2 },
+  { file: 'packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts', token: 'cordis/inspect-query', count: 2 },
+  { file: 'packages/extensions/cordis-host-runner/tests/workbench-inspect-registry.spec.ts', token: 'cordis/inspect-query-resolved', count: 1 },
+  { file: 'snapshots/session/cordis-inspect-liveness/client-fixture.mjs', token: 'cordis/inspect-query', count: 1 },
+  { file: 'snapshots/session/cordis-inspect-liveness/client-fixture.mjs', token: 'cordis/inspect-query-resolved', count: 1 },
+  { file: 'snapshots/session/cordis-inspect-timeout/client-fixture.mjs', token: 'cordis/inspect-query', count: 1 },
 ]
 
 /** A string that must appear exactly `count` times once the rescope has run. */
@@ -150,7 +181,6 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   { file: 'vendor/hmr/package.json', text: '"name": "@deepseek-ai/cordis-plugin-hmr"', count: 1 },
   { file: 'scripts/cordis-walk.ts', text: '@deepseek-ai\\/cordis', count: 1 },
   { file: 'scripts/cordis-walk.ts', text: '!== \'@deepseek-ai/cordis\'', count: 1 },
-  { file: 'scripts/gen-scoped-events.ts', text: '=== \'@deepseek-ai/cordis\'', count: 1 },
   { file: 'packages/typert/generator/src/analyzer.ts', text: '!== \'@deepseek-ai/cordis\'', count: 2 },
   { file: 'scripts/check-workspace-constraints.ts', text: '?.[\'@deepseek-ai/cordis\']', count: 2 },
   { file: 'packages/boot/app-boot/tsdown.config.ts', text: '[\'@deepseek-ai/cordis-plugin-include\']', count: 1 },
@@ -161,8 +191,6 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   // The preset ids in this table are product data, not package names.
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', text: '[\'cordis\', \'presetCordisName\'', count: 1 },
   // The preset id the shipped composition documents to its own model.
-  { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
-  { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
 ]
 
 /**
@@ -171,6 +199,13 @@ const POSTCONDITIONS: readonly PostCondition[] = [
  * quote a neighbouring line the generic pass would rewrite.
  */
 const EXACT_EDITS: readonly ExactEdit[] = [
+  {
+    id: 'loader-diff-schemastery-import',
+    file: 'vendor/loader/src/config/diff.ts',
+    find: "import type Schema from 'schemastery'",
+    replace: "import type Schema from '@deepseek-ai/schemastery'",
+    expect: 1,
+  },
   {
     id: 'cordis-walk-merge-head',
     file: 'scripts/cordis-walk.ts',
@@ -222,15 +257,8 @@ const EXACT_EDITS: readonly ExactEdit[] = [
   {
     id: 'vendor-readme-preamble',
     file: 'vendor/README.md',
-    find: 'All vendored packages keep their **original npm names** and are marked `private: true` — they are never published from this repo. `pnpm-workspace.yaml#linkWorkspacePackages` makes matching upstream semver ranges resolve these pinned workspaces, including imports from built `lib/`; disabling it substitutes npm copies behind the same names.',
-    replace: 'All vendored packages are **renamed into the `@deepseek-ai` scope** (`cordis` → `@deepseek-ai/cordis`, `@cordisjs/plugin-<x>` → `@deepseek-ai/cordis-plugin-<x>`): every harness package declares `cordis` as a peer dependency, so publishing the harness publishes this framework layer too, and a publication under the upstream names would squat them on the registry. Directory names and upstream version numbers are deliberately unchanged, so the manifest below still reads as an upstream snapshot. `pnpm-workspace.yaml#linkWorkspacePackages` makes those preserved semver ranges resolve these pinned workspaces, including imports from built `lib/`.',
-    expect: 1,
-  },
-  {
-    id: 'vendor-readme-schemastery-note',
-    file: 'vendor/README.md',
-    find: 'whose lazy `require(\'cosmokit\')` can race',
-    replace: 'whose lazy `require(\'@deepseek-ai/cosmokit\')` can race',
+    find: 'All vendored packages keep their **original npm names** (they are resolved through pnpm workspaces) and are marked `private: true` — they are never published from this repo.',
+    replace: 'All vendored packages use the **`@deepseek-ai` scope** (`cordis` → `@deepseek-ai/cordis`, `@cordisjs/plugin-<x>` → `@deepseek-ai/cordis-plugin-<x>`). The manifest table records upstream versions and source commits; each package manifest carries its Harness release version and publication metadata. References to vendored packages use `workspace:~`, so local builds resolve the workspace packages and published ranges permit patch updates within the same minor version.',
     expect: 1,
   },
   {
@@ -245,7 +273,7 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     id: 'root-agents-vendored-name-contract',
     file: 'AGENTS.md',
     find: 'vendored packages keep upstream names and are `private: true`. `cordis` is a peerDependency (+ dev) of every harness package.',
-    replace: 'vendored packages are rescoped ([mapping](docs/rescope.md)) and `private: true`. `@deepseek-ai/cordis` is a peerDependency (+ dev) of every harness package.',
+    replace: 'vendor is [rescoped](docs/rescope.md) and `private: true`. Harness packages declare `@deepseek-ai/cordis` in `peerDependencies`/`devDependencies`.',
     expect: 1,
   },
   {
@@ -365,9 +393,9 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
     find: `| Package | Upstream | License |
 | --- | --- | --- |
 \${vendored.map(row => \`| \\\`\${row.npmName}\\\` | [\${row.upstream.replace('https://', '')}](\${row.upstream}) | MIT |\`).join('\\n')}`,
-    replace: `| Package | Upstream name | Upstream | License |
+    replace: `| Package | Upstream name | Source | License |
 | --- | --- | --- | --- |
-\${vendored.map(row => \`| \\\`\${row.npmName}\\\` | \\\`\${row.upstreamName}\\\` | [\${row.upstream.replace('https://', '')}](\${row.upstream}) | MIT |\`).join('\\n')}`,
+\${vendored.map(row => \`| \\\`\${row.npmName}\\\` | \\\`\${row.upstreamName}\\\` | [\${row.sourceDirectory}](\${row.sourceDirectory}/) | MIT |\`).join('\\n')}`,
     expect: 1,
   },
   {
@@ -426,8 +454,12 @@ const VENDORED_LIBRARY = /^@deepseek-ai\\/(cosmokit|schemastery)(\\/|$)/
   })),
 ]
 
-/** Files the rescope must never rewrite. */
-function excluded(file: string): boolean {
+/**
+ * Identify files whose recorded content must remain outside the rescope pass.
+ * @param file - Repository-relative path with forward slash separators.
+ * @returns Whether the codemod must preserve the file without scanning its tokens.
+ */
+export function isRescopeExcluded(file: string): boolean {
   if (file === 'scripts/rescope-vendor.ts') return true // the mapping itself
   if (file.startsWith('.agents/notes/')) return true // notes record what was true when written
   // Recorded model payloads quote documentation verbatim, so they must mirror the
@@ -437,6 +469,8 @@ function excluded(file: string): boolean {
   if (file === 'docs/rescope.md' || file === 'docs/rescope.zh.md') return true
   if (file.endsWith('.i18n.yaml')) return true // blob-hash records, re-recorded by the pairing gate
   if (file === 'pnpm-lock.yaml') return true // regenerated by pnpm install
+  // Raw npm registry resolution; only gen-dependency-catalog --refresh replaces this evidence.
+  if (file === 'scripts/dependency-catalog/package-lock.json') return true
   if (/^vendor\/[^/]+\/(README\.md|LICENSE)$/.test(file)) return true // upstream files kept verbatim
   return !EXTENSIONS.some(extension => file.endsWith(extension))
 }
@@ -477,7 +511,11 @@ function rewriteLine(line: string, file: string, all: readonly Pattern[]): strin
   let out = line
   for (const pattern of all) {
     if (skipped(file, pattern)) continue
-    out = out.replace(pattern.token, (_match, quote: string, subpath: string) => `${quote}${pattern.to}${subpath}${quote}`)
+    out = out.replace(pattern.token, (match: string, quote: string, subpath: string) => {
+      const token = `${pattern.from}${subpath}`
+      if (PRODUCT_TOKENS.some(product => product.file === file && product.token === token)) return match
+      return `${quote}${pattern.to}${subpath}${quote}`
+    })
     out = out.replace(pattern.yamlName, (_match, prefix: string, suffix: string) => `${prefix}${pattern.to}${suffix}`)
   }
   return out
@@ -493,8 +531,13 @@ function rewriteLine(line: string, file: string, all: readonly Pattern[]): strin
  * prose is a record of what was true when it was written, and the same spelling
  * can mean something else entirely — the Python SDK's `cordis` option, or the
  * unvendored `@cordisjs/plugin-http`.
+ * @param text - Complete source text to transform.
+ * @param file - Repository-relative path selecting reviewed product identifiers.
+ * @param reverse - Whether to restore upstream package spellings.
+ * @returns Rewritten text and the number of changed lines.
  */
-function rewrite(text: string, file: string, all: readonly Pattern[]): { text: string; lines: number } {
+export function rescopeText(text: string, file: string, reverse = false): { text: string; lines: number } {
+  const all = patterns(reverse)
   const markdown = file.endsWith('.md')
   const prose = markdown && file.startsWith('docs/')
   let insideFence = false
@@ -558,14 +601,31 @@ export function exactEditState(text: string, find: string, replace: string, expe
   return hits === expect && landed === 0 ? 'pending' : 'invalid'
 }
 
+/**
+ * Check reviewed product-token counts in the forward, scoped post-state.
+ * Reverse output shares bare spellings with restored package imports.
+ * @param text - complete post-state file text.
+ * @param file - repository-relative file path.
+ * @param reverse - whether package names are being restored to upstream spellings.
+ * @returns Diagnostics for missing or additional reviewed tokens.
+ */
+export function productIdentifierProblems(text: string, file: string, reverse = false): string[] {
+  if (reverse) return []
+  return PRODUCT_TOKENS.filter(product => product.file === file).flatMap((product) => {
+    const token = new RegExp(`(['"\`])${escapeRegExp(product.token)}\\1`, 'g')
+    const hits = [...text.matchAll(token)].length
+    return hits === product.count ? []
+      : [`product identifier: ${file} has ${String(hits)} occurrence(s) of ${JSON.stringify(product.token)}, expected ${String(product.count)}`]
+  })
+}
+
 function main(): void {
   const args = process.argv.slice(2)
   const mode = args.includes('--apply') ? 'apply' : args.includes('--check') ? 'check' : 'dry'
   const reverse = args.includes('--reverse')
-  const all = patterns(reverse)
   const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
     .split('\0')
-    .filter(file => file !== '' && !excluded(file))
+    .filter(file => file !== '' && !isRescopeExcluded(file))
 
   const counts = new Map<string, { files: number; lines: number }>()
   const failures: string[] = []
@@ -608,7 +668,7 @@ function main(): void {
   for (const file of files) {
     const path = resolve(root, file)
     const before = readFileSync(path, 'utf8')
-    const { text: after, lines } = rewrite(before, file, all)
+    const { text: after, lines } = rescopeText(before, file, reverse)
     if (after === before) continue
     outstanding.push(file)
     const kind = classify(file)
@@ -631,6 +691,9 @@ function main(): void {
       if (hits !== check.count) {
         failures.push(`postcondition: ${check.file} has ${String(hits)} occurrence(s) of ${JSON.stringify(check.text)}, expected ${String(check.count)}`)
       }
+    }
+    for (const file of new Set(PRODUCT_TOKENS.map(product => product.file))) {
+      failures.push(...productIdentifierProblems(readFileSync(resolve(root, file), 'utf8'), file, reverse))
     }
     // The generic pass above already told us which files would still change,
     // which in check mode is exactly the residue-and-idempotency signal.

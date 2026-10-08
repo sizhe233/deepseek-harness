@@ -13,6 +13,7 @@ import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
   SubprocessHandle,
+  SubprocessTerminalEnvironment,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
@@ -21,6 +22,7 @@ import { e2bControlEnvs, quoteE2BShellArg } from '@deepseek-ai/dsh-e2b'
 import { E2BSubprocessHandle } from './process.ts'
 import { asError, signalOpts } from './remote.ts'
 import { spawnE2BTerminal } from './terminal.ts'
+import { readRemoteEnvironment, scrubRemoteEnvironment } from './environment.ts'
 
 /** Configuration for the E2B subprocess adapter. */
 export interface Config {
@@ -99,9 +101,10 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
         pending.push(terminal.terminate().then(() => { this.terminals.delete(terminal) }))
       }
       const outcomes = await Promise.allSettled(pending)
-      const failures = outcomes.flatMap<unknown>(outcome => outcome.status === 'rejected'
-        ? [outcome.reason as unknown]
-        : [])
+      const failures: unknown[] = []
+      for (const outcome of outcomes) {
+        if (outcome.status === 'rejected') failures.push(outcome.reason)
+      }
       if (failures.length === 1) throw asError(failures[0])
       if (failures.length > 1) throw new AggregateError(failures, 'subprocess-e2b: teardown failed')
     }, 'e2b subprocess teardown')
@@ -145,8 +148,20 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
   }
 
   /** @inheritdoc */
+  async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    if (this.disposing) throw new Error('subprocess-e2b: service is disposing')
+    signal?.throwIfAborted()
+    const sandbox = await this.ctx.e2b.getSandbox()
+    const environment = scrubRemoteEnvironment(await readRemoteEnvironment(sandbox, signal))
+    signal?.throwIfAborted()
+    const defaultShell = environment.get('SHELL')
+    return { platform: 'posix', ...defaultShell ? { defaultShell } : {} }
+  }
+
+  /** @inheritdoc */
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (this.disposing) throw new Error('subprocess-e2b: service is disposing')
+    if (spec.stdio.control !== undefined) throw new Error('subprocess-e2b: separate control channels are unsupported by the E2B transport')
     const program = spec.argv[0]
     if (program === undefined || program.length === 0) {
       throw new Error('invalid argv: expected a non-empty program name at argv[0]')

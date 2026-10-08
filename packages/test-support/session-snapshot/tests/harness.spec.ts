@@ -233,9 +233,9 @@ describe('runScenario', () => {
     expect(materialized).toContain(pathToFileURL(join(patchDir, 'plugin.mjs')).href)
     expect(materialized).toContain(pathToFileURL(join(dir, 'nested.mjs')).href)
     expect(materialized).toContain('example-package')
-    expect(await realpath(join(dir, '.dsh', 'profiles', 'node_modules', 'example-package')))
+    expect(await realpath(join(dir, '.dsh', 'profiles', 'acp', 'node_modules', 'example-package')))
       .toBe(await realpath(packageDir))
-    expect(await realpath(join(dir, '.dsh', 'profiles', 'node_modules', '@fixture', 'example-package')))
+    expect(await realpath(join(dir, '.dsh', 'profiles', 'acp', 'node_modules', '@fixture', 'example-package')))
       .toBe(await realpath(scopedPackageDir))
     expect(await readFile(await materializedPatch(materializedRoot, '1-selected.cordis.yml'), 'utf8')).toContain('[]')
 
@@ -255,7 +255,7 @@ describe('runScenario', () => {
     const conflictPatch = join(dir, 'conflict.cordis.yml')
     const conflictPackage = join(dir, 'node_modules', 'conflict-package')
     const otherPackage = join(dir, 'other-conflict-package')
-    const conflictLink = join(dir, '.dsh', 'profiles', 'node_modules', 'conflict-package')
+    const conflictLink = join(dir, '.dsh', 'profiles', 'acp', 'node_modules', 'conflict-package')
     await Promise.all([
       mkdir(conflictPackage, { recursive: true }),
       mkdir(otherPackage, { recursive: true }),
@@ -1000,7 +1000,12 @@ describe('runScenario', () => {
     )).rejects.toThrow(/did not persist goal phase "blocked" within 20ms/)
   })
 
-  it('identifies the child wait when its first log harvest outlasts the deadline', async () => {
+  it.each([
+    { label: 'session', step: { op: 'waitForTurnEnd', timeoutMs: 20 }, expected: 'did not persist turn/end within 20ms' },
+    { label: 'child', step: { op: 'waitForSubagentTurnEnd', child: 2, timeoutMs: 20 },
+      expected: 'subagent child #2 did not persist closed turn 1 within 20ms' },
+  ] satisfies { label: string; step: InputStep; expected: string }[])
+  ('identifies the $label wait when its first log harvest outlasts the deadline', async ({ step, expected }) => {
     const { fixtureFile } = await scenario({})
     const reading = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
@@ -1016,14 +1021,15 @@ describe('runScenario', () => {
       return await originalReaddir(...args)
     })
     const run = runScenario(
-      { steps: [...boot, { op: 'waitForSubagentTurnEnd', child: 2, timeoutMs: 20 }] },
+      { steps: [...boot, step] },
       { agent: AGENT, mode: 'replay', fixtureFile },
     )
-    const rejected = expect(run).rejects.toThrow(/subagent child #2 did not persist closed turn 1 within 20ms/)
+    const rejected = expect(run).rejects.toThrow(expected)
     try {
       await Promise.race([reading.promise, rejected])
       expect(pendingRead).toBeDefined()
       await rejected
+      await expect(run).rejects.toHaveProperty('cause', expect.any(Error))
     } finally {
       release.resolve(undefined)
       await Promise.allSettled([pendingRead, run, rejected])

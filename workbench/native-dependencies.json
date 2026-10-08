@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "package": {
+    "name": "@deepseek-ai/node-addon-system",
+    "version": "0.1.2",
+    "tarball": "https://registry.npmjs.org/@deepseek-ai/node-addon-system/-/node-addon-system-0.1.2.tgz",
+    "integrity": "sha512-EFn8K+mXIXiw6s3rxX+cgp2hZTEAQdVIsURhrXnBxycSXvtQ1EQpsSVzoNKtKAQI0I0VqkEcVEjHzS/PeaGsvw==",
+    "sha256": "347a0bb0cb1ea1af6eb88f2b72eb3ee41cc7703093971e6b2a58fee19191c36e"
+  },
+  "verifiedCandidateFiles": [
+    {
+      "path": "native/system/packages/entry/src/main.c",
+      "sha256": "0b3f13a6d19b809ea5a895a4873fe94cdea02471f928f214266dfd0a22a949b5"
+    },
+    {
+      "path": "native/system/packages/entry/src/flock.c",
+      "sha256": "c1aa773c7a62b03ce3973156b928f41773fef9407afd79d71b2f625b5616421f"
+    },
+    {
+      "path": "native/system/packages/entry/lib/index.js",
+      "sha256": "a0f04e2990b6fff091d6776c41e56dac8c630a37b944632e743fa8f2ee9c4813"
+    },
+    {
+      "path": "native/system/packages/entry/lib/flock.js",
+      "sha256": "e42af00c298d56322c073bf7cc66485096028318ab645a2e69dc2aa7481ba646"
+    }
+  ],
+  "platformPackages": [
+    {
+      "name": "@deepseek-ai/node-addon-system-darwin-arm64",
+      "version": "0.1.2"
+    },
+    {
+      "name": "@deepseek-ai/node-addon-system-darwin-x64",
+      "version": "0.1.2"
+    },
+    {
+      "name": "@deepseek-ai/node-addon-system-linux-arm64",
+      "version": "0.1.2"
+    },
+    {
+      "name": "@deepseek-ai/node-addon-system-linux-x64",
+      "version": "0.1.2"
+    }
+  ],
+  "acceptance": "The published entry source and runtime match this candidate. Independent consumer installation must verify registry lockfile integrity and the selected platform package; native CI tests this checkout on its runner platform."
+}

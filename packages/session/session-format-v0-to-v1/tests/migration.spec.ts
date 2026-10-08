@@ -61,6 +61,17 @@ describe('released Session format v0 to v1', () => {
     expect(() => createMigrationStage('legacy-ha').transform(unknown)).toThrow(/lacks required member/)
   })
 
+  it('refuses malformed legacy inbox arrays and empty continuable descriptor identities', () => {
+    const stage = createMigrationStage('invalid-legacy-input')
+    expect(() => stage.transform({ type: 'agent/inbox/spliced', seq: 0, time: 1,
+      data: { target: 'next-step', start: 0, inserted: null } })).toThrow(/array/)
+    for (const field of ['provider', 'label', 'agentProvider', 'agentModel']) {
+      expect(() => createMigrationStage('invalid-member').transform({ type: 'subagent/descriptor', seq: 0, time: 1,
+        data: { version: 2, mode: 'continuable', provider: 'fork', label: 'member', agentProvider: 'p', agentModel: 'm',
+          [field]: '' } })).toThrow(/must be non-empty/)
+    }
+  })
+
   it('changes only the version of a canonical decoded artifact', () => {
     const header = {
       type: 'session',
@@ -175,10 +186,10 @@ describe('released Session format v0 to v1', () => {
     ], 'recoverable')).toThrow(/seq gap/)
   })
 
-  it('requires canonical delegation depth and decodes provenance without mutating source rows', () => {
+  it('requires canonical delegation depth and decodes source-event ranges without mutating source rows', () => {
     const incompleteHeader = { type: 'session', version: 0, id: 'old', createdAt: 1 }
     const header = { ...incompleteHeader, delegationDepth: 0 }
-    const provenanceRow = {
+    const sourceEventRow = {
       type: 'assistant/message',
       seq: 3,
       time: 5,
@@ -202,7 +213,7 @@ describe('released Session format v0 to v1', () => {
         type: 'assistant/chunk', seq: 2, time: 4,
         data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'x' } },
       },
-      provenanceRow,
+      sourceEventRow,
     ]
 
     const migrated = restoreV0ToV1(header, rows)
@@ -210,7 +221,7 @@ describe('released Session format v0 to v1', () => {
     expect(() => restoreV0ToV1(incompleteHeader, rows)).toThrow(/delegationDepth/)
     expect(migrated.header.delegationDepth).toBe(0)
     expect(migrated.events[3]?.sourceEventSeqs).toEqual([0, 1, 2])
-    expect(provenanceRow.sourceEventSeqs).toEqual([[0, 2]])
+    expect(sourceEventRow.sourceEventSeqs).toEqual([[0, 2]])
     expect(migrated.header).toEqual({
       version: 1, id: 'old', createdAt: 1, isSeeded: false, delegationDepth: 0,
     })

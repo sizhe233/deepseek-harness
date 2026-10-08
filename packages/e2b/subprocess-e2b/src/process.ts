@@ -162,6 +162,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
   readonly stderr: PassThrough | undefined
   readonly collected: SubprocessHandle['collected']
   readonly done: Promise<SubprocessOutcome>
+  readonly control = undefined
 
   private readonly commandState = Promise.withResolvers<CommandHandle | undefined>()
   private readonly readyState = Promise.withResolvers<CommandHandle>()
@@ -196,6 +197,7 @@ export class E2BSubprocessHandle implements SubprocessHandle {
     readonly stateDir: string,
     private readonly pollMs: number,
   ) {
+    if (spec.stdio.control !== undefined) throw new Error('subprocess-e2b: separate control channels are unsupported by the E2B transport')
     this.paths = {
       pid: posix.join(stateDir, 'pid'),
       status: posix.join(stateDir, 'exit-code'),

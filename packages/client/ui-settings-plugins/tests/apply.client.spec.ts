@@ -1,71 +1,32 @@
 /** What the browser half registers, and that it all leaves with the fiber. */
 
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import type {
-  ConfigurablePluginsTabFace, PluginsSettingsSectionInjected,
-} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import { SubagentModelSelectionCardController } from '../src/client/subagent-model-selection-card-controller.ts'
+import type { PluginsSettingsSectionInjected } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import type { McpConfigurationSnapshot } from '@deepseek-ai/dsh-api-remotes/client'
+import type { McpInventoryFace } from '../src/client/mcp-inventory-controller.ts'
 import { apply as hostApply } from '../src/index.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
 
-/**
- * @param served - namespaces the Host describes; omitted answers a failed read,
- * which is what most of these specs want (no card has anything to render).
- */
-async function bench(served?: string[]) {
+async function bench() {
   const ctx = new Context()
+  onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
   ctx.provide('locale', locale)
-  const describeCredentials = vi.fn(() => Promise.resolve({
-    ok: false, error: new RemoteError('gateway/internal', 'no provider', {}),
-  }))
-  const models = vi.fn(() => Promise.resolve({
-    ok: true as const, value: { groups: [], failures: [] },
-  }))
-  const describeSettings = vi.fn(() => Promise.resolve(served === undefined
-    ? { ok: false, error: new RemoteError('gateway/internal', 'no provider', {}) }
-    : {
-      ok: true,
-      value: {
-        writable: true,
-        hasDocument: true,
-        namespaces: served.map(ns => ({
-          ns, schema: {}, value: {}, applies: 'live', secrets: [], revision: 0,
-        })),
-      },
-    }))
-  const listMcp = vi.fn(() => Promise.resolve({
-    ok: true as const,
-    value: { writable: true, revision: 0, entries: [] },
-  }))
-  const updateMcp = vi.fn(() => Promise.resolve({
-    ok: true as const,
-    value: { writable: true, revision: 0, entries: [] },
-  }))
-  const remote = new TestRemote(ctx, {
-    credentials: { describe: describeCredentials, set: vi.fn() },
-    session: { modelCatalog: models },
-    settings: { describe: describeSettings },
-    mcpConfiguration: { list: listMcp, update: updateMcp },
-  })
-  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, listMcp, updateMcp, models, remote,
-  }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
 
+/** The Settings shell's section slot, as its owner declares it. */
 function declareRoot(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'root',
@@ -79,12 +40,10 @@ describe('ui-settings-plugins apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'remote.mcpConfiguration', 'settingsScope',
-    ])
+    expect(inject).toEqual(['slots', 'locale'])
   })
 
-  it('registers one Plugins section and declares the tab and card slots', async () => {
+  it('registers one Built-in plugins section and declares its tab slot, contributing no tab of its own', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
@@ -93,186 +52,31 @@ describe('ui-settings-plugins apply', () => {
     const section = slots.entries('settings.section')[0]!
     expect(section.options).toMatchObject({ id: 'plugins', order: 15 })
     // The nav label is a locale-following thunk; owners resolve it at read time.
-    expect(resolveSlotLabel(section.options.label)).toBe('插件')
+    expect(resolveSlotLabel(section.options.label)).toBe('内置插件')
     expect(slots.spec('settings.plugins.tab')).toMatchObject({ kind: 'list', scope: 'root' })
-    const tab = slots.entries('settings.plugins.tab')[0]!
-    expect(tab.options).toMatchObject({ id: 'configurable', order: 0 })
-    expect(resolveSlotLabel(tab.options.label)).toBe('插件配置')
-    expect(slots.spec('settings.plugin.item')).toMatchObject({ kind: 'keyed', scope: 'root' })
+    expect(slots.entries('settings.plugins.tab')).toHaveLength(0)
   })
 
-
-  it('injects a live tab projection, the card directory, and one business face per card', async () => {
+  it('injects a live tab projection ordered by the contributions', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const section = slots.entries('settings.section')[0]!
-    const sectionFace = (section.inject as unknown as () => PluginsSettingsSectionInjected)()
+    const sectionFace = (section.inject as () => Pick<PluginsSettingsSectionInjected, 'hooks'>)()
     const initialTabs = sectionFace.hooks.tabs.getSnapshot()
-    expect(initialTabs).toEqual([
-      { id: 'configurable', order: 0, label: '插件配置' },
-    ])
+    expect(initialTabs).toEqual([])
     expect(sectionFace.hooks.tabs.getSnapshot()).toBe(initialTabs)
 
-    const listener = vi.fn()
-    const unsubscribe = sectionFace.hooks.tabs.subscribe(listener)
+    const unsubscribe = sectionFace.hooks.tabs.subscribe(vi.fn())
     slots.register({ name: 'settings.plugins.tab', id: 'plain' } as never, () => null)
+    slots.register({ name: 'settings.plugins.tab', id: 'first', order: -1 } as never, () => null)
+    // Tabs follow their contribution's order, whatever order they registered in.
     expect(sectionFace.hooks.tabs.getSnapshot()).toEqual([
-      { id: 'configurable', order: 0, label: '插件配置' },
+      { id: 'first', order: -1, label: '' },
       { id: 'plain', order: 0, label: '' },
     ])
     unsubscribe()
-
-    const tab = slots.entries('settings.plugins.tab')[0]!
-    const tabFace = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
-    expect(Object.keys(tabFace.hooks)).toEqual(['configurablePlugins', 'mcpInventory'])
-    for (const entry of slots.entries('settings.plugin.item')) {
-      const face = (entry as { inject?: () => unknown }).inject?.() as { hooks: Record<string, unknown> }
-      // Each card injects exactly one snapshot store plus its own actions.
-      expect(Object.keys(face.hooks)).toHaveLength(1)
-    }
-  })
-
-  it('loads the safe MCP inventory and refreshes it after a connection reset', async () => {
-    const { ctx, slots, listMcp } = await bench()
-    listMcp.mockResolvedValue({
-      ok: true,
-      value: {
-        writable: true,
-        revision: 0,
-        entries: [{
-          entryId: 'include:mcp-fixture',
-          moduleName: '@deepseek-ai/dsh-mcp-client',
-          enabled: false,
-          fiberPhase: null,
-        }] as never,
-      },
-    })
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    const tab = slots.entries('settings.plugins.tab')[0]!
-    const face = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
-    await vi.waitFor(() => {
-      expect(face.hooks.mcpInventory.getSnapshot()).toEqual({
-        status: 'ready',
-        writable: true,
-        revision: 0,
-        entries: [{
-          entryId: 'include:mcp-fixture',
-          moduleName: '@deepseek-ai/dsh-mcp-client',
-          enabled: false,
-          fiberPhase: null,
-        }] as never,
-      })
-    })
-    expect(listMcp).toHaveBeenCalledOnce()
-
-    listMcp.mockResolvedValue({ ok: true, value: { writable: true, revision: 1, entries: [] } })
-    ctx.emit('connection/reset')
-    await vi.waitFor(() => { expect(listMcp).toHaveBeenCalledTimes(2) })
-    await vi.waitFor(() => {
-      expect(face.hooks.mcpInventory.getSnapshot()).toEqual({
-        status: 'ready', writable: true, revision: 1, entries: [],
-      })
-    })
-  })
-
-  it('keys each card it ships on the settings namespace that card edits', async () => {
-    const { ctx, slots } = await bench()
-    declareRoot(slots)
-
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    expect(slots.entries('settings.plugin.item').map(entry => entry.options.key))
-      .toEqual(['shell', 'agent-loop', 'subagent-model-selection', 'web-search-deepseek'])
-  })
-
-  it('dispatches the served namespaces its cards claim, and no others', async () => {
-    // ui-theme is served but belongs to another surface, and a deployment
-    // composing no PowerShell/POSIX executor serves no `bash` at all.
-    const { ctx, slots } = await bench(['agent-loop', 'ui-theme', 'web-search-deepseek'])
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    const tab = slots.entries('settings.plugins.tab')[0]!
-    const face = (tab.inject as unknown as () => ConfigurablePluginsTabFace)()
-    await vi.waitFor(() => {
-      expect(face.hooks.configurablePlugins.getSnapshot().namespaces)
-        .toEqual(['agent-loop', 'web-search-deepseek'])
-    })
-  })
-
-  it('re-reads the served namespaces when the Host commits a settings document', async () => {
-    // Which namespaces the Host serves is a registration fact the wire never
-    // announces on its own, so the tab rides the invalidation that can
-    // accompany a changed composition.
-    const { ctx, slots, describeSettings, remote } = await bench(['bash'])
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
-    describeSettings.mockClear()
-
-    remote.emit('settings/document-updated', ['bash', 1])
-
-    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
-  })
-
-  it('re-reads the served namespaces after a reconnect', async () => {
-    const { ctx, slots, describeSettings } = await bench(['bash'])
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
-    describeSettings.mockClear()
-
-    ctx.emit('connection/reset')
-
-    await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
-  })
-
-  it('re-reads the credential when the Host reports the watched reference changed', async () => {
-    const { ctx, slots, describeCredentials, remote } = await bench()
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalled() })
-    describeCredentials.mockClear()
-
-    // A key written on another surface changes no settings section, so this
-    // event is the only thing that reaches the card.
-    remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
-
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(1) })
-  })
-
-  it('refreshes the subagent catalog after model inputs change or the connection resets', async () => {
-    const refresh = vi.spyOn(SubagentModelSelectionCardController.prototype, 'refreshCatalog')
-    const reset = vi.spyOn(SubagentModelSelectionCardController.prototype, 'resetConnection')
-    const { ctx, slots, remote } = await bench(['subagent-model-selection'])
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    refresh.mockClear()
-    reset.mockClear()
-
-    remote.emit('llm/adapters-updated', [])
-    expect(refresh).toHaveBeenCalledTimes(1)
-    remote.emit('settings/document-updated', ['llm-deepseek', 1])
-    expect(refresh).toHaveBeenCalledTimes(2)
-    ctx.emit('connection/reset')
-    expect(reset).toHaveBeenCalledTimes(1)
-  })
-
-  it('ignores a credential change for a reference no card watches', async () => {
-    const { ctx, slots, describeCredentials, remote } = await bench()
-    declareRoot(slots)
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalled() })
-    describeCredentials.mockClear()
-
-    remote.emit('credentials/reference-updated', ['SOME_OTHER_KEY'])
-    await Promise.resolve()
-
-    expect(describeCredentials).not.toHaveBeenCalled()
   })
 
   it('registers into a declaration that arrives after apply', async () => {
@@ -284,17 +88,75 @@ describe('ui-settings-plugins apply', () => {
     await vi.waitFor(() => { expect(slots.entries('settings.section')).toHaveLength(1) })
   })
 
-  it('collapses every contribution on teardown', async () => {
+  it('collapses the section on teardown', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(slots.entries('settings.plugin.item')).toHaveLength(4)
+    expect(slots.entries('settings.section')).toHaveLength(1)
 
     await fiber.dispose()
 
     expect(slots.entries('settings.section')).toHaveLength(0)
-    expect(slots.spec('settings.plugins.tab')).toBeUndefined()
-    expect(slots.spec('settings.plugin.item')).toBeUndefined()
+  })
+})
+
+/** Mount only the MCP namespace, independently of generic plugin settings. */
+async function mcpBench() {
+  const { ctx, slots } = await bench()
+  const empty: McpConfigurationSnapshot = { writable: true, revision: 4, entries: [] }
+  type Reply = { ok: true; value: McpConfigurationSnapshot } | { ok: false; error: RemoteError }
+  const listMcp = vi.fn<() => Promise<Reply>>().mockResolvedValue({ ok: true, value: empty })
+  const updateMcp = vi.fn<(...args: Parameters<McpInventoryFace['updateMcp']>) => Promise<Reply>>()
+    .mockResolvedValue({ ok: true, value: { ...empty, revision: 5 } })
+  new TestRemote(ctx, { mcpConfiguration: { list: listMcp, update: updateMcp } })
+  declareRoot(slots)
+  const fiber = ctx.plugin({ inject: [...inject], apply })
+  await fiber.await()
+  await vi.waitFor(() => { expect(slots.entries('settings.plugins.tab')).toHaveLength(1) })
+  const tab = slots.entries('settings.plugins.tab')[0]!
+  const face = (tab.inject as () => Pick<McpInventoryFace, keyof McpInventoryFace>)()
+  return { ctx, slots, listMcp, updateMcp, fiber, tab, face }
+}
+
+describe('ui-settings-plugins MCP tab', () => {
+  it('loads configuration and forwards revision-fenced edits through its own tab', async () => {
+    const { tab, face, listMcp, updateMcp } = await mcpBench()
+    expect(tab.options).toMatchObject({ id: 'mcp', order: 0 })
+    expect(resolveSlotLabel(tab.options.label)).toBe('MCP')
+    await vi.waitFor(() => { expect(face.hooks.mcpInventory.getSnapshot().status).toBe('ready') })
+    expect(listMcp).toHaveBeenCalledOnce()
+    await face.updateMcp('include:mcp-fixture', { enabled: false })
+    expect(updateMcp).toHaveBeenCalledWith('include:mcp-fixture', { enabled: false }, 4)
+    expect(face.hooks.mcpInventory.getSnapshot().revision).toBe(5)
+  })
+
+  it('refreshes after reconnect and removes its tab and listener with the fiber', async () => {
+    const { ctx, slots, listMcp, fiber } = await mcpBench()
+    await vi.waitFor(() => { expect(listMcp).toHaveBeenCalledOnce() })
+    ctx.emit('connection/reset')
+    await vi.waitFor(() => { expect(listMcp).toHaveBeenCalledTimes(2) })
+    await fiber.dispose()
+    expect(slots.entries('settings.section')).toHaveLength(0)
+    ctx.emit('connection/reset')
+    expect(listMcp).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports read errors and recovers through the retry action', async () => {
+    const { face, listMcp } = await mcpBench()
+    await vi.waitFor(() => { expect(face.hooks.mcpInventory.getSnapshot().status).toBe('ready') })
+    listMcp.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
+    face.retryMcp()
+    await vi.waitFor(() => { expect(face.hooks.mcpInventory.getSnapshot().status).toBe('error') })
+    face.retryMcp()
+    await vi.waitFor(() => { expect(face.hooks.mcpInventory.getSnapshot().status).toBe('ready') })
+  })
+
+  it('rejects a failed mutation and keeps the last confirmed snapshot', async () => {
+    const { face, updateMcp } = await mcpBench()
+    await vi.waitFor(() => { expect(face.hooks.mcpInventory.getSnapshot().status).toBe('ready') })
+    updateMcp.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'read-only', {}) })
+    await expect(face.updateMcp('include:mcp-fixture', { enabled: false })).rejects.toThrow('read-only')
+    expect(face.hooks.mcpInventory.getSnapshot().revision).toBe(4)
   })
 })

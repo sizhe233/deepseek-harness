@@ -35,7 +35,7 @@ The first request includes one durable baseline message with the user-global `$D
 
 The defaults suit a typical checkout: `.git` marks the project root, `AGENTS.md` and `CLAUDE.md` are the base candidates, and `AGENTS.local.md` and `CLAUDE.local.md` are additive local overlays. Only `maxBytes` is required — it caps the complete rendered baseline so each deployment chooses its prompt budget explicitly.
 
-Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project. The [root-marker metadata decision](../../../.agents/notes/implemented/bug-fix/2026-09-03-root-marker-metadata-failures.md) records why discovery fails instead of substituting another root.
+Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project. The [historical root-marker metadata decision](../../../.agents/notes/archived/bug-fix/2026-09-03-root-marker-metadata-failures.md) records why discovery fails instead of substituting another root.
 
 ```yaml
 - name: '@deepseek-ai/dsh-agent-instructions'
@@ -95,7 +95,6 @@ The plugin is built on one principle: workspace instructions are durable convers
 | [`src/render.ts`](src/render.ts) | Instruction rendering, budget truncation, change records |
 | [`src/state.ts`](src/state.ts) | Durable message sources, version/digest cache, reconciliation |
 | [`src/digest.ts`](src/digest.ts) | SHA-1 content identity and per-directory duplicate keys |
-| — | No runtime invariant companion is published; replay intentionally tolerates unknown or malformed workspace sources, while focused pipeline tests own its private pending/cache state transitions. |
 
 ### Main flow
 
@@ -178,7 +177,7 @@ Each discovered scope adds bounded history tokens until compaction. Unchanged co
 
 #### KV Cache effect
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV Cache entries.
 
 ### Changed or removed instruction context
 
@@ -202,7 +201,7 @@ Each confirmed change or removal is one retained history message bounded by `max
 
 #### KV Cache effect
 
-Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
+Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV Cache entries.
 
 ## Known Limitations and Deferred Work
 
