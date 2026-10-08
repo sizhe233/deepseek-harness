@@ -9,7 +9,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startPrimaryProcess } from './primary-process.mjs'
 import { collectPrimaryStartupDiagnostics } from './primary-token-diagnostics.mjs'
-import { validatePrimaryTokenPair } from './primary-token-evidence.mjs'
+import { primaryRestrictingSids, validatePrimaryTokenPair } from './primary-token-evidence.mjs'
 import { ownerBinding } from './owner-observer.mjs'
 
 const options = new Map()
@@ -310,29 +310,42 @@ try {
     const before = snapshot(join(rootPath, 'record.bin')), parentBefore = snapshot(rootPath)
     const entriesBefore = readdirSync(rootPath).sort(), recordSha256 = sha256(join(rootPath, 'record.bin'))
     const worker = fileURLToPath(new URL('primary-token-worker.mjs', import.meta.url))
+    const callerGroups = oracle('token-group-facts')
+    const expected = { userSid: token.userSid, entrySha256: report.entrySha256,
+      nativeBinarySha256: ownerBinding(entry).sha256, recordSha256,
+      restrictingSids: primaryRestrictingSids(token.userSid, callerGroups.groups) }
     const pair = {}
+    let startupDiagnostics
+    const diagnostics = () => {
+      if (startupDiagnostics) return startupDiagnostics
+      if (processCleanupUncertain) return { evidence: 'not-run', reason: 'Prior child cleanup remains unconfirmed' }
+      startupDiagnostics = collectPrimaryStartupDiagnostics((...args) => {
+        if (processCleanupUncertain) throw new Error('Prior diagnostic child cleanup remains unconfirmed')
+        if (args[0] === 'token-group-facts') return callerGroups
+        if (args[0] !== 'primary-node-probe') return oracle(...args)
+        const probeOutput = join(sandbox, 'primary-token-three-sid-diagnostic.json')
+        const launch = oracle('primary-process', args[1], process.execPath, worker, entry, rootPath, probeOutput, 'restricted')
+        return { launch, child: launch.exitCode === 0 ? JSON.parse(readFileSync(probeOutput, 'utf8')) : null, expected }
+      })
+      return startupDiagnostics
+    }
     try {
       for (const mode of ['ordinary', 'restricted']) {
         const observation = join(sandbox, `primary-token-${mode}.json`)
-        const launch = oracle('primary-process', mode, process.execPath, worker, entry, rootPath, observation, mode)
+        const launchMode = mode === 'ordinary' ? mode : 'restricted-caller-groups'
+        const launch = oracle('primary-process', launchMode, process.execPath, worker, entry, rootPath, observation, mode)
         pair[mode] = { launch }
-        if (launch.exitCode !== 0) pair.startupDiagnostics = collectPrimaryStartupDiagnostics((...args) => {
-          if (args[0] !== 'primary-node-probe') return oracle(...args)
-          const probeOutput = join(sandbox, 'primary-token-caller-groups-diagnostic.json')
-          const probeLaunch = oracle('primary-process', args[1], process.execPath, worker, entry, rootPath, probeOutput, 'restricted')
-          return { launch: probeLaunch, child: probeLaunch.exitCode === 0 ? JSON.parse(readFileSync(probeOutput, 'utf8')) : null,
-            expected: { userSid: token.userSid, entrySha256: report.entrySha256, nativeBinarySha256: ownerBinding(entry).sha256, recordSha256 } }
-        })
         assert.equal(launch.exitCode, 0, `Primary ${mode} child exited 0x${launch.exitCode.toString(16)} before a complete observation`)
         pair[mode].child = JSON.parse(readFileSync(observation, 'utf8'))
       }
-      validatePrimaryTokenPair(pair, { userSid: token.userSid, entrySha256: report.entrySha256,
-        nativeBinarySha256: ownerBinding(entry).sha256, recordSha256 })
+      validatePrimaryTokenPair(pair, expected)
+      const separateDiagnostics = diagnostics()
+      assert.equal(processCleanupUncertain, false, 'Primary fixture child cleanup must be confirmed')
       assert.deepEqual(snapshot(join(rootPath, 'record.bin')), before)
       assert.deepEqual(snapshot(rootPath), parentBefore); assert.deepEqual(readdirSync(rootPath).sort(), entriesBefore)
       assert.equal(sha256(join(rootPath, 'record.bin')), recordSha256)
-      return { ...pair, originalIdentitiesDescriptorsAndBytesRetained: true }
-    } catch (error) { error.observation = pair; throw error }
+      return { ...pair, callerGroups, expected, startupDiagnostics: separateDiagnostics, originalIdentitiesDescriptorsAndBytesRetained: true }
+    } catch (error) { error.observation = { ...pair, callerGroups, expected, startupDiagnostics: diagnostics() }; throw error }
   })
   await check('collision-preserves-first-publication', () => {
     requireRoot()

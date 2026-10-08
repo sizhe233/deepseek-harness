@@ -241,8 +241,8 @@ static BOOL CloseHandle(HANDLE handle) {
   assert(handle != PROCESS || event_index(TERMINATE_JOB) != MAX_EVENTS);
   live[handle] = FALSE; closes[handle]++; event(CLOSE); return !is(names[handle]);
 }
-static DWORD GetLengthSid(PSID sid) { assert(sid == (void *)(uintptr_t)1); return 1; }
-static void hex(const void *data, size_t size) { assert(data == (void *)(uintptr_t)1 && size == 1); fputs("\"01\"", stdout); }
+static DWORD GetLengthSid(PSID sid) { assert(sid != NULL); return 1; }
+static void hex(const void *data, size_t size) { assert(data != NULL && size == 1); fputs("\"01\"", stdout); }
 static const char *json_boolean(BOOL value) { return value ? "true" : "false"; }
 static int failure(const char *operation, DWORD error, BOOL blocked) {
   failures++; failure_operation = operation; failure_error = error; failure_blocked = blocked; return blocked ? 3 : 1;

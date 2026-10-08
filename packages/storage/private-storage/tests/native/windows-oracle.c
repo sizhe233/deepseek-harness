@@ -789,16 +789,21 @@ cleanup:
   if (job && !CloseHandle(job)) cleanupOk = FALSE;
   if (restrictedToken && !CloseHandle(restrictedToken)) cleanupOk = FALSE;
   if (original && !CloseHandle(original)) cleanupOk = FALSE;
-  free(groups); free(childUser); free(logon); free(childLogon); free(callerGroups);
+  free(childUser); free(logon); free(childLogon); free(callerGroups);
   if (restrictions != fixedRestrictions) free(restrictions);
-  if (!cleanupOk) { free(user); return failure("primary child cleanup unconfirmed", ERROR_BUSY, FALSE); }
-  if (error != ERROR_SUCCESS) { free(user); return failure(operation, error, blocked); }
+  if (!cleanupOk) { free(groups); free(user); return failure("primary child cleanup unconfirmed", ERROR_BUSY, FALSE); }
+  if (error != ERROR_SUCCESS) { free(groups); free(user); return failure(operation, error, blocked); }
   printf("{\"complete\":true,\"pid\":%lu,\"userSid\":", (unsigned long)childPid); hex(user->User.Sid, GetLengthSid(user->User.Sid));
   printf(",\"restricted\":%s,\"tokenType\":%u,\"restrictedSidCount\":%lu,\"sameUser\":%s,\"threadTokenAbsent\":%s,\"threadTokenError\":%lu,"
-    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false,\"logonSidPreserved\":true,\"callerEnabledGroupsDiagnostic\":%s}\n",
+    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false,\"logonSidPreserved\":true,\"restrictionSource\":\"%s\",\"restrictingSids\":[",
     json_boolean(tokenRestricted), (unsigned)type, (unsigned long)restrictedCount, json_boolean(sameUser), json_boolean(threadAbsent),
-    (unsigned long)threadError, (unsigned long)exitCode, json_boolean(exited), json_boolean(jobEmpty), json_boolean(callerGroupMode));
-  free(user); return 0;
+    (unsigned long)threadError, (unsigned long)exitCode, json_boolean(exited), json_boolean(jobEmpty), !restricted ? "none" : callerGroupMode ? "caller-enabled-groups" : "fixed-three-sids");
+  for (DWORD sidIndex = 0; sidIndex < restrictedCount; sidIndex++) {
+    if (sidIndex) printf(",");
+    hex(groups->Groups[sidIndex].Sid, GetLengthSid(groups->Groups[sidIndex].Sid));
+  }
+  printf("]}\n");
+  free(groups); free(user); return 0;
 }
 
 int wmain(int argc, wchar_t **argv) {

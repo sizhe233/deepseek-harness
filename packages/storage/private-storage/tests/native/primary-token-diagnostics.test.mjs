@@ -4,7 +4,7 @@ import { collectPrimaryStartupDiagnostics } from './primary-token-diagnostics.mj
 
 test('SDK startup observations retain all attempts without asserting addon acceptance', () => {
   const calls = [], result = collectPrimaryStartupDiagnostics((...args) => { calls.push(args); return { complete: true, exitCode: 0 } })
-  assert.deepEqual(calls, [['token-group-facts'], ['primary-probe', 'ordinary'], ['primary-probe', 'restricted'], ['primary-probe', 'restricted-caller-groups'], ['primary-node-probe', 'restricted-caller-groups']])
+  assert.deepEqual(calls, [['token-group-facts'], ['primary-probe', 'ordinary'], ['primary-probe', 'restricted'], ['primary-probe', 'restricted-caller-groups'], ['primary-node-probe', 'restricted']])
   assert.equal(result.evidence, 'sdk-startup-diagnostic-only'); assert.equal(result.nativeAddonAcceptance, false)
   assert.equal(result.observations.length, 5)
 })
