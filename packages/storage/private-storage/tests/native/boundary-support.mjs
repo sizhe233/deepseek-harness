@@ -9,6 +9,13 @@ import { dirname, isAbsolute, join, win32 } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 
+/** SDDL trustees use the oracle's textual SID, never its binary SID hex encoding. */
+export function ownerOnlyDaclSddl(ownerSidText, duplicate) {
+  assert.match(ownerSidText, /^S-1-\d+(?:-\d+){1,15}$/u, 'SDDL requires a textual Windows SID')
+  assert.equal(typeof duplicate, 'boolean')
+  return `D:P(A;;FA;;;${ownerSidText})${duplicate ? `(A;;FR;;;${ownerSidText})` : ''}`
+}
+
 /** Resolve only a newly allocated fixture root; product paths retain literal-name checks. */
 export function createFixtureRoot(prefix, requestedParent = tmpdir()) {
   const requestedPath = mkdtempSync(join(requestedParent, prefix))

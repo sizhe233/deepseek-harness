@@ -29,7 +29,10 @@ export interface ConfigurationEditReceipt {
 /** Raw changes composed into one native document candidate, without publishing or reconciling it. */
 export type ConfigurationDocumentChange = {
   readonly entry: Entry
-  readonly change: (current: Raw, inherited: Raw) => Raw
+  /** Derive raw config with the explicit Profile override read from the same candidate snapshot. */
+  readonly change: (current: Raw, inherited: Raw, override: Raw) => Raw
+  /** Keep an existing config override when the next value equals its inherited value. */
+  readonly preserveOverride?: boolean
 } | { readonly reverse: Pick<ConfigurationEditReceipt, 'entry' | 'document'> }
 
 /**
@@ -69,8 +72,9 @@ export async function createManagedConfigurationDerivation(
         const patches = readProfilePatchesFromView('dsh', ctx.profileContext, current, documents.bundleLayers(current))
         const rows = flatten(composeEntries([patches])).filter(row => row.id === step.selector.id && row.name === step.selector.name)
         if (rows.length !== 1) throw new Error('Native candidate configuration entry is missing or ambiguous')
-        const next = step.change(structuredClone((rows[0]?.config ?? {}) as Raw), base)
-        source = editText(source, step.selector, next, base)
+        const next = step.change(structuredClone((rows[0]?.config ?? {}) as Raw), base,
+          profileOverride(documents, path, current, step.selector))
+        source = editText(source, step.selector, next, base, step.preserveOverride)
         const candidate = replace(view, path, source)
         const effective = flatten(composeEntries([readProfilePatchesFromView('dsh', ctx.profileContext, candidate, documents.bundleLayers(candidate))])).find(row => row.id === step.selector.id)
         if (!isDeepStrictEqual(effective?.config ?? {}, next)) throw new Error('Native candidate configuration is overridden by another layer')
@@ -162,11 +166,24 @@ function inherited(documents: ProfileDocuments, path: string, view: ProfileDocum
   return structuredClone((row?.config ?? {}) as Raw)
 }
 
-function editText(source: string, selector: Selector, next: Raw, inherited: Raw): string {
+function profileOverride(documents: ProfileDocuments, path: string, view: ProfileDocumentView, selector: Selector): Raw {
+  const loaded = managedConfigurationLayers(documents, path, view)
+  const stripValues = (rows: EntryOptions[]): EntryOptions[] => rows.map(row => ({
+    ...row, config: row.group && Array.isArray(row.config) ? stripValues(row.config as EntryOptions[]) : {},
+  }))
+  const bundle = stripValues(composeEntries(loaded.layers.map(layer => layer.patches)))
+  const rows = flatten(composeEntries([[{ insert: bundle }], loaded.patches]))
+  const entry = rows.find(row => row.id === selector.id && row.name === selector.name)
+  // Entries inserted only by home or command-line patches do not have Profile-owned values.
+  if (entry === undefined) throw new Error('Native candidate Profile entry is missing')
+  return structuredClone((entry.config ?? {}) as Raw)
+}
+
+function editText(source: string, selector: Selector, next: Raw, inherited: Raw, preserveOverride = false): string {
   const document = parse(source)
   const rows = rawRows(source)
   const indexes = rows.flatMap((row, index) => matches(row, selector) ? [index] : [])
-  if (isDeepStrictEqual(next, inherited)) {
+  if (isDeepStrictEqual(next, inherited) && (!preserveOverride || indexes.length === 0)) {
     for (const index of indexes) {
       const row = document.contents.items[index]
       if (isMap(row)) row.delete('config')

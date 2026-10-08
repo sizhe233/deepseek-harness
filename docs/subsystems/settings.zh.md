@@ -14,6 +14,25 @@
 
 `settings/document-updated` 在 Loader 配置变化后使表单描述符失效。这是 UI 通知；消费者仅在需要刷新注册信息时使用 `loader/volatile-update`。
 
+## 托管候选
+
+`createDocumentDerivation(changes, expectedView)` 为调用方现有的原生文档写快照准备一次性派生函数。每个目标都带有描述符修订号；返回写入前会重新检查原生视图、条目修订号及实际 Loader fiber。输入是独立的 JSON 数据副本。值和修改路径不能引入可执行 YAML 表达式标记；路径不能进入既有原始表达式内部，但仍可整体替换或重置表达式。ConfigEditor 仍负责 YAML 序列化与完整 Config 验证。发布、协调及迁移确认仍是调用方的独立操作。
+
+每个命名空间只出现一次。`update`、`replace` 和 `mutate` 保留普通表单语义。`import` 将调用方选定的旧版 section 映射到 `ns`，按字段是否存在而非值比较保留显式 Profile 字段，并补齐缺失的嵌套子字段。显式数组整体替代旧版数组。不推断别名、源路径或迁移账本。
+
+```ts type-equiv
+/** One revision-fenced form edit for a managed Profile document candidate. */
+type SettingsDocumentChange = {
+  /** Uniquely addressed active Profile entry; legacy callers map their section id explicitly. */
+  readonly ns: string
+  /** Entry revision returned by describe. */
+  readonly expectedRevision: number
+} & (
+  | { readonly op: 'update' | 'replace' | 'import'; readonly value: object }
+  | { readonly op: 'mutate'; readonly ops: readonly SettingsPathOp[] }
+)
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -82,7 +101,20 @@ async replace(ns: string, section: object, expectedRevision?: number): Promise<v
  * @param expectedRevision Revision returned by describe.
  */
 async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
+
+/**
+ * Prepare live-field edits for one native candidate without publishing or reconciling it.
+ * Import fills missing Profile fields; explicit values, including defaults and empty arrays, win.
+ * Submitted values are JSON data; paths cannot create expression markers or traverse existing raw expressions.
+ * @param changes One edit per namespace, with revisions from describe; imports map legacy ids explicitly.
+ * @param expectedView Exact native view to derive under the caller's existing document write snapshot.
+ * @returns A one-use derivation retaining Settings validation and ConfigEditor YAML/schema ownership.
+ * @throws For missing native authority, duplicate namespaces, stale views or entries, or invalid fields.
+ */
+async createDocumentDerivation( changes: readonly SettingsDocumentChange[], expectedView: ProfileDocumentViewReference, ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]>
 ```
+
+Types: [ProfileDocumentView](boot.zh.md) · [ProfileDocumentViewReference](boot.zh.md) · [ProfileDocumentWrite](boot.zh.md)
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 

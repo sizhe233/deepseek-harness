@@ -100,7 +100,42 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
     return file
   }
   const metadata = [...files.keys()].filter(path => path.endsWith(`${sep}package.json`))
-  const inspectMetadata = (): void => { for (const path of metadata) inspect(path) }
+  const metadataByDirectory = new Map(metadata.map(path => [dirname(path), path]))
+  const metadataByPackage = new Map<string, Set<string>>()
+  for (const path of metadata) {
+    const parts = path.split(sep)
+    for (const [index, first] of parts.entries()) {
+      if (parts[index - 1] !== 'node_modules') continue
+      const name = first.startsWith('@') ? `${first}/${parts[index + 1]}` : first
+      const key = name.toLowerCase(), paths = metadataByPackage.get(key) ?? new Set<string>()
+      paths.add(path); metadataByPackage.set(key, paths)
+    }
+  }
+  const scopeMetadata = (path: string, selected: Set<string>): void => {
+    for (let directory = dirname(path); ; directory = dirname(directory)) {
+      const manifest = metadataByDirectory.get(directory)
+      if (manifest !== undefined) selected.add(manifest)
+      if (dirname(directory) === directory) break
+    }
+  }
+  const inspectMetadata = (paths: Iterable<string> = metadata): void => { for (const path of paths) inspect(path) }
+  const resolutionMetadata = (request: string, parent: string | undefined, direct: string | undefined): Set<string> => {
+    const selected = new Set<string>()
+    if (parent !== undefined) scopeMetadata(parent, selected)
+    if (direct !== undefined) {
+      scopeMetadata(direct, selected)
+      // Directory requests can consult main and nested package scopes. Exact files cannot.
+      if (!files.has(direct)) for (const path of metadata) if (inside(direct, path)) selected.add(path)
+    } else {
+      const conventional = /^(?:@[a-zA-Z0-9_.~-]+\/)?[a-zA-Z0-9_.~-]+(?:\/[^\\:#?%]*)?$/u.test(request)
+        && !request.split('/').some(part => part === '.' || part === '..')
+      const name = conventional ? /^(?:@[^/]+\/)?[^/]+/u.exec(request)?.[0] : undefined
+      // Package imports may redirect to another bare package; retain the complete check there.
+      if (name === undefined) return new Set(metadata)
+      for (const path of metadataByPackage.get(name.toLowerCase()) ?? []) selected.add(path)
+    }
+    return selected
+  }
   inspectMetadata()
   function mappedURL(value: string): string
   function mappedURL(value: string | undefined): string | undefined
@@ -125,8 +160,13 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
     if (!(parentPath !== undefined && managed(parentPath)) && !(direct !== undefined && managed(direct))) {
       return nativeResolve.call(this, request, parent, isMain, options)
     }
-    inspectMetadata()
     const physicalParent = parentPath === undefined ? undefined : mapped(parentPath)
+    const target = direct === undefined ? request : mapped(direct)
+    const requestedPath = direct === undefined
+      ? /^\.\.?([/\\]|$)/u.test(request) && physicalParent !== undefined ? resolve(dirname(physicalParent), request) : undefined
+      : target
+    const checkedMetadata = resolutionMetadata(request, physicalParent, requestedPath)
+    inspectMetadata(checkedMetadata)
     const synthetic = physicalParent === undefined ? parent : new Module(physicalParent)
     if (synthetic !== undefined && physicalParent !== undefined) {
       // oxlint-disable-next-line typescript/no-deprecated -- The native CJS synthetic parent retains its original parent chain.
@@ -140,8 +180,10 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
     }) }
     delegating++
     try {
-      const result = nativeResolve.call(this, direct === undefined ? request : mapped(direct), synthetic, isMain, mappedOptions)
+      const result = nativeResolve.call(this, target, synthetic, isMain, mappedOptions)
       const selected = sharedPath(result)
+      scopeMetadata(result, checkedMetadata); scopeMetadata(selected, checkedMetadata)
+      inspectMetadata(checkedMetadata)
       inspect(selected)
       return selected
     } finally { delegating-- }
@@ -158,11 +200,19 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
         const parent = context.parentURL?.startsWith('file:') ? fileURLToPath(context.parentURL) : undefined
         const direct = specifier.startsWith('file:') ? fileURLToPath(specifier) : isAbsolute(specifier) ? resolve(specifier) : undefined
         if (!(parent !== undefined && managed(parent)) && !(direct !== undefined && managed(direct))) return nextResolve(specifier, context)
-        inspectMetadata()
+        const physicalParent = parent === undefined ? undefined : mapped(parent)
+        const requestedPath = direct === undefined
+          ? /^\.\.?(\/|$)/u.test(specifier) && physicalParent !== undefined
+            ? fileURLToPath(new URL(specifier, pathToFileURL(physicalParent))) : undefined
+          : mapped(direct)
+        const checkedMetadata = resolutionMetadata(specifier, physicalParent, requestedPath)
+        inspectMetadata(checkedMetadata)
         const target = specifier.startsWith('file:') ? mappedURL(specifier) : direct === undefined ? specifier : mapped(direct)
         const result = nextResolve(target, { ...context, parentURL: mappedURL(context.parentURL) })
         if (!result.url.startsWith('file:')) throw new Error('Runtime import has an unadmitted URL scheme')
         const original = fileURLToPath(result.url), selected = sharedPath(original)
+        scopeMetadata(original, checkedMetadata); scopeMetadata(selected, checkedMetadata)
+        inspectMetadata(checkedMetadata)
         inspect(selected)
         return selected === original ? result : { ...result, url: pathToFileURL(selected).href }
       },
@@ -173,6 +223,8 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
           return result
         }
         if (!url.startsWith('file:') || !managed(fileURLToPath(url))) return nextLoad(url, context)
+        const metadata = new Set<string>()
+        scopeMetadata(fileURLToPath(url), metadata); inspectMetadata(metadata)
         const file = inspect(fileURLToPath(url)), result = nextLoad(url, context)
         if ('responseURL' in result && result.responseURL !== undefined && result.responseURL !== url) throw new Error('A loader changed admitted executable identity')
         const source: unknown = result.source
@@ -183,7 +235,7 @@ export function installRuntimeCodeGate(input: RuntimeCodeGateBinding): Readonly<
           if (bytes === undefined) throw new Error('A loader returned unsupported executable source')
           if (bytes.length !== file.bytes || hash(bytes) !== file.sha256) throw new Error('A loader transformed admitted executable bytes')
         }
-        inspect(file.path)
+        inspectMetadata(metadata); inspect(file.path)
         return result
       },
     })

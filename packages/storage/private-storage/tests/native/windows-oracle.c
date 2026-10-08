@@ -19,6 +19,7 @@ typedef NTSTATUS (NTAPI *QueryFileFn)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, UL
 typedef NTSTATUS (NTAPI *QueryVolumeFn)(HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, ULONG);
 typedef NTSTATUS (NTAPI *VersionFn)(OSVERSIONINFOW *);
 typedef NTSTATUS (NTAPI *CreateFileFn)(PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, PLARGE_INTEGER, ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
+typedef NTSTATUS (NTAPI *SetSecurityFn)(HANDLE, SECURITY_INFORMATION, PSECURITY_DESCRIPTOR);
 
 static void hex(const void *value, size_t length) {
   const unsigned char *bytes = (const unsigned char *)value;
@@ -199,8 +200,12 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
   TOKEN_GROUPS *restrictions = NULL;
   PSECURITY_DESCRIPTOR parentDescriptor = NULL, afterParentDescriptor = NULL;
   PACL parentAcl = NULL, traversalAcl = NULL;
-  SECURITY_DESCRIPTOR_CONTROL parentControl = 0;
+  SECURITY_DESCRIPTOR traversalDescriptor;
+  SECURITY_DESCRIPTOR_CONTROL parentControl = 0, afterParentControl = 0;
   DWORD parentRevision = 0;
+  DWORD parentBeforeBytes = 0, parentAfterBytes = 0, parentFirstDifference = MAXDWORD;
+  NTSTATUS parentMutationStatus = 0, parentRestoreStatus = 0;
+  SetSecurityFn setSecurity = (SetSecurityFn)native_proc("NtSetSecurityObject");
   BYTE anonymous[SECURITY_MAX_SID_SIZE];
   DWORD anonymousBytes = sizeof(anonymous), error = ERROR_SUCCESS, threadError = ERROR_SUCCESS;
   DWORD privateError = 0, controlError = 0, privateBytes = 0, controlBytes = 0, ordinaryError = 0, ordinaryBytes = 0;
@@ -208,6 +213,7 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
   SID_AND_ATTRIBUTES restricting;
   const char *operation = "token fixture";
   if (!anonymousMode && !restrictedMode && !ordinaryMode) return failure("token-access-kind", ERROR_INVALID_PARAMETER, FALSE);
+  if (anonymousMode && !setSecurity) return failure("NtSetSecurityObject", ERROR_NOT_SUPPORTED, TRUE);
   if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &thread)) { CloseHandle(thread); return failure("ordinary thread required", ERROR_BAD_IMPERSONATION_LEVEL, FALSE); }
   if (GetLastError() != ERROR_NO_TOKEN) return failure("initial OpenThreadToken", GetLastError(), FALSE);
   parent = CreateFileW(parentPath, FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | READ_CONTROL | WRITE_DAC, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -226,6 +232,7 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
     if (!error) error = ERROR_INVALID_SECURITY_DESCR;
     operation = "token parent descriptor"; goto cleanup;
   }
+  parentBeforeBytes = GetSecurityDescriptorLength(parentDescriptor);
   if (anonymousMode) {
     DWORD bytes = parentAcl->AclSize + (DWORD)offsetof(ACCESS_ALLOWED_ACE, SidStart) + anonymousBytes;
     if (bytes > MAXWORD) { error = ERROR_INVALID_ACL; operation = "token traverse ACL bounds"; goto cleanup; }
@@ -236,10 +243,16 @@ static int token_access(const wchar_t *parentPath, const wchar_t *privateName, c
     if (!AddAccessAllowedAceEx(traversalAcl, ACL_REVISION, 0, FILE_TRAVERSE, anonymous)) {
       error = GetLastError(); operation = "token traverse ACE"; goto cleanup;
     }
-    /* An anonymous token lacks bypass-traverse privilege; isolate the leaf access check. */
+    if (!InitializeSecurityDescriptor(&traversalDescriptor, SECURITY_DESCRIPTOR_REVISION) ||
+        !SetSecurityDescriptorDacl(&traversalDescriptor, TRUE, traversalAcl, FALSE) ||
+        !SetSecurityDescriptorControl(&traversalDescriptor, SE_DACL_PROTECTED | SE_DACL_AUTO_INHERITED | SE_DACL_AUTO_INHERIT_REQ,
+          (SECURITY_DESCRIPTOR_CONTROL)(parentControl & (SE_DACL_PROTECTED | SE_DACL_AUTO_INHERITED | SE_DACL_AUTO_INHERIT_REQ)))) {
+      error = GetLastError(); operation = "token traverse descriptor"; goto cleanup;
+    }
+    /* Preserve descriptor control bits without SetSecurityInfo's inheritance propagation. */
     traversalAdjusted = TRUE;
-    error = SetSecurityInfo(parent, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, traversalAcl, NULL);
-    if (error) { operation = "token parent traversal control"; goto cleanup; }
+    parentMutationStatus = setSecurity(parent, DACL_SECURITY_INFORMATION, &traversalDescriptor);
+    if (parentMutationStatus != 0) { error = ERROR_INVALID_SECURITY_DESCR; operation = "token parent traversal control"; goto cleanup; }
   }
   if (restrictedMode) {
     if (IsTokenRestricted(processToken)) { error = ERROR_ACCESS_DENIED; operation = "unrestricted process prerequisite"; blocked = TRUE; goto cleanup; }
@@ -285,13 +298,25 @@ cleanup:
   }
   if (parentDescriptor) {
     DWORD parentError = ERROR_SUCCESS;
-    if (traversalAdjusted) parentError = SetSecurityInfo(parent, SE_FILE_OBJECT,
-      DACL_SECURITY_INFORMATION | (parentControl & SE_DACL_PROTECTED ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION),
-      NULL, NULL, parentAcl, NULL);
+    if (traversalAdjusted) {
+      parentRestoreStatus = setSecurity(parent, DACL_SECURITY_INFORMATION, parentDescriptor);
+      if (parentRestoreStatus != 0) parentError = ERROR_INVALID_SECURITY_DESCR;
+    }
     if (!parentError) parentError = GetSecurityInfo(parent, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
       NULL, NULL, NULL, NULL, &afterParentDescriptor);
-    if (!parentError && afterParentDescriptor && GetSecurityDescriptorLength(parentDescriptor) == GetSecurityDescriptorLength(afterParentDescriptor)
-      && memcmp(parentDescriptor, afterParentDescriptor, GetSecurityDescriptorLength(parentDescriptor)) == 0) parentRestored = TRUE;
+    if (!parentError && afterParentDescriptor) {
+      if (!GetSecurityDescriptorControl(afterParentDescriptor, &afterParentControl, &parentRevision)) parentError = ERROR_INVALID_SECURITY_DESCR;
+      else {
+        DWORD limit;
+        parentAfterBytes = GetSecurityDescriptorLength(afterParentDescriptor);
+        limit = parentBeforeBytes < parentAfterBytes ? parentBeforeBytes : parentAfterBytes;
+        for (parentFirstDifference = 0; parentFirstDifference < limit; parentFirstDifference++)
+          if (((BYTE *)parentDescriptor)[parentFirstDifference] != ((BYTE *)afterParentDescriptor)[parentFirstDifference]) break;
+        if (parentFirstDifference == limit && parentBeforeBytes == parentAfterBytes) parentFirstDifference = MAXDWORD;
+      }
+    }
+    if (!parentError && afterParentDescriptor && parentBeforeBytes == parentAfterBytes
+      && memcmp(parentDescriptor, afterParentDescriptor, parentBeforeBytes) == 0) parentRestored = TRUE;
     else { error = parentError ? parentError : ERROR_INVALID_SECURITY_DESCR; operation = "token parent descriptor restoration"; blocked = FALSE; }
   }
   if (afterParentDescriptor) LocalFree(afterParentDescriptor);
@@ -305,7 +330,17 @@ cleanup:
     fprintf(stderr, "RevertToSelf failed; parent descriptor restored=%s; terminating fixture\n", json_boolean(parentRestored));
     ExitProcess(86);
   }
-  if (error) { free(owner); free(subjectUser); free(restrictions); return failure(operation, error, blocked); }
+  if (error) {
+    free(owner); free(subjectUser); free(restrictions);
+    printf("{\"complete\":false,\"status\":\"%s\",\"operation\":", blocked ? "blocked" : "failed"); json_string(operation);
+    printf(",\"win32Error\":%lu,\"parentMutationStatus\":%ld,\"parentRestoreStatus\":%ld,\"parentBeforeControl\":%u,\"parentAfterControl\":%u,"
+      "\"parentBeforeBytes\":%lu,\"parentAfterBytes\":%lu,\"parentFirstDifference\":%lu,"
+      "\"controlStatus\":%ld,\"controlReadBytes\":%lu,\"privateStatus\":%ld,\"privateReadBytes\":%lu,\"threadRestored\":%s}\n",
+      (unsigned long)error, (long)parentMutationStatus, (long)parentRestoreStatus, (unsigned)parentControl, (unsigned)afterParentControl,
+      (unsigned long)parentBeforeBytes, (unsigned long)parentAfterBytes, (unsigned long)parentFirstDifference,
+      (long)controlStatus, (unsigned long)controlBytes, (long)privateStatus, (unsigned long)privateBytes, json_boolean(restored));
+    return blocked ? 3 : 1;
+  }
   if (controlStatus != 0 || controlError || controlBytes != 1) {
     printf("{\"complete\":false,\"status\":\"blocked\",\"operation\":\"token readable-control prerequisite\",\"nativeStatus\":%ld,\"win32Error\":%lu,\"threadRestored\":%s}\n",
       (long)controlStatus, (unsigned long)controlError, json_boolean(restored));
@@ -317,10 +352,12 @@ cleanup:
   if (anonymousMode) hex(anonymous, anonymousBytes); else hex(owner->User.Sid, GetLengthSid(owner->User.Sid));
   printf(",\"sameUser\":%s,\"restricted\":%s,\"threadTokenError\":%lu,\"ordinaryPrivateReadable\":true,\"controlStatus\":%ld,\"controlReadBytes\":%lu,"
     "\"privateStatus\":%ld,\"privateReadError\":%lu,\"privateReadBytes\":%lu,\"threadRestored\":%s,\"privilegesEnabled\":false,"
-    "\"parentTraversalAdjusted\":%s,\"parentTraversalMask\":%lu,\"parentDescriptorRestored\":%s}\n",
+    "\"parentTraversalAdjusted\":%s,\"parentTraversalMask\":%lu,\"parentDescriptorRestored\":%s,"
+    "\"parentTraversalMechanism\":\"%s\",\"parentMutationStatus\":%ld,\"parentRestoreStatus\":%ld}\n",
     json_boolean(sameUser), json_boolean(restricted), (unsigned long)threadError, (long)controlStatus, (unsigned long)controlBytes,
     (long)privateStatus, (unsigned long)privateError, (unsigned long)privateBytes, json_boolean(restored),
-    json_boolean(traversalAdjusted), (unsigned long)(traversalAdjusted ? FILE_TRAVERSE : 0), json_boolean(parentRestored));
+    json_boolean(traversalAdjusted), (unsigned long)(traversalAdjusted ? FILE_TRAVERSE : 0), json_boolean(parentRestored),
+    traversalAdjusted ? "NtSetSecurityObject" : "not-needed", (long)parentMutationStatus, (long)parentRestoreStatus);
   free(owner); free(subjectUser); free(restrictions);
   return 0;
 }

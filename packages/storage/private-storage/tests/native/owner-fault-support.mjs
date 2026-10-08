@@ -4,7 +4,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ownerProductionSha256, ownerFaultSources, ownerDigest } from '../../../../../workbench/private-storage-owner-fault-evidence.mjs'
+import { ownerProductionSha256, ownerFaultSources, ownerDigest, ownerLibraryDirectories } from '../../../../../workbench/private-storage-owner-fault-evidence.mjs'
 export * from '../../../../../workbench/private-storage-owner-fault-evidence.mjs'
 
 export const ownerProductionFile = fileURLToPath(new URL('../../../../../native/system/packages/entry/src/windows-private-owner.c', import.meta.url))
@@ -47,6 +47,7 @@ export function ownerFaultBinding(binary) {
   assert.equal(build.discoveryDependenciesSha256, ownerFileDigest(join(output, 'owner-fault-discovery.json')))
   assert.equal(build.discoveryLogSha256, ownerFileDigest(join(output, 'owner-fault-discovery.log')))
   assert.equal(build.librarySearchSha256, ownerFileDigest(join(output, 'owner-fault-library-search.txt')))
+  ownerLibraryDirectories(readFileSync(join(output, 'owner-fault-library-search.txt'), 'utf8'))
   assert.deepEqual(build.discoveryArguments, ['/nologo', '/Bv', '/std:c17', '/O2', '/W4', '/WX', '/LD', '/DNAPI_VERSION=8',
     '/D_WIN32_WINNT=0x0602', `/I${join(sdk, 'include/node')}`, '/Zs', '/sourceDependencies', join(output, 'owner-fault-discovery.json'),
     join(root, 'packages/storage/private-storage/tests/native/owner-fault-fixture.c')])

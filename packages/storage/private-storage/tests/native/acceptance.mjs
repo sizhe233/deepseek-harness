@@ -249,6 +249,9 @@ try {
       assert.equal(result.parentTraversalAdjusted, mode === 'anonymous')
       assert.equal(result.parentTraversalMask, mode === 'anonymous' ? 0x20 : 0)
       assert.equal(result.parentDescriptorRestored, true)
+      assert.equal(result.parentTraversalMechanism, mode === 'anonymous' ? 'NtSetSecurityObject' : 'not-needed')
+      assert.equal(result.parentMutationStatus, 0)
+      assert.equal(result.parentRestoreStatus, 0)
       if (mode === 'ordinary') {
         assert.equal(result.privateStatus, 0)
         assert.equal(result.privateReadError, 0)

@@ -143,7 +143,10 @@ interface ConfigurationEditReceipt {
 /** Raw changes composed into one native document candidate, without publishing or reconciling it. */
 type ConfigurationDocumentChange = {
   readonly entry: Entry
-  readonly change: (current: Raw, inherited: Raw) => Raw
+  /** Derive raw config with the explicit Profile override read from the same candidate snapshot. */
+  readonly change: (current: Raw, inherited: Raw, override: Raw) => Raw
+  /** Keep an existing config override when the next value equals its inherited value. */
+  readonly preserveOverride?: boolean
 } | { readonly reverse: Pick<ConfigurationEditReceipt, 'entry' | 'document'> }
 ```
 

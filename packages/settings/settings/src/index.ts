@@ -7,8 +7,9 @@ import { parse } from 'yaml'
 import { Context, FiberState, Service, resolveConfig, type Fiber } from '@deepseek-ai/cordis'
 import type z from '@deepseek-ai/schemastery'
 import { interpolate, type Entry } from '@deepseek-ai/cordis-plugin-loader'
-import type {} from '@deepseek-ai/dsh-config-editor'
-import { createProfileDocumentOperationId, publishedProfileDocumentView, type ProfileDocumentDraft, type ProfileDocumentOperationId, type ProfileDocumentReceipt } from '@deepseek-ai/dsh-app-boot'
+import type { ConfigurationDocumentChange } from '@deepseek-ai/dsh-config-editor'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
+import { createProfileDocumentOperationId, publishedProfileDocumentView, type ProfileDocumentDraft, type ProfileDocumentOperationId, type ProfileDocumentReceipt, type ProfileDocumentView, type ProfileDocumentViewReference, type ProfileDocumentWrite } from '@deepseek-ai/dsh-app-boot'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { redactSecrets, type RedactedSecret } from './redact.ts'
 import { isVolatilePath, plainConfig, projectForm, volatileForm } from './schema.ts'
@@ -84,12 +85,27 @@ export type SettingsPathOp =
   | { op: 'set'; path: readonly string[]; value: unknown }
   | { op: 'unset'; path: readonly string[] }
 
-/** Apply one path op to a detached section, returning the next section. */
-function applyPathOp(section: Record<string, unknown>, op: SettingsPathOp, schema: z): Record<string, unknown> {
+/** One revision-fenced form edit for a managed Profile document candidate. */
+export type SettingsDocumentChange = {
+  /** Uniquely addressed active Profile entry; legacy callers map their section id explicitly. */
+  readonly ns: string
+  /** Entry revision returned by describe. */
+  readonly expectedRevision: number
+} & (
+  | { readonly op: 'update' | 'replace' | 'import'; readonly value: object }
+  | { readonly op: 'mutate'; readonly ops: readonly SettingsPathOp[] }
+)
+
+/** Apply one path op; data-only edits treat raw expressions as indivisible values. */
+function applyPathOp(section: Record<string, unknown>, op: SettingsPathOp, schema: z, dataOnly: boolean): Record<string, unknown> {
+  if (dataOnly && op.path.includes('__jsExpr')) throw new TypeError('Config paths cannot edit an executable expression marker')
   const edit = (input: unknown, path: readonly string[], node?: z): unknown => {
     const [head, ...rest] = path
     if (head === undefined) return op.op === 'set' ? op.value : undefined
     const value: unknown = input === undefined ? node?.meta.default : input
+    if (dataOnly && value !== null && typeof value === 'object' && Object.hasOwn(value, '__jsExpr')) {
+      throw new TypeError('Config paths cannot traverse an executable expression')
+    }
     if (Array.isArray(value)) {
       if (!/^(0|[1-9][0-9]*)$/.test(head) || (Number(head) > value.length || Number(head) === value.length && (rest.length > 0 || op.op === 'unset'))) {
         throw new TypeError(`Config array index "${head}" is out of range`)
@@ -131,9 +147,10 @@ function describeRejected(value: unknown): string {
  * are skipped — the same sparse-patch semantics as {@link mergeLayers} — while
  * an `undefined` array entry is rejected rather than coerced.
  * @param root - write input to validate before merging.
+ * @param rejectExpressions - whether data-only candidate input must reject executable YAML markers.
  * @returns the detached JSON-compatible clone.
  */
-function cloneJsonShaped(root: object): Record<string, unknown> {
+function cloneJsonShaped(root: object, rejectExpressions = false): Record<string, unknown> {
   const reject = (label: string, path: string): TypeError => new TypeError(`Config ${path} contains ${label}`)
   if (!isPlainObject(root)) throw reject('a non-plain root', '$')
   const visiting = new WeakSet<object>()
@@ -152,6 +169,9 @@ function cloneJsonShaped(root: object): Record<string, unknown> {
       return entries
     }
     if (isPlainObject(value)) {
+      if (rejectExpressions && Object.hasOwn(value, '__jsExpr')) {
+        throw reject('an executable expression', path)
+      }
       if (visiting.has(value)) throw reject('a circular reference', path)
       visiting.add(value)
       const out: Record<string, unknown> = {}
@@ -197,6 +217,18 @@ function member(node: unknown, key: string, own = false): unknown {
   if (!(isPlainObject(node) || Array.isArray(node)) || (own && !Object.hasOwn(node, key))) return undefined
   const value: unknown = Reflect.get(node, key)
   return value
+}
+
+function pathMutation(ops: readonly SettingsPathOp[], dataOnly = false): (
+  current: Record<string, unknown>, base: Record<string, unknown>, schema: z,
+) => Record<string, unknown> {
+  return (current, base, schema) => ops.reduce((value, op) => {
+    if (op.op === 'set') return applyPathOp(value, op, schema, dataOnly)
+    const parent = op.path.slice(0, -1).reduce<unknown>((node, key) => member(node, key), value)
+    if (Array.isArray(parent)) return applyPathOp(value, op, schema, dataOnly)
+    const inherited = op.path.reduce<unknown>((node, key) => member(node, key, true), base)
+    return applyPathOp(value, inherited === undefined ? op : { op: 'set', path: op.path, value: inherited }, schema, dataOnly)
+  }, current)
 }
 
 /** Entry ids of the removed `settings.yaml` sections whose owning entry carries another id. */
@@ -480,13 +512,51 @@ export class SettingsForms extends Service {
    * @param expectedRevision Revision returned by describe.
    */
   async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
-    await this.write(ns, (current, base, schema) => ops.reduce((value, op) => {
-      if (op.op === 'set') return applyPathOp(value, op, schema)
-      const parent = op.path.slice(0, -1).reduce<unknown>((node, key) => member(node, key), value)
-      if (Array.isArray(parent)) return applyPathOp(value, op, schema)
-      const inherited = op.path.reduce<unknown>((node, key) => member(node, key, true), base)
-      return applyPathOp(value, inherited === undefined ? op : { op: 'set', path: op.path, value: inherited }, schema)
-    }, current), expectedRevision, ops.map(op => op.path))
+    await this.write(ns, pathMutation(ops), expectedRevision, ops.map(op => op.path))
+  }
+
+  /**
+   * Prepare live-field edits for one native candidate without publishing or reconciling it.
+   * Import fills missing Profile fields; explicit values, including defaults and empty arrays, win.
+   * Submitted values are JSON data; paths cannot create expression markers or traverse existing raw expressions.
+   * @param changes One edit per namespace, with revisions from describe; imports map legacy ids explicitly.
+   * @param expectedView Exact native view to derive under the caller's existing document write snapshot.
+   * @returns A one-use derivation retaining Settings validation and ConfigEditor YAML/schema ownership.
+   * @throws For missing native authority, duplicate namespaces, stale views or entries, or invalid fields.
+   */
+  async createDocumentDerivation(
+    changes: readonly SettingsDocumentChange[], expectedView: ProfileDocumentViewReference,
+  ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]> {
+    const documents = this.ownerContext.get('profileDocuments')
+    if (documents === undefined) throw new Error('Settings document derivation requires native Profile documents')
+    const namespaces = new Set<string>()
+    const edits: ConfigurationDocumentChange[] = changes.map((change) => {
+      const { ns, expectedRevision, op } = change
+      if (namespaces.has(ns)) throw new Error(`Duplicate Settings namespace "${ns}"`)
+      namespaces.add(ns)
+      const input = change.op === 'mutate' ? undefined : cloneJsonShaped(change.value, true)
+      const ops = change.op === 'mutate' ? cloneJsonShaped({ ops: change.ops }, true)['ops'] as SettingsPathOp[] : []
+      const mutate = pathMutation(ops, true)
+      const prepared = this.deriveEdit(ns, (current, base, schema, override) => {
+        switch (op) {
+          case 'update': return mergeLayers(current, input) as Record<string, unknown>
+          case 'replace': return mergeLayers(base, input) as Record<string, unknown>
+          case 'import': return mergeLayers(mergeLayers(current, input), override) as Record<string, unknown>
+          case 'mutate': return mutate(current, base, schema)
+          /* v8 ignore next -- the public discriminant is a closed TypeScript union. */
+          default: return assertNever(op)
+        }
+      }, expectedRevision, ops.map(op => op.path))
+      return { entry: prepared.entry, change: prepared.derive, preserveOverride: op === 'import' }
+    })
+    const derive = await this.ownerContext.configEditor.createDocumentDerivation(edits)
+    let used = false
+    return (view) => {
+      if (used) throw new Error('Settings document derivation has already been used')
+      used = true
+      if (view.reference !== expectedView || documents.current().reference !== expectedView) throw new Error('Settings document view changed since it was read')
+      return derive(view)
+    }
   }
 
   private write(
@@ -504,6 +574,26 @@ export class SettingsForms extends Service {
     change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,
     expected?: number, paths: readonly (readonly string[])[] = [], operationId?: ProfileDocumentOperationId,
   ): Promise<ProfileDocumentReceipt | undefined> {
+    const { entry, derive } = this.deriveEdit(ns, change, expected, paths)
+    let receipt: ProfileDocumentReceipt | undefined
+    if (operationId === undefined) await this.ownerContext.configEditor.edit(entry, derive)
+    else receipt = (await this.ownerContext.configEditor.editWithReceipt(entry, derive, operationId)).document
+    this.describe()
+    return receipt
+  }
+
+  private deriveEdit(
+    ns: string,
+    change: (
+      current: Record<string, unknown>, base: Record<string, unknown>, schema: z, override: Record<string, unknown>,
+    ) => Record<string, unknown>,
+    expected?: number, paths: readonly (readonly string[])[] = [],
+  ): {
+    entry: Entry
+    derive: (
+      raw: Record<string, unknown>, inherited: Record<string, unknown>, override?: Record<string, unknown>,
+    ) => Record<string, unknown>
+  } {
     const entry = this.ownerContext.configEditor.entries().find(row => row.options.id === ns)
     const schema = entry === undefined ? undefined : this.schema(entry)
     if (entry === undefined || schema === undefined) throw new Error(`No configurable plugin entry "${ns}"`)
@@ -512,7 +602,9 @@ export class SettingsForms extends Service {
     for (const path of paths) {
       if (path.length && !isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`)
     }
-    const derive = (raw: Record<string, unknown>, inherited: Record<string, unknown>): Record<string, unknown> => {
+    const derive = (
+      raw: Record<string, unknown>, inherited: Record<string, unknown>, override: Record<string, unknown> = {},
+    ): Record<string, unknown> => {
       const descriptor = this.describe().find(row => row.ns === ns)
       if (descriptor === undefined) throw new Error(`Plugin entry "${ns}" is no longer configurable`)
       if (expected !== undefined && descriptor.revision !== expected) {
@@ -520,7 +612,7 @@ export class SettingsForms extends Service {
       }
       const current = projectForm(form, raw) as Record<string, unknown>
       const base = projectForm(form, inherited) as Record<string, unknown>
-      const next = cloneJsonShaped(change(current, base, schema))
+      const next = cloneJsonShaped(change(current, base, schema, projectForm(form, override) as Record<string, unknown>))
       const validatePaths = (value: Record<string, unknown>, node: z, path: string[] = []): void => {
         for (const [key, child] of Object.entries(value)) {
           const target = [...path, key]
@@ -544,11 +636,7 @@ export class SettingsForms extends Service {
       }
       return mergeLayers(strip(raw, form), next) as Record<string, unknown>
     }
-    let receipt: ProfileDocumentReceipt | undefined
-    if (operationId === undefined) await this.ownerContext.configEditor.edit(entry, derive)
-    else receipt = (await this.ownerContext.configEditor.editWithReceipt(entry, derive, operationId)).document
-    this.describe()
-    return receipt
+    return { entry, derive }
   }
 
   private schema(entry: Entry): z | undefined {

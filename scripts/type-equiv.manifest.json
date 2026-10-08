@@ -2456,6 +2456,11 @@
       "doc": "docs/subsystems/boot.md",
       "symbol": "ManagedPackagePolicy",
       "source": "packages/boot/plugin-manager/src/managed-operations.ts"
+    },
+    {
+      "doc": "docs/subsystems/settings.md",
+      "symbol": "SettingsDocumentChange",
+      "source": "packages/settings/settings/src/index.ts"
     }
   ]
 }

@@ -2716,6 +2716,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Apply field edits without restating redacted secrets; unsetting an array index removes its element.',
         parameters: [{ name: 'ns', description: 'Profile entry id.' }, { name: 'ops', description: 'Ordered form edits.' }, { name: 'expectedRevision', description: 'Revision returned by describe.' }],
       },
+      {
+        signature: 'async createDocumentDerivation( changes: readonly SettingsDocumentChange[], expectedView: ProfileDocumentViewReference, ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]>',
+        description: 'Prepare live-field edits for one native candidate without publishing or reconciling it. Import fills missing Profile fields; explicit values, including defaults and empty arrays, win. Submitted values are JSON data; paths cannot create expression markers or traverse existing raw expressions.',
+        parameters: [{ name: 'changes', description: 'One edit per namespace, with revisions from describe; imports map legacy ids explicitly.' }, { name: 'expectedView', description: 'Exact native view to derive under the caller\'s existing document write snapshot.' }],
+        returns: 'A one-use derivation retaining Settings validation and ConfigEditor YAML/schema ownership.',
+        throws: ['For missing native authority, duplicate namespaces, stale views or entries, or invalid fields.'],
+      },
     ],
   },
   {
@@ -5029,7 +5036,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConfigurationDocumentChange',
-    declaration: 'export type ConfigurationDocumentChange = {\n    readonly entry: Entry;\n    readonly change: (current: Raw, inherited: Raw) => Raw;\n} | {\n    readonly reverse: Pick<ConfigurationEditReceipt, \'entry\' | \'document\'>;\n};',
+    declaration: 'export type ConfigurationDocumentChange = {\n    readonly entry: Entry;\n    readonly change: (current: Raw, inherited: Raw, override: Raw) => Raw;\n    readonly preserveOverride?: boolean;\n} | {\n    readonly reverse: Pick<ConfigurationEditReceipt, \'entry\' | \'document\'>;\n};',
   },
   {
     name: 'ConfigurationEditReceipt',
@@ -7418,6 +7425,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsDescriptor',
     declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    autoGenerate: boolean;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: \'live\';\n    secrets?: RedactedSecret[];\n}',
+  },
+  {
+    name: 'SettingsDocumentChange',
+    declaration: 'export type SettingsDocumentChange = {\n    readonly ns: string;\n    readonly expectedRevision: number;\n} & ({\n    readonly op: \'update\' | \'replace\' | \'import\';\n    readonly value: object;\n} | {\n    readonly op: \'mutate\';\n    readonly ops: readonly SettingsPathOp[];\n});',
   },
   {
     name: 'SettingsDocumentOpenValue',

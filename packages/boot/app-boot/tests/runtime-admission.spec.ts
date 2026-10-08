@@ -47,3 +47,11 @@ it('shares frozen outer authority across separately built copies and preserves r
   expect(result.status, result.stderr).toBe(0)
   expect(result.stdout).toBe('verified\n')
 })
+
+
+it.each(['exports', 'imports', 'main', 'type', 'directory', 'refusal', 'scale'])('revalidates %s metadata through real Node resolution', (mode) => {
+  const script = fileURLToPath(new URL('./fixtures/runtime-code-metadata.mjs', import.meta.url))
+  const result = spawnSync(process.execPath, [script, mode], { encoding: 'utf8', timeout: 30_000 })
+  expect(result.status, result.stderr).toBe(0)
+  expect(result.stdout).toBe('verified\n')
+})

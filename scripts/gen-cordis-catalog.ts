@@ -728,6 +728,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SettingsDescriptor: 'settings.md',
   SettingsDescribeValue: 'settings.md',
   SettingsDocumentOpenValue: 'settings.md',
+  SettingsDocumentChange: 'settings.md',
   AgentPresetDirectoryOpenValue: 'settings.md',
   SettingsNamespaceView: 'settings.md',
   SettingsPathOpView: 'settings.md',

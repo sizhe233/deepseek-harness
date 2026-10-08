@@ -6,7 +6,7 @@ import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ownerBinding } from './owner-observer.mjs'
-import { createFixtureRoot, Blocked, digest, fileDigest, fixtureEnvironment, options, oracle, startChild, summary, nativeFaultMapping } from './boundary-support.mjs'
+import { createFixtureRoot, ownerOnlyDaclSddl, Blocked, digest, fileDigest, fixtureEnvironment, options, oracle, startChild, summary, nativeFaultMapping } from './boundary-support.mjs'
 
 const args = options(process.argv.slice(2))
 const entry = args.get('--entry')
@@ -111,13 +111,13 @@ function kernelCalls() {
 
 // Owned synthetic file only. A second ACE grants the same already-full-access
 // TokenUser no extra effective access, but deliberately violates exact policy.
-function setOwnedOwnerOnlyDacl(path, duplicate) {
+function setOwnedOwnerOnlyDacl(path, duplicate, ownerSidText) {
   const handle = native.open(path, 0x60000, 7, null, 3, 0x80, null)
   assert.ok(handle !== null && handle !== 0n && handle !== 0xffffffffffffffffn)
   const descriptor = Buffer.alloc(8)
   try {
-    const sddl = `D:P(A;;FA;;;${tokenUser})${duplicate ? `(A;;FR;;;${tokenUser})` : ''}`
-    assert.notEqual(native.descriptor(sddl, 1, descriptor, null), 0)
+    const sddl = ownerOnlyDaclSddl(ownerSidText, duplicate)
+    assert.notEqual(native.descriptor(sddl, 1, descriptor, null), 0, `SDDL conversion failed: ${native.error()}`)
     const pointer = descriptor.readBigUInt64LE()
     assert.notEqual(pointer, 0n)
     const present = Buffer.alloc(4), dacl = Buffer.alloc(8), inherited = Buffer.alloc(4)
@@ -303,8 +303,9 @@ try {
       assert.equal((await child.next()).phase, 'read-after-chunk')
       // No additional principal or effective permission is granted by this
       // fixture: both ACEs name the same already-full-access owner.
-      setOwnedOwnerOnlyDacl(f.path, true)
+      assert.equal(f.before.ownerSid, tokenUser)
       changed = true
+      setOwnedOwnerOnlyDacl(f.path, true, f.before.ownerSidText)
       const drifted = inspect(f.path)
       assert.equal(drifted.daclProtected, true)
       assert.equal(drifted.aces.length, 2)
@@ -321,7 +322,7 @@ try {
         originalIdentityRetained: true, postReadPrivacyRejection: true }
     } finally {
       await child.kill(); children.delete(child)
-      if (changed) { setOwnedOwnerOnlyDacl(f.path, false); privateFileFacts(f.path, f.before.identity) }
+      if (changed) { setOwnedOwnerOnlyDacl(f.path, false, f.before.ownerSidText); privateFileFacts(f.path, f.before.identity) }
     }
   })
 

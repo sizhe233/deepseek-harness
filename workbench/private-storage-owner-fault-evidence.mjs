@@ -1,6 +1,22 @@
 /** Shared source-owner evidence validation; no report can certify packed production execution. */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { win32 } from 'node:path'
+
+/** Extract the exact LIB variable from CMD's prefix-matched environment capture without consuming LIBPATH. */
+export function ownerLibraryDirectories(text) {
+  assert.equal(typeof text, 'string')
+  assert.ok(text.length > 0 && Buffer.byteLength(text) <= 64 * 1024 && !text.includes('\0'), 'Invalid compiler library environment capture')
+  const records = text.split(/\r?\n/u).filter(line => /^LIB=/iu.test(line))
+  assert.equal(records.length, 1, 'Exactly one LIB environment record is required')
+  const directories = records[0].slice(4).split(';').filter(Boolean)
+  assert.ok(directories.length > 0, 'Compiler LIB search path is empty')
+  for (const directory of directories) {
+    assert.ok(!/[\r\n]/u.test(directory) && win32.isAbsolute(directory) && win32.parse(directory).root.length > 1,
+      'Compiler LIB directory must be fully qualified')
+  }
+  return directories
+}
 
 export const ownerProductionSha256 = '4bbd66634eb5f1215d62c65b745c6483c2578f2ec762d54e4afd394eb419b77f'
 export const ownerDirectoryCases = Object.freeze([

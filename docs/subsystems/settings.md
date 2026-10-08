@@ -14,6 +14,25 @@ A form namespace is the local id of a uniquely addressed entry in the active pro
 
 `settings/document-updated` invalidates form descriptors after Loader configuration changes. It is a UI notification; consumers use `loader/volatile-update` only when they need to refresh registration facts.
 
+## Managed candidates
+
+`createDocumentDerivation(changes, expectedView)` prepares a one-use derivation for the caller’s existing native document write snapshot. Every target has a descriptor revision; the native view, entry revision and actual Loader fiber are rechecked before returning writes. Inputs are detached JSON data. Values and mutation paths cannot introduce executable YAML expression markers; paths cannot traverse existing raw expressions, which remain replaceable or resettable as whole values. ConfigEditor still owns YAML serialization and complete Config validation. Publication, reconciliation and migration acknowledgement remain the caller’s separate operations.
+
+Each namespace appears once. `update`, `replace` and `mutate` keep ordinary form semantics. `import` maps one caller-selected legacy section to `ns`, preserves explicit Profile fields by presence rather than value comparison, and fills missing nested children. Explicit arrays replace legacy arrays wholesale. No aliases, source paths or migration ledger are inferred.
+
+```ts type-equiv
+/** One revision-fenced form edit for a managed Profile document candidate. */
+type SettingsDocumentChange = {
+  /** Uniquely addressed active Profile entry; legacy callers map their section id explicitly. */
+  readonly ns: string
+  /** Entry revision returned by describe. */
+  readonly expectedRevision: number
+} & (
+  | { readonly op: 'update' | 'replace' | 'import'; readonly value: object }
+  | { readonly op: 'mutate'; readonly ops: readonly SettingsPathOp[] }
+)
+```
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -82,7 +101,20 @@ async replace(ns: string, section: object, expectedRevision?: number): Promise<v
  * @param expectedRevision Revision returned by describe.
  */
 async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>
+
+/**
+ * Prepare live-field edits for one native candidate without publishing or reconciling it.
+ * Import fills missing Profile fields; explicit values, including defaults and empty arrays, win.
+ * Submitted values are JSON data; paths cannot create expression markers or traverse existing raw expressions.
+ * @param changes One edit per namespace, with revisions from describe; imports map legacy ids explicitly.
+ * @param expectedView Exact native view to derive under the caller's existing document write snapshot.
+ * @returns A one-use derivation retaining Settings validation and ConfigEditor YAML/schema ownership.
+ * @throws For missing native authority, duplicate namespaces, stale views or entries, or invalid fields.
+ */
+async createDocumentDerivation( changes: readonly SettingsDocumentChange[], expectedView: ProfileDocumentViewReference, ): Promise<(view: ProfileDocumentView) => readonly ProfileDocumentWrite[]>
 ```
+
+Types: [ProfileDocumentView](boot.md) · [ProfileDocumentViewReference](boot.md) · [ProfileDocumentWrite](boot.md)
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
 

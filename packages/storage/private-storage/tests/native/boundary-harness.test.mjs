@@ -7,8 +7,17 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirS
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as wait } from 'node:timers/promises'
-import { createFixtureRoot, diagnoseFixtureAncestors, fixtureEnvironment, options, startChild, summary, nativeFaultMapping, decodeFileIdentity,
+import { createFixtureRoot, ownerOnlyDaclSddl, diagnoseFixtureAncestors, fixtureEnvironment, options, startChild, summary, nativeFaultMapping, decodeFileIdentity,
   decodeHandleSnapshot, selectOwnedSnapshot, assertSnapshotReleased, sdkInheritanceBinding, digest } from './boundary-support.mjs'
+
+test('owner-only SDDL uses the textual SID and preserves the same principal in both ACEs', () => {
+  const sid = 'S-1-5-21-123-456-789-1001'
+  assert.equal(ownerOnlyDaclSddl(sid, false), 'D:P(A;;FA;;;S-1-5-21-123-456-789-1001)')
+  assert.equal(ownerOnlyDaclSddl(sid, true), 'D:P(A;;FA;;;S-1-5-21-123-456-789-1001)(A;;FR;;;S-1-5-21-123-456-789-1001)')
+  for (const invalid of ['0105000000000005150000007b000000c801000015030000e9030000', sid + ')(A;;FA;;;WD)', '', 'S-1-5-']) {
+    assert.throws(() => ownerOnlyDaclSddl(invalid, true), /textual Windows SID/)
+  }
+})
 
 test('fixture roots resolve aliased parents without reusing an existing directory', t => {
   const temporary = mkdtempSync(join(tmpdir(), 'fixture-parent-'))

@@ -46,6 +46,8 @@ For a launcher-bound `profileDocuments` authority, `editWithReceipt()` validates
 
 `createDocumentDerivation()` composes bounded edits and receipted reversals into one raw candidate under the provider’s write snapshot. It validates through the actual active plugin fibers without publishing or applying that candidate. An empty or oversized batch, stale entry, changed owned field, or a target removed by the batch rejects before publication. Retained raw-document history can cross code activations without admitting an earlier code or package graph.
 
+Candidate callbacks receive detached explicit Profile values from the same snapshot, including Profile-inserted entries. They can retain an existing override equal to the inherited config, so an import can preserve the user’s explicit defaults. Ordinary edits and resets keep their existing override-removal rules.
+
 `createOfflineConfigurationEditor()` uses the same retained-version and owned-field reversal with launcher-supplied native validators. Its declarations contain no Loader fibers, and its receipts explicitly report offline publication. It neither mounts plugins nor acknowledges live application.
 
 </details>

@@ -49,6 +49,8 @@ const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHO
 
 面向宿主的 `ProfileDocuments` 绑定将已准入的原生文档提供方接入 Include、ConfigEditor 和 HMR。它保留逻辑解析路径，将每次异步组合固定在同一视图，并单独记录进程已应用的版本。原生写入在提供方串行化的快照内派生，保留可查询的操作回执，且仅在发布、校验和持久性均确认后准入后继版本。这些适配器不安装启动器注册流程或持久化提供方。 `readProfileManifest` 同样接受已准入视图；托管清单缺失、未列入视图或格式无效时会拒绝读取，不重新打开原路径。 托管兼容性授权与撤销保留原有同意及精确版本校验，在原生比较并发布的串行化快照内派生，并且只接受已完成的发布回执。 可选的草稿与迁移 API 保留精确基线引用和已提交的原生回执。`createProfileDocumentSemantics()` 在固定代码入口安装后组合已验证的 bundle 字节和 Include 快照，不挂载插件即可校验字面 Config；变化的表达式只能通过真实在线 Host 上下文解析。共享 Home 更改要求每个参与 Profile 提供自身已准入的模式验证器。 `missingIncludeWrites()` 只从原生 `initial` 字面声明派生已准入且明确缺失的 Include 文档；启动器必须在显式启动作用域内发布这些写入。可选的 `readDocumentVersion()` 跨代码激活提供保留的可变文档原始证据，不准入历史代码或包选择。
 
+进程生命周期内固定的运行时代码校验器在安装时验证清单中的每个包 manifest。每次 ESM 或 CommonJS 解析都会重新读取调用方所在的包作用域、匹配的物理包目录树或直接目标作用域，并在 Node 返回后再次检查这些 manifest 及解析结果所在的作用域。加载操作在委托执行前后重新检查所属作用域。包 imports 映射和非常规说明符仍执行完整 manifest 扫描。索引只保留不可变路径，不缓存文件字节或成功验证结果；参与解析的元数据发生变化或原生读取拒绝时，操作仍会立即失败。exports、条件、重复版本查找与模块缓存继续由 Node 负责。
+
 原生文档校验要求所选组合包不重复，且已准入的补丁清单与其字面 manifest 声明完全一致。Include 初始化只接受字面的 YAML/JSON 路径和入口列表，拒绝循环引用与冲突的初始声明，并为每个缺失的逻辑文档生成一次写入。已记录的缺失可以使用 `initial`；未列入视图的路径不能。初始化和发布均将嵌套深度限制为 64 层，访问的入口总数上限分别为 100,000 和 200,000。启用的插件必须属于固定代码图，自定义树载体需要显式的模式准入。
 
 Profile 与组合包的声明类型从 [`@deepseek-ai/dsh-package-manifest`](../../util/package-manifest/README.zh.md) 导入。App-boot 将 `DshPackageManifest` 适配为包身份可选的 `ProfileManifest`，因为本地 profile 无需发布版本。App-boot 负责 profile 加载、JSON 校验和解析后的运行时数据。

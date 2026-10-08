@@ -287,7 +287,7 @@ describe('ESM resolve and load callbacks', () => {
     const result = javascriptLoadResult({ format: 'commonjs', source, responseURL: url(entry) })
     input.read.mockClear()
     expect(callbacks.load(url(entry), loadContext, () => result)).toBe(result)
-    expect(input.read.mock.calls.map(([row]) => row.path)).toEqual([entry, entry])
+    expect(input.read.mock.calls.map(([row]) => row.path)).toEqual([packagePath, entry, packagePath, entry])
   })
   it('rejects redirected, unsupported or transformed sources and mutations during loader execution', async () => {
     const { callbacks, input } = await install()
@@ -299,5 +299,94 @@ describe('ESM resolve and load callbacks', () => {
       input.bytes.set(entry, Buffer.from('module.exports = 43'))
       return { format: 'commonjs', responseURL: undefined }
     })).toThrow('Admitted runtime bytes changed')
+  })
+})
+
+
+describe('resolution-scoped metadata verification', () => {
+  function graph(count = 554) {
+    const input = binding(), extra: RuntimeCodeFile[] = []
+    const add = (path: string, text = '{}'): string => {
+      input.bytes.set(path, Buffer.from(text)); extra.push(file(path, text)); return path
+    }
+    for (let index = 0; index < count; index++) add(join(physical, 'node_modules', `package-${index}`, 'package.json'))
+    const target = add(join(physical, 'node_modules/package-17/index.cjs'), 'module.exports = 42')
+    return { input: { ...input, files: [...input.files, ...extra] }, target }
+  }
+  it.each(['esm', 'cjs'] as const)('revalidates %s resolution without rereading unrelated manifests', async (kind) => {
+    const { input, target } = graph()
+    const { callbacks } = await install(input)
+    expect(input.read).toHaveBeenCalledTimes(555)
+    input.read.mockClear()
+    const parent = new Module(original); parent.filename = original
+    hooks.resolve.mockReturnValue(target)
+    for (let index = 0; index < 100; index++) {
+      if (kind === 'esm') callbacks.resolve('package-17', resolveContext(url(original)), () => ({ url: url(target) }))
+      else expect(cjs._resolveFilename('package-17', parent)).toBe(target)
+    }
+    const counts = input.read.mock.calls.map(([row]) => row.path)
+    expect(counts).toHaveLength(500)
+    expect(new Set(counts)).toEqual(new Set([packagePath, join(physical, 'node_modules/package-17/package.json'), target]))
+    input.bytes.set(join(physical, 'node_modules/package-17/package.json'), Buffer.from('{"changed":true}'))
+    const next = vi.fn(() => ({ url: url(target) }))
+    hooks.resolve.mockClear()
+    if (kind === 'esm') expect(() => callbacks.resolve('package-17', resolveContext(url(original)), next)).toThrow('bytes changed')
+    else expect(() => cjs._resolveFilename('package-17', parent)).toThrow('bytes changed')
+    expect(next).not.toHaveBeenCalled(); expect(hooks.resolve).not.toHaveBeenCalled()
+  })
+  it.each(['./entry.cjs', url(entry), entry])('checks only source and target scopes for exact file %s', async (request) => {
+    const { input } = graph(), { callbacks } = await install(input)
+    input.read.mockClear()
+    callbacks.resolve(request, resolveContext(url(original)), () => ({ url: url(entry) }))
+    expect(input.read.mock.calls.map(([row]) => row.path)).toEqual([packagePath, packagePath, entry])
+  })
+  it.each(['#internal', 'package-17/../package-18', 'package-17/%2e%2e/package-18', 'https://example.test/code'])('retains full metadata verification for indirect request %s', async (request) => {
+    const { input } = graph(), { callbacks } = await install(input)
+    input.bytes.set(join(physical, 'node_modules/package-553/package.json'), Buffer.from('changed'))
+    const next = vi.fn(() => ({ url: url(entry) }))
+    expect(() => callbacks.resolve(request, resolveContext(url(original)), next)).toThrow('bytes changed')
+    expect(next).not.toHaveBeenCalled()
+  })
+  it.each(['esm', 'cjs'] as const)('checks nested duplicate and scoped package manifests for %s', async (kind) => {
+    const { input } = graph(0)
+    const nested = join(physical, 'node_modules/parent/node_modules/@scope/target/package.json')
+    input.bytes.set(nested, Buffer.from('{}'))
+    const { callbacks } = await install({ ...input, files: [...input.files, file(nested, '{}')] })
+    input.bytes.set(nested, Buffer.from('changed'))
+    const parent = new Module(original); parent.filename = original
+    const next = vi.fn(() => ({ url: url(entry) }))
+    if (kind === 'esm') expect(() => callbacks.resolve('@scope/target/subpath', resolveContext(url(original)), next)).toThrow('bytes changed')
+    else expect(() => cjs._resolveFilename('@scope/target/subpath', parent)).toThrow('bytes changed')
+    expect(next).not.toHaveBeenCalled(); expect(hooks.resolve).not.toHaveBeenCalled()
+  })
+  it('retains nested directory main metadata and source failures before resolution', async () => {
+    const { input } = graph(0), manifest = join(physical, 'directory/inner/package.json')
+    input.bytes.set(manifest, Buffer.from('{}'))
+    const { callbacks } = await install({ ...input, files: [...input.files, file(manifest, '{}')] })
+    input.read.mockImplementation((row) => { if (row.path === manifest) throw new Error('native identity changed'); return input.bytes.get(row.path)! })
+    const next = vi.fn(() => ({ url: url(entry) }))
+    expect(() => callbacks.resolve('./directory', resolveContext(url(original)), next)).toThrow('native identity changed')
+    expect(next).not.toHaveBeenCalled()
+  })
+  it.each(['esm', 'cjs', 'load'] as const)('refuses source-scope mutation during %s delegation', async (kind) => {
+    const { callbacks, input } = await install()
+    const change = (): void => { input.bytes.set(packagePath, Buffer.from('{"type":"module"}')) }
+    if (kind === 'esm') expect(() => callbacks.resolve('./entry.cjs', resolveContext(url(original)), () => {
+      change(); return { url: url(entry) }
+    })).toThrow('bytes changed')
+    else if (kind === 'cjs') {
+      const parent = new Module(original); parent.filename = original
+      hooks.resolve.mockImplementation(() => { change(); return entry })
+      expect(() => cjs._resolveFilename('./entry.cjs', parent)).toThrow('bytes changed')
+    } else expect(() => callbacks.load(url(entry), loadContext, () => {
+      change(); return { format: 'commonjs' }
+    })).toThrow('bytes changed')
+  })
+  it('checks the resolved scope when a declared main leaves its package directory', async () => {
+    const { input } = graph(0), changed = join(physical, 'destination/package.json'), result = join(physical, 'destination/index.cjs')
+    input.bytes.set(changed, Buffer.from('{}')); input.bytes.set(result, Buffer.from('module.exports = 42'))
+    const { callbacks } = await install({ ...input, files: [...input.files, file(changed, '{}'), file(result)] })
+    input.bytes.set(changed, Buffer.from('changed'))
+    expect(() => callbacks.resolve('package-17', resolveContext(url(original)), () => ({ url: url(result) }))).toThrow('bytes changed')
   })
 })

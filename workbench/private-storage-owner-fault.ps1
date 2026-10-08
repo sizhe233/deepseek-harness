@@ -83,9 +83,9 @@ try {
     $receiptPath, $archive, $commandFile, $discoveryCommand, $developer, $vswhere) + @($discovered.Data.Includes)) {
     [void]$beforePaths.Add([IO.Path]::GetFullPath($path))
   }
-  $search = (Get-Content -Raw -LiteralPath $librarySearch).Trim()
-  if (-not $search.StartsWith('LIB=', [StringComparison]::OrdinalIgnoreCase)) { throw 'Resolved library search path is unavailable' }
-  foreach ($directory in $search.Substring(4).Split(';', [StringSplitOptions]::RemoveEmptyEntries)) {
+  $librariesJson = & node --input-type=module -e 'import {readFileSync} from "node:fs"; import {pathToFileURL} from "node:url"; const m=await import(pathToFileURL(process.argv[1])); console.log(JSON.stringify(m.ownerLibraryDirectories(readFileSync(process.argv[2],"utf8"))))' $bindingModule $librarySearch
+  if ($LASTEXITCODE -ne 0) { throw 'Resolved LIB environment record is unavailable or invalid' }
+  foreach ($directory in @($librariesJson | ConvertFrom-Json)) {
     if (-not [IO.Path]::IsPathFullyQualified($directory) -or -not (Test-Path -LiteralPath $directory -PathType Container)) {
       throw "Library search directory is not admitted: $directory"
     }
