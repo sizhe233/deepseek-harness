@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const scenarios = ['quoting', 'ordinary', 'restricted', 'job-delayed-empty', 'caller-impersonation', 'caller-thread-error',
+const scenarios = ['caller-groups', 'caller-groups-unavailable', 'caller-groups-overlimit', 'caller-groups-allocation-failure', 'quoting', 'ordinary', 'restricted', 'job-delayed-empty', 'caller-impersonation', 'caller-thread-error',
   'original-open-failure', 'original-logon-failure', 'logon-count', 'logon-attributes', 'child-logon-failure',
   'child-logon-mismatch', 'child-restricting-sid-mismatch', 'original-user-failure', 'original-restricted', 'world-sid-failure', 'restrict-failure',
   'job-create-failure', 'job-config-failure', 'create-failure', 'assign-failure', 'child-token-failure',

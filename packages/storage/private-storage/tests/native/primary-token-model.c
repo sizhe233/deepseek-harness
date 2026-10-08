@@ -15,7 +15,7 @@ typedef void *PSID;
 typedef enum { TokenPrimary = 1, TokenImpersonation = 2 } TOKEN_TYPE;
 typedef struct { PSID Sid; DWORD Attributes; } SID_AND_ATTRIBUTES;
 typedef struct { SID_AND_ATTRIBUTES User; } TOKEN_USER;
-typedef struct { DWORD GroupCount; SID_AND_ATTRIBUTES Groups[3]; } TOKEN_GROUPS;
+typedef struct { DWORD GroupCount; SID_AND_ATTRIBUTES Groups[6]; } TOKEN_GROUPS;
 typedef struct { DWORD cb; } STARTUPINFOW;
 typedef struct { HANDLE hProcess, hThread; DWORD dwProcessId; } PROCESS_INFORMATION;
 typedef struct { struct { DWORD LimitFlags; } BasicLimitInformation; } JOBOBJECT_EXTENDED_LIMIT_INFORMATION;
@@ -26,6 +26,9 @@ typedef struct { DWORD ActiveProcesses; } JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
 #define TRUE 1
 #define FALSE 0
 #define ERROR_SUCCESS 0
+#define ERROR_OUTOFMEMORY 14
+#define SE_GROUP_ENABLED 4
+#define SE_GROUP_USE_FOR_DENY_ONLY 16
 #define ERROR_INVALID_FUNCTION 1
 #define ERROR_ACCESS_DENIED 5
 #define ERROR_BAD_LENGTH 24
@@ -52,7 +55,7 @@ typedef struct { DWORD ActiveProcesses; } JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
 #define CREATE_NO_WINDOW 0x08000000
 #define JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 0x2000
 #define ZeroMemory(pointer, length) memset(pointer, 0, length)
-enum { TokenUser, TokenRestrictedSids, TokenLogonSid, TokenType, WinWorldSid, JobObjectExtendedLimitInformation, JobObjectBasicAccountingInformation };
+enum { TokenUser, TokenGroups, TokenRestrictedSids, TokenLogonSid, TokenType, WinWorldSid, JobObjectExtendedLimitInformation, JobObjectBasicAccountingInformation };
 enum { ORIGINAL = 1, RESTRICTED, JOB, PROCESS, THREAD, CHILD_TOKEN, THREAD_TOKEN, CURRENT_PROCESS = 100, CURRENT_THREAD };
 enum { CREATE, ASSIGN, CHILD_FACTS, RESUME, WAIT, EXIT, TERMINATE, TERMINATE_JOB, JOB_EMPTY, CLOSE, MAX_EVENTS = 1024 };
 
@@ -63,8 +66,9 @@ static DWORD last_error = ERROR_ACCESS_DENIED, failure_error;
 static BOOL failure_blocked;
 static const char *failure_operation;
 static ULONGLONG tick;
-static void *owned_allocations[5];
-static SID_AND_ATTRIBUTES restricting_sids[3];
+static void *owned_allocations[8];
+static SID_AND_ATTRIBUTES restricting_sids[6];
+static DWORD captured_restriction_count;
 
 static BOOL is(const char *name) { return strcmp(scenario, name) == 0; }
 static void event(unsigned value) { assert(event_count < MAX_EVENTS); events[event_count++] = value; }
@@ -103,18 +107,25 @@ static void *token_information(HANDLE token, unsigned kind) {
   if ((token == ORIGINAL && is("original-user-failure")) || (token == CHILD_TOKEN &&
     is(kind == TokenUser ? "child-user-failure" : "child-groups-failure"))) { last_error = ERROR_ACCESS_DENIED; return NULL; }
   if (kind == TokenLogonSid && is(token == ORIGINAL ? "original-logon-failure" : "child-logon-failure")) return NULL;
-  assert(kind == TokenUser || kind == TokenRestrictedSids || kind == TokenLogonSid);
+  if (kind == TokenGroups && is("caller-groups-unavailable")) return NULL;
+  assert(kind == TokenUser || kind == TokenGroups || kind == TokenRestrictedSids || kind == TokenLogonSid);
   void *value = calloc(1, kind == TokenUser ? sizeof(TOKEN_USER) : sizeof(TOKEN_GROUPS));
-  assert(value != NULL && allocations < 5); owned_allocations[allocations++] = value;
+  assert(value != NULL && allocations < 8); owned_allocations[allocations++] = value;
   if (kind == TokenUser) ((TOKEN_USER *)value)->User.Sid = (void *)(uintptr_t)(token == CHILD_TOKEN && is("child-wrong-user") ? 2 : 1);
   else if (kind == TokenLogonSid) {
     TOKEN_GROUPS *logon = value;
     logon->GroupCount = is("logon-count") ? 0 : 1;
     logon->Groups[0].Sid = (void *)(uintptr_t)(token == CHILD_TOKEN && is("child-logon-mismatch") ? 4 : 3);
     logon->Groups[0].Attributes = is("logon-attributes") ? 0 : SE_GROUP_LOGON_ID;
+  } else if (kind == TokenGroups) {
+    TOKEN_GROUPS *groups = value;
+    groups->GroupCount = is("caller-groups-overlimit") ? 4097 : 6;
+    for (unsigned i = 0; i < 6; i++) { groups->Groups[i].Sid = (void *)(uintptr_t)(i + 1); groups->Groups[i].Attributes = SE_GROUP_ENABLED; }
+    groups->Groups[4].Attributes |= SE_GROUP_USE_FOR_DENY_ONLY;
+    groups->Groups[5].Attributes = 0;
   } else {
     TOKEN_GROUPS *groups = value;
-    groups->GroupCount = is("child-restrict-count") ? 1 : restricted_mode ? 3 : 0;
+    groups->GroupCount = is("child-restrict-count") ? 1 : restricted_mode ? captured_restriction_count : 0;
     memcpy(groups->Groups, restricting_sids, sizeof(restricting_sids));
     if (is("child-restricting-sid-mismatch")) groups->Groups[2].Sid = (void *)(uintptr_t)4;
   }
@@ -138,10 +149,13 @@ static BOOL CreateRestrictedToken(HANDLE token, DWORD flags, DWORD disable_count
     DWORD privilege_count, void *privileges, DWORD restrict_count, SID_AND_ATTRIBUTES *restrictions, HANDLE *result) {
   assert(token == ORIGINAL && live[token] && flags == DISABLE_MAX_PRIVILEGE);
   assert(disable_count == 0 && disable == NULL && privilege_count == 0 && privileges == NULL);
-  assert(restrict_count == 3 && restrictions[0].Sid == (void *)(uintptr_t)1 && restrictions[1].Sid != NULL);
+  BOOL variant = strncmp(scenario, "caller-groups", 13) == 0;
+  assert(restrict_count == (variant ? 4u : 3u) && restrictions[0].Sid == (void *)(uintptr_t)1 && restrictions[1].Sid != NULL);
+  if (variant) for (unsigned i = 0; i < restrict_count; i++) assert(restrictions[i].Sid == (void *)(uintptr_t)(i + 1));
+  captured_restriction_count = restrict_count;
   assert(restrictions[0].Attributes == 0 && restrictions[1].Attributes == 0 && restrictions[2].Attributes == 0);
   assert(restrictions[2].Sid == (void *)(uintptr_t)3);
-  memcpy(restricting_sids, restrictions, sizeof(restricting_sids));
+  memcpy(restricting_sids, restrictions, restrict_count * sizeof(*restrictions));
   if (is("restrict-failure")) { last_error = ERROR_ACCESS_DENIED; return FALSE; }
   *result = acquire(RESTRICTED); return TRUE;
 }
@@ -234,9 +248,15 @@ static int failure(const char *operation, DWORD error, BOOL blocked) {
   failures++; failure_operation = operation; failure_error = error; failure_blocked = blocked; return blocked ? 3 : 1;
 }
 
+static void *model_calloc(size_t count, size_t bytes) {
+  if (is("caller-groups-allocation-failure")) return NULL;
+  void *value = calloc(count, bytes); assert(value != NULL && allocations < 8); owned_allocations[allocations++] = value; return value;
+}
+#define calloc model_calloc
 #define free model_free
 #include "primary-process-source.inc"
 #undef free
+#undef calloc
 
 static void quoting(void) {
   const struct { const wchar_t *input, *quoted; } cases[] = {
@@ -267,10 +287,10 @@ int main(int argc, char **argv) {
   assert(argc == 2); scenario = argv[1]; restricted_mode = !is("ordinary");
   if (is("quoting")) quoting();
   else {
-    wchar_t *args[] = { L"oracle", L"primary-process", restricted_mode ? L"restricted" : L"ordinary",
+    wchar_t *args[] = { L"oracle", L"primary-process", strncmp(scenario, "caller-groups", 13) == 0 ? L"restricted-caller-groups" : restricted_mode ? L"restricted" : L"ordinary",
       L"C:\\Program Files\\node.exe", L"script.js", L"entry.js", L"root", L"result", restricted_mode ? L"restricted" : L"ordinary" };
     int result = primary_process(9, args);
-    BOOL success = is("ordinary") || is("restricted") || is("job-delayed-empty");
+    BOOL success = is("ordinary") || is("restricted") || is("job-delayed-empty") || is("caller-groups");
     assert((result == 0) == success && failures == (success ? 0u : 1u));
     assert(allocations == releases);
     for (unsigned i = 1; i < 8; i++) assert(!live[i] && closes[i] <= 1);

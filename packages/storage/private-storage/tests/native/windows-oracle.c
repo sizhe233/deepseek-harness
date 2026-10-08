@@ -119,7 +119,7 @@ static void *token_information(HANDLE token, TOKEN_INFORMATION_CLASS kind) {
   return result;
 }
 
-static int token_facts(void) {
+static int token_facts(BOOL emit) {
   HANDLE token = NULL, thread = NULL;
   TOKEN_USER *user = NULL;
   TOKEN_OWNER *owner = NULL;
@@ -143,13 +143,15 @@ static int token_facts(void) {
       !GetTokenInformation(token, TokenType, &type, sizeof(type), &bytes) || !GetProcessHandleCount(GetCurrentProcess(), &handles)) {
     error = GetLastError(); free(user); free(owner); CloseHandle(token); return failure("token-facts", error, FALSE);
   }
-  printf("{\"complete\":true,\"userSid\":"); hex(user->User.Sid, GetLengthSid(user->User.Sid));
-  printf(",\"defaultOwnerSid\":"); hex(owner->Owner, GetLengthSid(owner->Owner));
-  printf(",\"restricted\":%s,\"elevated\":%s,\"tokenType\":%u,\"threadTokenPresent\":%s,\"threadTokenError\":%lu,"
-    "\"handleCount\":%lu,\"osBuild\":%lu,\"osMajor\":%lu,\"osMinor\":%lu}\n",
-    json_boolean(IsTokenRestricted(token)), json_boolean(elevation.TokenIsElevated), (unsigned)type, json_boolean(threadPresent),
-    (unsigned long)threadError, (unsigned long)handles, (unsigned long)version.dwBuildNumber,
-    (unsigned long)version.dwMajorVersion, (unsigned long)version.dwMinorVersion);
+  if (emit) {
+    printf("{\"complete\":true,\"userSid\":"); hex(user->User.Sid, GetLengthSid(user->User.Sid));
+    printf(",\"defaultOwnerSid\":"); hex(owner->Owner, GetLengthSid(owner->Owner));
+    printf(",\"restricted\":%s,\"elevated\":%s,\"tokenType\":%u,\"threadTokenPresent\":%s,\"threadTokenError\":%lu,"
+      "\"handleCount\":%lu,\"osBuild\":%lu,\"osMajor\":%lu,\"osMinor\":%lu}\n",
+      json_boolean(IsTokenRestricted(token)), json_boolean(elevation.TokenIsElevated), (unsigned)type, json_boolean(threadPresent),
+      (unsigned long)threadError, (unsigned long)handles, (unsigned long)version.dwBuildNumber,
+      (unsigned long)version.dwMajorVersion, (unsigned long)version.dwMinorVersion);
+  }
   free(user); free(owner);
   if (!CloseHandle(token)) return 1;
   return 0;
@@ -621,6 +623,28 @@ static int hold_reader(const wchar_t *path, BOOL shareDelete) {
   return result;
 }
 
+static int token_group_facts(void) {
+  HANDLE token = NULL;
+  TOKEN_GROUPS *groups = NULL;
+  DWORD i, error = ERROR_SUCCESS;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return failure("startup token query", GetLastError(), FALSE);
+  groups = (TOKEN_GROUPS *)token_information(token, TokenGroups);
+  if (!groups || groups->GroupCount > 4096) { error = groups ? ERROR_BAD_LENGTH : GetLastError(); goto cleanup; }
+  printf("{\"complete\":true,\"groups\":[");
+  for (i = 0; i < groups->GroupCount; i++) {
+    if (i) printf(",");
+    printf("{\"sid\":"); hex(groups->Groups[i].Sid, GetLengthSid(groups->Groups[i].Sid));
+    printf(",\"attributes\":%lu,\"enabled\":%s,\"denyOnly\":%s}", (unsigned long)groups->Groups[i].Attributes,
+      json_boolean((groups->Groups[i].Attributes & SE_GROUP_ENABLED) != 0),
+      json_boolean((groups->Groups[i].Attributes & SE_GROUP_USE_FOR_DENY_ONLY) != 0));
+  }
+  printf("]}\n");
+cleanup:
+  free(groups);
+  if (!CloseHandle(token)) return failure("startup token close", GetLastError(), FALSE);
+  return error == ERROR_SUCCESS ? 0 : failure("startup token groups", error, FALSE);
+}
+
 /* Only caller-derived primary tokens launch this bounded, job-owned synthetic child. */
 static BOOL primary_append_argument(wchar_t *command, size_t capacity, size_t *used, const wchar_t *value) {
   size_t i, slashes;
@@ -643,13 +667,15 @@ static BOOL primary_append_argument(wchar_t *command, size_t capacity, size_t *u
 static int primary_process(int argc, wchar_t **argv) {
   HANDLE original = NULL, restrictedToken = NULL, childToken = NULL, threadToken = NULL, job = NULL;
   TOKEN_USER *user = NULL, *childUser = NULL;
-  TOKEN_GROUPS *groups = NULL, *logon = NULL, *childLogon = NULL;
+  TOKEN_GROUPS *groups = NULL, *logon = NULL, *childLogon = NULL, *callerGroups = NULL;
   TOKEN_TYPE type = TokenImpersonation;
-  SID_AND_ATTRIBUTES restrictions[3];
+  SID_AND_ATTRIBUTES fixedRestrictions[3], *restrictions = fixedRestrictions;
+  DWORD restrictionCount = 3;
   BYTE everyone[SECURITY_MAX_SID_SIZE];
   DWORD everyoneBytes = sizeof(everyone), bytes, error = ERROR_SUCCESS, exitCode = STILL_ACTIVE, threadError = 0;
   DWORD restrictedCount = 0, waited, childPid = 0;
-  BOOL restricted = wcscmp(argv[2], L"restricted") == 0, blocked = FALSE, started = FALSE, exited = FALSE;
+  BOOL callerGroupMode = wcscmp(argv[2], L"restricted-caller-groups") == 0;
+  BOOL restricted = wcscmp(argv[2], L"restricted") == 0 || callerGroupMode, blocked = FALSE, started = FALSE, exited = FALSE;
   BOOL tokenRestricted = FALSE, sameUser = FALSE, threadAbsent = FALSE, jobEmpty = FALSE, cleanupOk = TRUE;
   const char *operation = "primary process fixture";
   STARTUPINFOW startup;
@@ -676,9 +702,27 @@ static int primary_process(int argc, wchar_t **argv) {
   }
   if (restricted) {
     if (!CreateWellKnownSid(WinWorldSid, NULL, everyone, &everyoneBytes)) { error = GetLastError(); operation = "primary restricting SID"; goto cleanup; }
-    ZeroMemory(restrictions, sizeof(restrictions)); restrictions[0].Sid = user->User.Sid; restrictions[1].Sid = everyone;
+    ZeroMemory(fixedRestrictions, sizeof(fixedRestrictions)); restrictions[0].Sid = user->User.Sid; restrictions[1].Sid = everyone;
     restrictions[2].Sid = logon->Groups[0].Sid;
-    if (!CreateRestrictedToken(original, DISABLE_MAX_PRIVILEGE, 0, NULL, 0, NULL, 3, restrictions, &restrictedToken)) {
+    if (callerGroupMode) {
+      DWORD groupIndex, existingIndex;
+      callerGroups = (TOKEN_GROUPS *)token_information(original, TokenGroups);
+      if (!callerGroups || callerGroups->GroupCount > 4096) {
+        error = ERROR_NOT_SUPPORTED; operation = "caller enabled groups unavailable"; blocked = TRUE; goto cleanup;
+      }
+      restrictions = calloc((size_t)callerGroups->GroupCount + 1, sizeof(*restrictions));
+      if (!restrictions) { error = ERROR_OUTOFMEMORY; operation = "diagnostic restricting list allocation"; goto cleanup; }
+      restrictionCount = 1; restrictions[0].Sid = user->User.Sid;
+      for (groupIndex = 0; groupIndex < callerGroups->GroupCount; groupIndex++) {
+        SID_AND_ATTRIBUTES group = callerGroups->Groups[groupIndex];
+        BOOL duplicate = FALSE;
+        if (!(group.Attributes & SE_GROUP_ENABLED) || (group.Attributes & SE_GROUP_USE_FOR_DENY_ONLY)) continue;
+        for (existingIndex = 0; existingIndex < restrictionCount; existingIndex++)
+          if (EqualSid(restrictions[existingIndex].Sid, group.Sid)) duplicate = TRUE;
+        if (!duplicate) restrictions[restrictionCount++].Sid = group.Sid;
+      }
+    }
+    if (!CreateRestrictedToken(original, DISABLE_MAX_PRIVILEGE, 0, NULL, 0, NULL, restrictionCount, restrictions, &restrictedToken)) {
       error = GetLastError(); operation = "CreateRestrictedToken primary"; blocked = token_fixture_unavailable(error); goto cleanup;
     }
   }
@@ -703,14 +747,14 @@ static int primary_process(int argc, wchar_t **argv) {
   sameUser = EqualSid(user->User.Sid, childUser->User.Sid); tokenRestricted = IsTokenRestricted(childToken); restrictedCount = groups->GroupCount;
   threadAbsent = !OpenThreadToken(child.hThread, TOKEN_QUERY, TRUE, &threadToken);
   threadError = threadAbsent ? GetLastError() : ERROR_SUCCESS;
-  if (!sameUser || type != TokenPrimary || tokenRestricted != restricted || (restricted && restrictedCount != 3)
+  if (!sameUser || type != TokenPrimary || tokenRestricted != restricted || (restricted && restrictedCount != restrictionCount)
       || childLogon->GroupCount != 1 || !EqualSid(logon->Groups[0].Sid, childLogon->Groups[0].Sid)
       || !threadAbsent || threadError != ERROR_NO_TOKEN) {
     error = ERROR_BAD_TOKEN_TYPE; operation = "actual primary child identity mismatch"; goto cleanup;
   }
   if (restricted) {
     DWORD expectedIndex, observedIndex;
-    for (expectedIndex = 0; expectedIndex < 3; expectedIndex++) {
+    for (expectedIndex = 0; expectedIndex < restrictionCount; expectedIndex++) {
       BOOL found = FALSE;
       for (observedIndex = 0; observedIndex < restrictedCount; observedIndex++)
         if (EqualSid(restrictions[expectedIndex].Sid, groups->Groups[observedIndex].Sid)) found = TRUE;
@@ -745,18 +789,25 @@ cleanup:
   if (job && !CloseHandle(job)) cleanupOk = FALSE;
   if (restrictedToken && !CloseHandle(restrictedToken)) cleanupOk = FALSE;
   if (original && !CloseHandle(original)) cleanupOk = FALSE;
-  free(groups); free(childUser); free(logon); free(childLogon);
+  free(groups); free(childUser); free(logon); free(childLogon); free(callerGroups);
+  if (restrictions != fixedRestrictions) free(restrictions);
   if (!cleanupOk) { free(user); return failure("primary child cleanup unconfirmed", ERROR_BUSY, FALSE); }
   if (error != ERROR_SUCCESS) { free(user); return failure(operation, error, blocked); }
   printf("{\"complete\":true,\"pid\":%lu,\"userSid\":", (unsigned long)childPid); hex(user->User.Sid, GetLengthSid(user->User.Sid));
   printf(",\"restricted\":%s,\"tokenType\":%u,\"restrictedSidCount\":%lu,\"sameUser\":%s,\"threadTokenAbsent\":%s,\"threadTokenError\":%lu,"
-    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false,\"logonSidPreserved\":true}\n",
+    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false,\"logonSidPreserved\":true,\"callerEnabledGroupsDiagnostic\":%s}\n",
     json_boolean(tokenRestricted), (unsigned)type, (unsigned long)restrictedCount, json_boolean(sameUser), json_boolean(threadAbsent),
-    (unsigned long)threadError, (unsigned long)exitCode, json_boolean(exited), json_boolean(jobEmpty));
+    (unsigned long)threadError, (unsigned long)exitCode, json_boolean(exited), json_boolean(jobEmpty), json_boolean(callerGroupMode));
   free(user); return 0;
 }
 
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 2 && wcscmp(argv[1], L"primary-probe-child") == 0) return token_facts(FALSE);
+  if (argc == 2 && wcscmp(argv[1], L"token-group-facts") == 0) return token_group_facts();
+  if (argc == 3 && wcscmp(argv[1], L"primary-probe") == 0) {
+    wchar_t *probeArgs[] = { argv[0], L"primary-process", argv[2], argv[0], L"primary-probe-child" };
+    return primary_process(5, probeArgs);
+  }
   if (argc == 9 && wcscmp(argv[1], L"primary-process") == 0) return primary_process(argc, argv);
   if (argc == 4 && wcscmp(argv[1], L"hold-descriptor") == 0) return hold_descriptor(argv[2], argv[3]);
   if (argc == 6 && wcscmp(argv[1], L"token-access") == 0) return token_access(argv[2], argv[3], argv[4], argv[5]);
@@ -765,7 +816,7 @@ int wmain(int argc, wchar_t **argv) {
     return hold_reader(argv[2], wcscmp(argv[3], L"share-delete") == 0);
   }
   if (argc == 2 && wcscmp(argv[1], L"abi") == 0) return abi();
-  if (argc == 2 && wcscmp(argv[1], L"token") == 0) return token_facts();
+  if (argc == 2 && wcscmp(argv[1], L"token") == 0) return token_facts(TRUE);
   if (argc == 3 && wcscmp(argv[1], L"inspect") == 0) return inspect(argv[2], FALSE);
   if (argc == 3 && wcscmp(argv[1], L"descriptor") == 0) return inspect(argv[2], TRUE);
   if (argc == 5 && wcscmp(argv[1], L"create") == 0) {

@@ -8,6 +8,7 @@ import { release } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { startPrimaryProcess } from './primary-process.mjs'
+import { collectPrimaryStartupDiagnostics } from './primary-token-diagnostics.mjs'
 import { validatePrimaryTokenPair } from './primary-token-evidence.mjs'
 import { ownerBinding } from './owner-observer.mjs'
 
@@ -78,14 +79,15 @@ async function check(name, operation) {
 }
 
 function oracle(...args) {
+  const primaryChild = args[0] === 'primary-process' || args[0] === 'primary-probe'
   const child = spawnSync(oraclePath, args, { encoding: 'utf8', env: childEnv, timeout: 30_000, windowsHide: true })
-  if (args[0] === 'primary-process' && (child.error || child.signal)) processCleanupUncertain = true
+  if (primaryChild && (child.error || child.signal)) processCleanupUncertain = true
   assert.ifError(child.error)
   assert.equal(child.signal, null, `Oracle ${args[0]} was interrupted`)
   let result
   try { result = JSON.parse(child.stdout) }
-  catch (error) { if (args[0] === 'primary-process') processCleanupUncertain = true; throw error }
-  if (args[0] === 'primary-process' && result.operation === 'primary child cleanup unconfirmed') processCleanupUncertain = true
+  catch (error) { if (primaryChild) processCleanupUncertain = true; throw error }
+  if (primaryChild && result.operation === 'primary child cleanup unconfirmed') processCleanupUncertain = true
   if (child.status === 3 && result.status === 'blocked') throw new Blocked(`Native fixture ${result.operation} unavailable, Win32 ${result.win32Error ?? 'n/a'}, NTSTATUS ${result.nativeStatus ?? 'n/a'}`)
   assert.equal(child.status, 0, `Oracle ${args[0]} failed: ${child.stdout || child.stderr}`)
   assert.equal(result.complete, true)
@@ -314,6 +316,13 @@ try {
         const observation = join(sandbox, `primary-token-${mode}.json`)
         const launch = oracle('primary-process', mode, process.execPath, worker, entry, rootPath, observation, mode)
         pair[mode] = { launch }
+        if (launch.exitCode !== 0) pair.startupDiagnostics = collectPrimaryStartupDiagnostics((...args) => {
+          if (args[0] !== 'primary-node-probe') return oracle(...args)
+          const probeOutput = join(sandbox, 'primary-token-caller-groups-diagnostic.json')
+          const probeLaunch = oracle('primary-process', args[1], process.execPath, worker, entry, rootPath, probeOutput, 'restricted')
+          return { launch: probeLaunch, child: probeLaunch.exitCode === 0 ? JSON.parse(readFileSync(probeOutput, 'utf8')) : null,
+            expected: { userSid: token.userSid, entrySha256: report.entrySha256, nativeBinarySha256: ownerBinding(entry).sha256, recordSha256 } }
+        })
         assert.equal(launch.exitCode, 0, `Primary ${mode} child exited 0x${launch.exitCode.toString(16)} before a complete observation`)
         pair[mode].child = JSON.parse(readFileSync(observation, 'utf8'))
       }
