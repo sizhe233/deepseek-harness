@@ -15,7 +15,7 @@ typedef void *PSID;
 typedef enum { TokenPrimary = 1, TokenImpersonation = 2 } TOKEN_TYPE;
 typedef struct { PSID Sid; DWORD Attributes; } SID_AND_ATTRIBUTES;
 typedef struct { SID_AND_ATTRIBUTES User; } TOKEN_USER;
-typedef struct { DWORD GroupCount; } TOKEN_GROUPS;
+typedef struct { DWORD GroupCount; SID_AND_ATTRIBUTES Groups[3]; } TOKEN_GROUPS;
 typedef struct { DWORD cb; } STARTUPINFOW;
 typedef struct { HANDLE hProcess, hThread; DWORD dwProcessId; } PROCESS_INFORMATION;
 typedef struct { struct { DWORD LimitFlags; } BasicLimitInformation; } JOBOBJECT_EXTENDED_LIMIT_INFORMATION;
@@ -46,12 +46,13 @@ typedef struct { DWORD ActiveProcesses; } JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
 #define TOKEN_DUPLICATE 2
 #define TOKEN_ASSIGN_PRIMARY 1
 #define DISABLE_MAX_PRIVILEGE 1
+#define SE_GROUP_LOGON_ID 0xc0000000u
 #define SECURITY_MAX_SID_SIZE 68
 #define CREATE_SUSPENDED 4
 #define CREATE_NO_WINDOW 0x08000000
 #define JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 0x2000
 #define ZeroMemory(pointer, length) memset(pointer, 0, length)
-enum { TokenUser, TokenRestrictedSids, TokenType, WinWorldSid, JobObjectExtendedLimitInformation, JobObjectBasicAccountingInformation };
+enum { TokenUser, TokenRestrictedSids, TokenLogonSid, TokenType, WinWorldSid, JobObjectExtendedLimitInformation, JobObjectBasicAccountingInformation };
 enum { ORIGINAL = 1, RESTRICTED, JOB, PROCESS, THREAD, CHILD_TOKEN, THREAD_TOKEN, CURRENT_PROCESS = 100, CURRENT_THREAD };
 enum { CREATE, ASSIGN, CHILD_FACTS, RESUME, WAIT, EXIT, TERMINATE, TERMINATE_JOB, JOB_EMPTY, CLOSE, MAX_EVENTS = 1024 };
 
@@ -62,7 +63,8 @@ static DWORD last_error = ERROR_ACCESS_DENIED, failure_error;
 static BOOL failure_blocked;
 static const char *failure_operation;
 static ULONGLONG tick;
-static void *owned_allocations[3];
+static void *owned_allocations[5];
+static SID_AND_ATTRIBUTES restricting_sids[3];
 
 static BOOL is(const char *name) { return strcmp(scenario, name) == 0; }
 static void event(unsigned value) { assert(event_count < MAX_EVENTS); events[event_count++] = value; }
@@ -100,11 +102,22 @@ static void *token_information(HANDLE token, unsigned kind) {
   assert(live[token]);
   if ((token == ORIGINAL && is("original-user-failure")) || (token == CHILD_TOKEN &&
     is(kind == TokenUser ? "child-user-failure" : "child-groups-failure"))) { last_error = ERROR_ACCESS_DENIED; return NULL; }
-  assert(kind == TokenUser || kind == TokenRestrictedSids);
+  if (kind == TokenLogonSid && is(token == ORIGINAL ? "original-logon-failure" : "child-logon-failure")) return NULL;
+  assert(kind == TokenUser || kind == TokenRestrictedSids || kind == TokenLogonSid);
   void *value = calloc(1, kind == TokenUser ? sizeof(TOKEN_USER) : sizeof(TOKEN_GROUPS));
-  assert(value != NULL && allocations < 3); owned_allocations[allocations++] = value;
+  assert(value != NULL && allocations < 5); owned_allocations[allocations++] = value;
   if (kind == TokenUser) ((TOKEN_USER *)value)->User.Sid = (void *)(uintptr_t)(token == CHILD_TOKEN && is("child-wrong-user") ? 2 : 1);
-  else ((TOKEN_GROUPS *)value)->GroupCount = is("child-restrict-count") ? 1 : restricted_mode ? 2 : 0;
+  else if (kind == TokenLogonSid) {
+    TOKEN_GROUPS *logon = value;
+    logon->GroupCount = is("logon-count") ? 0 : 1;
+    logon->Groups[0].Sid = (void *)(uintptr_t)(token == CHILD_TOKEN && is("child-logon-mismatch") ? 4 : 3);
+    logon->Groups[0].Attributes = is("logon-attributes") ? 0 : SE_GROUP_LOGON_ID;
+  } else {
+    TOKEN_GROUPS *groups = value;
+    groups->GroupCount = is("child-restrict-count") ? 1 : restricted_mode ? 3 : 0;
+    memcpy(groups->Groups, restricting_sids, sizeof(restricting_sids));
+    if (is("child-restricting-sid-mismatch")) groups->Groups[2].Sid = (void *)(uintptr_t)4;
+  }
   return value;
 }
 static void model_free(void *value) {
@@ -125,8 +138,10 @@ static BOOL CreateRestrictedToken(HANDLE token, DWORD flags, DWORD disable_count
     DWORD privilege_count, void *privileges, DWORD restrict_count, SID_AND_ATTRIBUTES *restrictions, HANDLE *result) {
   assert(token == ORIGINAL && live[token] && flags == DISABLE_MAX_PRIVILEGE);
   assert(disable_count == 0 && disable == NULL && privilege_count == 0 && privileges == NULL);
-  assert(restrict_count == 2 && restrictions[0].Sid == (void *)(uintptr_t)1 && restrictions[1].Sid != NULL);
-  assert(restrictions[0].Attributes == 0 && restrictions[1].Attributes == 0);
+  assert(restrict_count == 3 && restrictions[0].Sid == (void *)(uintptr_t)1 && restrictions[1].Sid != NULL);
+  assert(restrictions[0].Attributes == 0 && restrictions[1].Attributes == 0 && restrictions[2].Attributes == 0);
+  assert(restrictions[2].Sid == (void *)(uintptr_t)3);
+  memcpy(restricting_sids, restrictions, sizeof(restricting_sids));
   if (is("restrict-failure")) { last_error = ERROR_ACCESS_DENIED; return FALSE; }
   *result = acquire(RESTRICTED); return TRUE;
 }

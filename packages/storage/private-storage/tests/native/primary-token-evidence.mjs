@@ -13,7 +13,8 @@ export function validatePrimaryTokenPair(pair, expected) {
       assert.equal(result.userSid, expected.userSid); assert.equal(result.threadTokenAbsent, true)
       assert.equal(result.threadTokenError, 1008)
     }
-    assert.equal(launch.restrictedSidCount, restricted ? 2 : 0)
+    assert.equal(launch.restrictedSidCount, restricted ? 3 : 0)
+    assert.equal(launch.logonSidPreserved, true)
     assert.equal(launch.fixtureAdjustedPrivileges, false); assert.equal(launch.handlesInherited, false)
     assert.equal(launch.processExited, true); assert.equal(launch.jobEmpty, true); assert.equal(launch.exitCode, 0)
     assert.equal(child.entrySha256, expected.entrySha256)

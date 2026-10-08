@@ -314,6 +314,7 @@ try {
         const observation = join(sandbox, `primary-token-${mode}.json`)
         const launch = oracle('primary-process', mode, process.execPath, worker, entry, rootPath, observation, mode)
         pair[mode] = { launch }
+        assert.equal(launch.exitCode, 0, `Primary ${mode} child exited 0x${launch.exitCode.toString(16)} before a complete observation`)
         pair[mode].child = JSON.parse(readFileSync(observation, 'utf8'))
       }
       validatePrimaryTokenPair(pair, { userSid: token.userSid, entrySha256: report.entrySha256,

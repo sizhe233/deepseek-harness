@@ -7,8 +7,8 @@ function evidence() {
   return Object.fromEntries(['ordinary', 'restricted'].map((mode, index) => {
     const restricted = index === 1, identity = { pid: 100 + index, userSid: expected.userSid, tokenType: 1,
       restricted, threadTokenAbsent: true, threadTokenError: 1008 }
-    return [mode, { launch: { ...identity, complete: true, sameUser: true, restrictedSidCount: restricted ? 2 : 0,
-      fixtureAdjustedPrivileges: false, handlesInherited: false, processExited: true, jobEmpty: true, exitCode: 0 },
+    return [mode, { launch: { ...identity, complete: true, sameUser: true, restrictedSidCount: restricted ? 3 : 0,
+      fixtureAdjustedPrivileges: false, logonSidPreserved: true, handlesInherited: false, processExited: true, jobEmpty: true, exitCode: 0 },
     child: { ...identity, complete: true, mode, entrySha256: expected.entrySha256, nativeBinarySha256: expected.nativeBinarySha256,
       rawReadSha256: expected.recordSha256, publicReadSha256: restricted ? null : expected.recordSha256,
       observations: ['native-token-user', 'public-open'].map(operation => ({ operation, rejected: restricted, ...(restricted ? { code: 'unsupported' } : {}) })) } }]
@@ -38,6 +38,7 @@ for (const [name, mutate] of [
   ['ambient handles inherited', p => { p.restricted.launch.handlesInherited = true }],
   ['fixture enabled privileges', p => { p.restricted.launch.fixtureAdjustedPrivileges = true }],
   ['SDK restriction list absent', p => { p.restricted.launch.restrictedSidCount = 0 }],
+  ['caller logon identity not retained', p => { p.restricted.launch.logonSidPreserved = false }],
   ['SDK failure', p => { p.restricted.launch.complete = false }],
 ]) test(`primary token evidence rejects ${name}`, () => {
   const pair = evidence(); mutate(pair); assert.throws(() => validatePrimaryTokenPair(pair, expected))

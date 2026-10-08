@@ -643,9 +643,9 @@ static BOOL primary_append_argument(wchar_t *command, size_t capacity, size_t *u
 static int primary_process(int argc, wchar_t **argv) {
   HANDLE original = NULL, restrictedToken = NULL, childToken = NULL, threadToken = NULL, job = NULL;
   TOKEN_USER *user = NULL, *childUser = NULL;
-  TOKEN_GROUPS *groups = NULL;
+  TOKEN_GROUPS *groups = NULL, *logon = NULL, *childLogon = NULL;
   TOKEN_TYPE type = TokenImpersonation;
-  SID_AND_ATTRIBUTES restrictions[2];
+  SID_AND_ATTRIBUTES restrictions[3];
   BYTE everyone[SECURITY_MAX_SID_SIZE];
   DWORD everyoneBytes = sizeof(everyone), bytes, error = ERROR_SUCCESS, exitCode = STILL_ACTIVE, threadError = 0;
   DWORD restrictedCount = 0, waited, childPid = 0;
@@ -670,10 +670,15 @@ static int primary_process(int argc, wchar_t **argv) {
   }
   user = (TOKEN_USER *)token_information(original, TokenUser);
   if (!user || IsTokenRestricted(original)) { error = ERROR_BAD_TOKEN_TYPE; operation = "ordinary caller primary token"; goto cleanup; }
+  logon = (TOKEN_GROUPS *)token_information(original, TokenLogonSid);
+  if (!logon || logon->GroupCount != 1 || (logon->Groups[0].Attributes & SE_GROUP_LOGON_ID) != SE_GROUP_LOGON_ID) {
+    error = ERROR_NOT_SUPPORTED; operation = "caller logon SID unavailable"; blocked = TRUE; goto cleanup;
+  }
   if (restricted) {
     if (!CreateWellKnownSid(WinWorldSid, NULL, everyone, &everyoneBytes)) { error = GetLastError(); operation = "primary restricting SID"; goto cleanup; }
     ZeroMemory(restrictions, sizeof(restrictions)); restrictions[0].Sid = user->User.Sid; restrictions[1].Sid = everyone;
-    if (!CreateRestrictedToken(original, DISABLE_MAX_PRIVILEGE, 0, NULL, 0, NULL, 2, restrictions, &restrictedToken)) {
+    restrictions[2].Sid = logon->Groups[0].Sid;
+    if (!CreateRestrictedToken(original, DISABLE_MAX_PRIVILEGE, 0, NULL, 0, NULL, 3, restrictions, &restrictedToken)) {
       error = GetLastError(); operation = "CreateRestrictedToken primary"; blocked = token_fixture_unavailable(error); goto cleanup;
     }
   }
@@ -691,15 +696,26 @@ static int primary_process(int argc, wchar_t **argv) {
   if (!OpenProcessToken(child.hProcess, TOKEN_QUERY, &childToken)) { error = GetLastError(); operation = "query actual child primary token"; goto cleanup; }
   childUser = (TOKEN_USER *)token_information(childToken, TokenUser);
   groups = (TOKEN_GROUPS *)token_information(childToken, TokenRestrictedSids);
-  if (!childUser || !groups || !GetTokenInformation(childToken, TokenType, &type, sizeof(type), &bytes)) {
+  childLogon = (TOKEN_GROUPS *)token_information(childToken, TokenLogonSid);
+  if (!childUser || !groups || !childLogon || !GetTokenInformation(childToken, TokenType, &type, sizeof(type), &bytes)) {
     error = GetLastError(); operation = "actual child primary token facts"; goto cleanup;
   }
   sameUser = EqualSid(user->User.Sid, childUser->User.Sid); tokenRestricted = IsTokenRestricted(childToken); restrictedCount = groups->GroupCount;
   threadAbsent = !OpenThreadToken(child.hThread, TOKEN_QUERY, TRUE, &threadToken);
   threadError = threadAbsent ? GetLastError() : ERROR_SUCCESS;
-  if (!sameUser || type != TokenPrimary || tokenRestricted != restricted || (restricted && restrictedCount != 2)
+  if (!sameUser || type != TokenPrimary || tokenRestricted != restricted || (restricted && restrictedCount != 3)
+      || childLogon->GroupCount != 1 || !EqualSid(logon->Groups[0].Sid, childLogon->Groups[0].Sid)
       || !threadAbsent || threadError != ERROR_NO_TOKEN) {
     error = ERROR_BAD_TOKEN_TYPE; operation = "actual primary child identity mismatch"; goto cleanup;
+  }
+  if (restricted) {
+    DWORD expectedIndex, observedIndex;
+    for (expectedIndex = 0; expectedIndex < 3; expectedIndex++) {
+      BOOL found = FALSE;
+      for (observedIndex = 0; observedIndex < restrictedCount; observedIndex++)
+        if (EqualSid(restrictions[expectedIndex].Sid, groups->Groups[observedIndex].Sid)) found = TRUE;
+      if (!found) { error = ERROR_BAD_TOKEN_TYPE; operation = "actual restricting SID mismatch"; goto cleanup; }
+    }
   }
   if (ResumeThread(child.hThread) == (DWORD)-1) { error = GetLastError(); operation = "resume primary child"; goto cleanup; }
   waited = WaitForSingleObject(child.hProcess, 15000);
@@ -729,12 +745,12 @@ cleanup:
   if (job && !CloseHandle(job)) cleanupOk = FALSE;
   if (restrictedToken && !CloseHandle(restrictedToken)) cleanupOk = FALSE;
   if (original && !CloseHandle(original)) cleanupOk = FALSE;
-  free(groups); free(childUser);
+  free(groups); free(childUser); free(logon); free(childLogon);
   if (!cleanupOk) { free(user); return failure("primary child cleanup unconfirmed", ERROR_BUSY, FALSE); }
   if (error != ERROR_SUCCESS) { free(user); return failure(operation, error, blocked); }
   printf("{\"complete\":true,\"pid\":%lu,\"userSid\":", (unsigned long)childPid); hex(user->User.Sid, GetLengthSid(user->User.Sid));
   printf(",\"restricted\":%s,\"tokenType\":%u,\"restrictedSidCount\":%lu,\"sameUser\":%s,\"threadTokenAbsent\":%s,\"threadTokenError\":%lu,"
-    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false}\n",
+    "\"exitCode\":%lu,\"processExited\":%s,\"jobEmpty\":%s,\"handlesInherited\":false,\"fixtureAdjustedPrivileges\":false,\"logonSidPreserved\":true}\n",
     json_boolean(tokenRestricted), (unsigned)type, (unsigned long)restrictedCount, json_boolean(sameUser), json_boolean(threadAbsent),
     (unsigned long)threadError, (unsigned long)exitCode, json_boolean(exited), json_boolean(jobEmpty));
   free(user); return 0;

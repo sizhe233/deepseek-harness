@@ -8,7 +8,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scenarios = ['quoting', 'ordinary', 'restricted', 'job-delayed-empty', 'caller-impersonation', 'caller-thread-error',
-  'original-open-failure', 'original-user-failure', 'original-restricted', 'world-sid-failure', 'restrict-failure',
+  'original-open-failure', 'original-logon-failure', 'logon-count', 'logon-attributes', 'child-logon-failure',
+  'child-logon-mismatch', 'child-restricting-sid-mismatch', 'original-user-failure', 'original-restricted', 'world-sid-failure', 'restrict-failure',
   'job-create-failure', 'job-config-failure', 'create-failure', 'assign-failure', 'child-token-failure',
   'child-user-failure', 'child-groups-failure', 'child-type-query-failure', 'child-impersonation-type',
   'child-wrong-user', 'child-restrict-count', 'child-restriction-mismatch', 'child-thread-present', 'child-thread-error',
