@@ -105,7 +105,13 @@ interface TerminalFixture {
 const terminalFixtures = JSON.parse(readFileSync(new URL('./expected/carrier-terminal.json', import.meta.url), 'utf8')) as TerminalFixture[]
 
 it.each(terminalFixtures)('retains the installed terminal output for $args', ({ args, exitCode, stdout, stderr }) => {
+  const out = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+  const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+  const exit = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('unexpected exit') })
   const result = parseDshArgumentResult(args, getDshRuntimeVersion())
+  expect(out).not.toHaveBeenCalled()
+  expect(err).not.toHaveBeenCalled()
+  expect(exit).not.toHaveBeenCalled()
   expect(result.kind).toBe('terminal')
   if (result.kind !== 'terminal') throw new Error('expected a terminal decision')
   expect(result.exitCode).toBe(exitCode)

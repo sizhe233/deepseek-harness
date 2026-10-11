@@ -118,9 +118,9 @@
       "plugin",
       "--help"
     ],
-    "exitCode": 1,
-    "stdout": "",
-    "stderr": "error: required option '--profile <name>' not specified\n"
+    "exitCode": 0,
+    "stdout": "Usage: dsh plugin [options] [args...]\n\nmanage a profile's plugins by forwarding the remaining arguments to pnpm in the\nprofile directory\n\nArguments:\n  args              pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>,\n                    why <pkg>, ...)\n\nOptions:\n  --profile <name>  the profile whose plugins to manage (initialized on first\n                    use)\n  -h, --help        show this help\n",
+    "stderr": ""
   },
   {
     "args": [
