@@ -8,7 +8,7 @@ import yaml from 'js-yaml'
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const PATCH_USAGE = {
-  '@earendil-works/pi-ai@0.87.1': 'runtime',
+  '@earendil-works/pi-ai@1.0.2': 'runtime',
   '@electron/osx-sign@1.3.3': 'build-only',
   '@fortune-sheet/core@1.0.4': 'bundled',
   '@fortune-sheet/react@1.0.4': 'bundled',

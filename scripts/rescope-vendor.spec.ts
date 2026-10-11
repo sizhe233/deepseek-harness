@@ -83,6 +83,7 @@ describe('reviewed product identifiers', () => {
   })
 
   it.each([
+    'apps/cli/tests/optional-bundle-transitions.e2e.ts',
     'apps/web/tests/agent-preset-selection.e2e.ts',
     'apps/web/tests/developer-tools-settings.e2e.ts',
     'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
@@ -92,6 +93,18 @@ describe('reviewed product identifiers', () => {
     expect(rescopeText(before, file)).toEqual({ text: after, lines: 1 })
     expect(rescopeText(after, file)).toEqual({ text: after, lines: 0 })
     expect(rescopeText(after, file, true).text).toBe(before)
+  })
+
+  it('bounds the two optional-bundle preset identifiers without permitting an extra bare package import', () => {
+    const file = 'apps/cli/tests/optional-bundle-transitions.e2e.ts'
+    const text = `const native = agent('${framework}'); const presets = ['standard', '${framework}']`
+    expect(productIdentifierProblems(text, file)).toEqual([])
+    expect(productIdentifierProblems(`${text}; import '${framework}'`, file)).toEqual([
+      `product identifier: ${file} has 3 occurrence(s) of "${framework}", expected 2`,
+    ])
+    expect(productIdentifierProblems(`const native = agent('${framework}')`, file)).toEqual([
+      `product identifier: ${file} has 1 occurrence(s) of "${framework}", expected 2`,
+    ])
   })
 
   it.each([

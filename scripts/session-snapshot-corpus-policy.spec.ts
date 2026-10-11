@@ -40,17 +40,38 @@ describe('recorded-session corpus policy', () => {
       .toEqual({ currentRoles: 8, baselineRoles: 9, retainedRoles: 3, retainedScenarios: 3 })
   })
 
+  it.each([
+    [SESSION_FORMAT_VERSION, 3, 4],
+    [3, SESSION_FORMAT_VERSION, 4],
+    [SESSION_FORMAT_VERSION, 4, 3],
+    [4, SESSION_FORMAT_VERSION, 3],
+  ])('counts baseline and current roles independently for parent v%i and child v%i', (parent, child, otherBaseline) => {
+    expect(assertSnapshotCorpusPolicy([
+      current,
+      { key: 'sdk/mixed', selectedVersions: [parent, child] },
+      { key: 'sdk/other-baseline', selectedVersions: [otherBaseline] },
+      completeV0,
+      ...adjacent,
+    ])).toEqual({ currentRoles: 9, baselineRoles: 2, retainedRoles: 3, retainedScenarios: 3 })
+  })
+
+  it('counts mixed V3/V4 baselines per role without inventing current-writer coverage', () => {
+    expect(assertSnapshotCorpusPolicy([
+      current, { key: 'sdk/mixed-baselines', selectedVersions: [3, 4] }, completeV0, ...adjacent,
+    ])).toEqual({ currentRoles: 8, baselineRoles: 2, retainedRoles: 3, retainedScenarios: 3 })
+  })
+
   it('rejects refreshing away every direct V3 migration input', () => {
     expect(() => assertSnapshotCorpusPolicy([current, completeV0, ...adjacent]))
       .toThrow('Session corpus lacks v3 coverage: adjacent-migration')
   })
 
-  it('requires direct V4 migration input and forbids mixed baseline generations', () => {
+  it('requires direct V3/V4 input and rejects a mixed explicitly pinned baseline', () => {
     expect(() => assertSnapshotCorpusPolicy([current, baseline, completeV0, ...adjacent]))
       .toThrow('Session corpus lacks v4 coverage: adjacent-migration')
     expect(() => assertSnapshotCorpusPolicy([current, previousWriter, completeV0, ...adjacent]))
       .toThrow('Session corpus lacks v3 coverage: adjacent-migration')
-    expect(() => assertSnapshotCorpusPolicy([{ ...baseline, selectedVersions: [3, 4] }]))
+    expect(() => assertSnapshotCorpusPolicy([{ ...baseline, selectedVersions: [3, 4], retained: { version: 3, coverage: ['adjacent-migration'] } }]))
       .toThrow('session/v3: selected Session generation v4 does not match expected v3')
   })
 
@@ -95,15 +116,18 @@ describe('recorded-session corpus policy', () => {
     ])).toThrow('session/v0: v0 retained coverage must be multi-hop, packed-row, retry-failure, shipped-profile')
   })
 
-  it('rejects absent roles, undeclared history, and mixed selected generations', () => {
+  it('rejects absent roles, undeclared history, and mixed explicitly retained generations', () => {
     expect(() => assertSnapshotCorpusPolicy([{ key: 'session/empty', selectedVersions: [] }]))
       .toThrow('session/empty: scenario owns no selected Session role')
     expect(() => assertSnapshotCorpusPolicy([{ key: 'session/old', selectedVersions: [1] }]))
       .toThrow(`session/old: selected Session generation v1 must be retained baseline v3 or v4, or current v${SESSION_FORMAT_VERSION}`)
     expect(() => assertSnapshotCorpusPolicy([{ ...completeV0, selectedVersions: [0, SESSION_FORMAT_VERSION] }]))
       .toThrow(`session/v0: selected Session generation v${SESSION_FORMAT_VERSION} does not match expected v0`)
-    expect(() => assertSnapshotCorpusPolicy([{ ...baseline, selectedVersions: [3, SESSION_FORMAT_VERSION] }]))
-      .toThrow(`session/v3: selected Session generation v${SESSION_FORMAT_VERSION} does not match expected v3`)
+  })
+
+  it.each([2, SESSION_FORMAT_VERSION + 1])('rejects unsupported child generation %s', (version) => {
+    expect(() => assertSnapshotCorpusPolicy([{ key: 'sdk/invalid-child', selectedVersions: [3, version] }]))
+      .toThrow(`sdk/invalid-child: selected Session generation v${version} must be retained baseline v3 or v4, or current v${SESSION_FORMAT_VERSION}`)
   })
 
   it('rejects future unpinned generations', () => {

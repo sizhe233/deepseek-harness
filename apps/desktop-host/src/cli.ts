@@ -15,8 +15,8 @@ async function startDesktopCli(runtimeDir: string, supportDir: string, installSi
 /**
  * Run the ordinary CLI with Desktop's bundled package manager and reserved-profile plugin access.
  * @param runtimeDir - Prepared or ASAR-contained production DSH package tree.
- * @param supportDir - Physical Desktop runtime directory containing pnpm.
- * @returns completion of the selected CLI command; profile plugins own their process lifetime.
+ * @param supportDir - Physical Desktop runtime directory containing the primary-runtime payload and Node launchers.
+ * @returns Completion of the selected CLI command; profile plugins own their process lifetime.
  */
 export async function runDesktopCli(runtimeDir: string, supportDir: string): Promise<void> {
   await startDesktopCli(runtimeDir, supportDir, false)

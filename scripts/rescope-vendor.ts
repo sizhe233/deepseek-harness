@@ -147,6 +147,7 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
  * Reverse output can contain additional bare tokens from restored npm imports.
  */
 const PRODUCT_TOKENS: readonly { file: string; token: string; count: number }[] = [
+  { file: 'apps/cli/tests/optional-bundle-transitions.e2e.ts', token: 'cordis', count: 2 },
   { file: 'apps/web/tests/agent-preset-selection.e2e.ts', token: 'cordis', count: 4 },
   { file: 'apps/web/tests/developer-tools-settings.e2e.ts', token: 'cordis', count: 8 },
   { file: 'docs/subsystems/schedule.md', token: 'cordis', count: 1 },

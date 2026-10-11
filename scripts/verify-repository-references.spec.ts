@@ -74,6 +74,7 @@ describe('maintained repository reference policy', () => {
     const fields = [
       ['workbench/compatibility.json', { upstreamBase: fixture.commit, upstreamBackports: [{ commit: fixture.commit }], retainedWorkflowBases: { 'e2b-e2e.yml': fixture.commit } }],
       ['workbench/runtime-seams.json', { upstreamCommit: fixture.commit }],
+      ['workbench/alpha2-integration.json', { forkCandidateBase: fixture.commit, targetUpstream: fixture.commit, previousUpstream: fixture.commit }],
       ['workbench/upstream-compatibility.json', { forkBase: fixture.commit, targetUpstream: fixture.commit, includedMaintenanceRepair: { commit: fixture.commit } }],
     ] as const
     for (const [file, values] of fields) {
@@ -88,6 +89,9 @@ describe('maintained repository reference policy', () => {
     ])
     for (const [file, source] of [
       ['workbench/unreviewed.json', record({ upstreamCommit: fixture.commit })],
+      ['workbench/alpha2-integration.json', record({ targetUpstream: fixture.commit.slice(0, 7) })],
+      ['workbench/alpha2-integration.json', record({ targetUpstream: fixture.commit, note: fixture.commit })],
+      ['workbench/alpha2-integration.json', record({ note: { targetUpstream: fixture.commit } })],
       ['workbench/runtime-seams.json', record({ upstreamCommit: fixture.commit.slice(0, 7) })],
       ['workbench/runtime-seams.json', JSON.stringify({ schemaVersion: 2, upstreamCommit: fixture.commit }, null, 2)],
       ['workbench/runtime-seams.json', `"upstreamCommit": "${fixture.commit}"`],

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-private-storage",
   "description": "Retained-handle private byte storage and writer leases on local Windows NTFS",
-  "version": "0.2.1-alpha.1",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },

@@ -25,6 +25,8 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
+A terminal without an explicit initial directory starts in the owner's current Session directory. Its sandbox permission root remains governed by Session policy.
+
 Mount this backend when a composition needs persistent shell sessions — state such as cwd, exported variables, functions, or running interactive children must survive across tool calls. It is the default `shell` type: a composition that mounts `@deepseek-ai/dsh-terminal` without it has no sessions to open.
 
 ### When to choose it
@@ -33,9 +35,10 @@ Choose this backend when work needs an interactive shell or REPL whose state per
 
 ### Composition
 
-Mount the terminal service, a subprocess provider, the sandbox and policy services, this backend, and a tool package:
+In a composition that already provides `agents`, `tools`, `fs`, `sessionProjections`, and `systemPrompt`, mount the [working-directory service](../../session/working-directory/README.md), terminal service, subprocess provider, sandbox and policy services, this backend, and a tool package:
 
 ```yaml
+- name: '@deepseek-ai/dsh-working-directory'
 - name: '@deepseek-ai/dsh-terminal'
 - name: '@deepseek-ai/dsh-subprocess-local'
 - name: '@deepseek-ai/dsh-sandbox-local'
@@ -44,7 +47,9 @@ Mount the terminal service, a subprocess provider, the sandbox and policy servic
 - name: '@deepseek-ai/dsh-tool-terminal'
 ```
 
-`danger-full-access` starts the shell directly. Confined modes require a same-world `ctx.sandbox` provider: without one, the spawn fails before the shell starts. Confinement preparation receives the opening signal; cancellation prevents terminal allocation even if the provider returns later.
+The example uses the [experimental terminal tools](../../experimental/tool-terminal/README.md) for interactive input. For stateful command execution, select [persistent Bash](../../shell/tool-bash-persistent/README.md), or [persistent pwsh](../../shell/tool-pwsh-persistent/README.md) with this backend's `shellDialect: pwsh`.
+
+`danger-full-access` starts the shell directly. Confined modes require a same-world `ctx.sandbox` provider: without one, the spawn fails before the shell starts. Confinement preparation and directory inspection receive the opening signal; cancellation prevents terminal allocation even if either operation returns later.
 
 ### Configuration
 
@@ -119,7 +124,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 - [Terminal subsystem reference](../../../docs/subsystems/terminal.md) — the service contract this backend implements and the generated `ctx.terminals` surface.
 - [terminal service](../terminal/README.md) — backend registration, owner fencing, and cleanup semantics.
-- [tool-terminal tools](../tool-terminal/README.md) — the model-facing tools that operate sessions.
+- [tool-terminal tools](../../experimental/tool-terminal/README.md) — the model-facing tools that operate sessions.
 - [Subprocess seam](../../../docs/subsystems/subprocess.md) — the terminal primitive that owns PTY allocation and process-tree cleanup.
 - [Persistent PTY Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md) — the capability design and deferred boundaries.
 - [Persistent pwsh Agent Note](../../../.agents/notes/archived/architecture/2026-08-11-pwsh-persistent-pty.md) — the Windows substrate and the pwsh dialect.

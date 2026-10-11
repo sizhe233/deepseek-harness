@@ -84,7 +84,18 @@ test('every frozen source patch has an exact portable recipe and installed post-
   const recipes = collectDependencyPatches(root, destination)
   assert.equal(recipes.length, 7)
   assert.deepEqual(recipes.filter(row => row.usage === 'runtime').map(row => row.name).sort(), ['@earendil-works/pi-ai', 'node-pty'])
-  assert.equal(recipes.find(row => row.name === '@earendil-works/pi-ai').files.length, 7)
+  const piAi = recipes.find(row => row.name === '@earendil-works/pi-ai')
+  assert.equal(piAi.selector, '@earendil-works/pi-ai@1.0.2')
+  assert.equal(piAi.patchFile, 'dependency-patches/@earendil-works__pi-ai@1.0.2.patch')
+  assert.deepEqual(piAi.files.map(file => file.path).sort(), [
+    'dist/api/anthropic-messages.js',
+    'dist/api/bedrock-converse-stream.js',
+    'dist/api/mistral-conversations.js',
+    'dist/api/openai-completions.js',
+    'dist/api/openai-responses-shared.js',
+    'dist/api/pi-messages.js',
+    'dist/utils/error-body.js',
+  ])
   assert.equal(recipes.filter(row => row.usage === 'bundled').length, 3)
   assert.equal(recipes.filter(row => row.usage === 'build-only').length, 2)
 })

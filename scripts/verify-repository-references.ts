@@ -29,6 +29,7 @@ export interface RepositoryReference {
 const candidateCommitFields: Readonly<Record<string, readonly string[]>> = {
   'workbench/compatibility.json': ['upstreamBase', 'importedSourceCommit', 'upstreamWorkflowBase', 'upstreamBackports.*.commit', 'retainedWorkflowBases.e2b-e2e.yml'],
   'workbench/runtime-seams.json': ['upstreamCommit'],
+  'workbench/alpha2-integration.json': ['forkCandidateBase', 'targetUpstream', 'previousUpstream'],
   'workbench/upstream-compatibility.json': ['acceptedImportBase', 'forkBase', 'targetUpstream', 'includedMaintenanceRepair.commit'],
 }
 

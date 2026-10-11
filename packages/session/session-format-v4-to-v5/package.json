@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-session-format-v4-to-v5",
   "description": "Opaque Responses checkpoint admission and streaming Session V4 to V5 migration",
-  "version": "0.2.1-alpha.1",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },

@@ -38,7 +38,7 @@ export async function runDesktopHost(launch: DesktopHostLaunch): Promise<void> {
     profile: 'desktop',
     resolvedProfile: { profile, installAnchor },
     patchFiles: [],
-    args: ['--no-open', '--port', '0'],
+    args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
     ...(packageManagerPath === undefined ? {} : {
       packageManager: {
         command: process.execPath,
@@ -111,7 +111,7 @@ export async function runDesktopHost(launch: DesktopHostLaunch): Promise<void> {
   installPlatformSessionPublisher(ctx, (session) => {
     if (process.connected) process.send?.({ type: 'platform-session', session })
   })
-  const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${String(ctx.webServer.port)}`)
+  const url = ctx.connection.authenticatedUrl(`${ctx.webServer.protocol}//127.0.0.1:${String(ctx.webServer.port)}`)
   if (launch.admission?.status === 'managed') await launch.admission.ready({ carrier: 'desktop-host', applicationEntry: import.meta.url })
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections() }, (error) => { if (error !== null) console.error(error) })
 }

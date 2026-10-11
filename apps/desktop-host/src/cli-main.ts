@@ -9,7 +9,7 @@ import { installOfficeEngineResolution } from './office-engine.ts'
  * Run the ordinary CLI with Desktop's bundled package manager and reserved-profile plugin access.
  * @param launch - Command parsed once by the Desktop carrier.
  * @param runtimeDir - Prepared or ASAR-contained production DSH package tree.
- * @param supportDir - Physical Desktop runtime directory containing pnpm.
+ * @param supportDir - Physical Desktop runtime directory containing the primary-runtime payload and Node launchers.
  * @param installSignals - Install native console signals for the executable entry.
  * @returns Completion of the selected CLI command; profile plugins own their process lifetime.
  */
@@ -26,7 +26,7 @@ export async function runDesktopCli(
     manageDesktopProfile: true,
     packageManager: {
       command: process.execPath,
-      args: ['--expose-internals', resources?.packageManagerPath ?? join(supportDir, 'pnpm', 'bin', 'pnpm.mjs')],
+      args: ['--expose-internals', resources?.packageManagerPath ?? join(supportDir, 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.mjs')],
       env: {
         ELECTRON_RUN_AS_NODE: '1',
         DSH_DESKTOP_NODE_EXECUTABLE: process.execPath,
