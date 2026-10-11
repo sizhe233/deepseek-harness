@@ -6,6 +6,10 @@
 
 源码：[`packages/storage/storage/src/backend.ts`](../../packages/storage/storage/src/backend.ts) · [`packages/storage/storage-domain/src/spec.ts`](../../packages/storage/storage-domain/src/spec.ts) · [`packages/storage/storage-domain/src/events.ts`](../../packages/storage/storage-domain/src/events.ts)
 
+## Private byte storage
+
+[private-storage 库](../../packages/storage/private-storage/README.zh.md) 是独立的 Host 字节存储原语，用于严格仅所有者可访问的 Windows NTFS 状态。它提供不透明的保留目录、有界同句柄读取、整文件发布回执和进程持有的内核锁；不挂载后端，也不拥有领域模式。[公开源码](../../packages/storage/private-storage/src/index.ts) 定义操作签名，[类型](../../packages/storage/private-storage/src/types.ts) 定义独立的发布、持久性和清理事实。
+
 ## 枢纽：`ctx.storage`
 
 `Storage`（[签名](#ctxstorage--storage)）是汇合点，不是存储本体。`ctx.storage.backend` 是一张名称 → 后端的表：多个后端并排保持挂载，哪个后端服务哪个消费方由该消费方自己的配置决定（即领域层的路由表），绝不是枢纽全局的选择。`register(name, backend)` 返回 disposer；重复名称与查找未知名称都抛出 `StorageError`。dispose（资源释放）只注销名称——由拥有它的插件在注销之后自行关闭后端。每个后端插件还会发布一个仅用于生命周期的服务键（`storageBackendServiceKey(name)`），数据形式提供方注入它，使自身激活不会与后端注册发生竞态。
@@ -215,8 +219,7 @@ The mounted domain facility. Opens declared domains over routed backends; one fa
 async open<S extends DomainSpec>(spec: S): Promise<Domain<S>>
 
 /**
- * Look up an open domain by name, untyped. Diagnostic surface (the package
- * invariant cross-checks change events against live domain state); typed
+ * Look up an open domain by name, untyped. Diagnostic surface; typed
  * consumers hold the handle returned by {@link open}.
  * @param name - Domain name.
  * @returns the open domain runtime, or `undefined` when not open.

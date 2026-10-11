@@ -41,3 +41,7 @@ Example `cordis.yml`:
 | `enableLogs` | Enables loader apply, reload, and unload logs. |
 
 Patches can insert entries or override fields on entries with a matching `id`.
+
+## Native document source
+
+A launcher can bind `EntryDocumentSource` before mounting Includes. Each read carries its native publication closure and an explicit `persist`, `readonly` or `discard` disposition. Logical filenames remain the module-resolution base; managed reads and writes never fall back to original files. Managed refresh errors reach the caller, and source retirement cannot restore file-backed behavior. Root Profile composition uses `discard`. Nested writes derive only source-owned fields from the composed before/after entries, retain unchanged YAML comments and `!!js` nodes, and reapply patches before publishing. Changes owned by an overlay refuse instead of being baked into the source. No native storage provider or enrollment is installed by Include.

@@ -24,6 +24,7 @@ The storage group keeps non-session application data across restarts, including 
 
 | Package | Role | ctx key |
 |---|---|---|
+| [`private-storage`](private-storage/README.md) | Private Windows NTFS bytes, publication receipts and writer leases | library |
 | [`storage`](storage/README.md) | Connects registered backends with mounted data-form facilities | `ctx.storage` |
 | [`storage-json`](storage-json/README.md) | Stores each unit as one human-readable JSON file | registers backend `json` |
 | [`storage-sqlite`](storage-sqlite/README.md) | Stores units as JSON documents in one SQLite database | registers backend `sqlite` |

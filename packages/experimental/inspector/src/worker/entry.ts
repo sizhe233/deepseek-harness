@@ -1,6 +1,8 @@
 /** Node Worker bootstrap for the experimental Inspector. */
 
-import { MessagePort, parentPort, workerData } from 'node:worker_threads'
+import { runtimeWorkerData } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+
+import { MessagePort, parentPort } from 'node:worker_threads'
 import type { InspectorWorkerBoot, InspectorWorkerControl } from '../shared/bridge/messages/control.ts'
 import { parseInspectorHostControl, parseInspectorWorkerConfig } from '../shared/bridge/control-codec.ts'
 import { isPlainObject } from '../shared/json.ts'
@@ -9,7 +11,7 @@ import { startInspectorWorker } from './server.ts'
 if (parentPort === null) throw new Error('experimental inspector: Worker entry loaded on the main thread')
 const controlPort = parentPort
 
-const bootData = workerData as unknown
+const bootData: unknown = runtimeWorkerData()
 if (!isPlainObject(bootData)
   || !(bootData.hostSourcePort instanceof MessagePort)) {
   throw new Error('experimental inspector: invalid Worker boot data')

@@ -6,6 +6,6 @@ kind: "package-library"
 
 English | [中文](README.zh.md)
 
-This platform package contains the static musl executable `bin/landlock-run` and Node-API v8 addons `bin/glibc/system.node` and `bin/musl/system.node`. The entry chooses the addon matching the running Node process's libc; the Landlock executable serves both libc systems.
+This platform package contains the static musl executable `bin/landlock-run` and Node-API v8 addons `bin/glibc/system.node` and `bin/musl/system.node`, plus matching `private-storage.node` files in both libc directories. The entry chooses the addon matching the running Node process's libc; the Landlock executable serves both libc systems.
 
 The package contains no JavaScript or installation build script. Platform prepack checks complete payloads, ELF architecture, Node-API exports, and launcher executability; the installed-artifact rehearsal checks bytes and executes native behavior. See the workspace [support matrix](../../docs/support-matrix.md).

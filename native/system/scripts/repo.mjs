@@ -52,7 +52,7 @@ export function verifyPlatformBinaries(packageDir) {
   const prebuilds = readJson(path.join(packageDir, 'prebuilds.json'));
   const cpu = manifest.cpu?.[0];
   const os = manifest.os?.[0];
-  if (!(cpu in E_MACHINE) || !['linux', 'darwin'].includes(os)) {
+  if (!(cpu in E_MACHINE) || !['linux', 'darwin', 'win32'].includes(os) || (os === 'win32' && cpu !== 'x64')) {
     throw new Error(`${manifest.name}: unsupported or missing os/cpu metadata`);
   }
   if (prebuilds.platform !== `${os}-${cpu}`) {
@@ -67,13 +67,13 @@ export function verifyPlatformBinaries(packageDir) {
     if (declared.has(binary.path)) throw new Error(`${manifest.name}: duplicate binary path ${binary.path}`);
     declared.add(binary.path);
     const executable = binary.kind === 'static-musl' && binary.tool === 'landlock-run' && os === 'linux';
-    const addon = binary.kind === 'node-api' && binary.tool === 'flock' && binary.napi === 8;
+    const addon = binary.kind === 'node-api' && (os === 'win32' ? binary.tool === 'windows-private-owner' : ['flock', 'private-storage'].includes(binary.tool)) && binary.napi === 8;
     if (!executable && !addon) throw new Error(`${manifest.name}: unsupported binary kind/tool/NAPI for ${binary.path}`);
     if (addon && os === 'linux' && !['glibc', 'musl'].includes(binary.libc)) {
       throw new Error(`${manifest.name}: Linux addon must declare glibc or musl`);
     }
-    if (addon && os === 'darwin' && binary.libc !== undefined) {
-      throw new Error(`${manifest.name}: macOS addon must not declare a Linux libc`);
+    if (addon && os !== 'linux' && binary.libc !== undefined) {
+      throw new Error(`${manifest.name}: non-Linux addon must not declare a Linux libc`);
     }
 
     const file = path.join(packageDir, binary.path);
@@ -94,6 +94,11 @@ export function verifyPlatformBinaries(packageDir) {
       if (data.readUInt16LE(16) !== (executable ? 2 : 3)) {
         throw new Error(`${manifest.name}: ${binary.path} has the wrong ELF file type`);
       }
+    } else if (os === 'win32') {
+      const pe = data.length >= 64 ? data.readUInt32LE(60) : 0;
+      if (data.length < 64 || data.readUInt16LE(0) !== 0x5a4d || pe < 64 || pe > data.length - 264 || data.readUInt32LE(pe) !== 0x4550
+        || data.readUInt16LE(pe + 4) !== 0x8664 || data.readUInt16LE(pe + 20) < 240 || data.readUInt16LE(pe + 24) !== 0x20b
+        || (data.readUInt16LE(pe + 22) & 0x2000) === 0) throw new Error(`${manifest.name}: ${binary.path} is not an x64 PE32+ DLL`);
     } else {
       const expectedCpu = cpu === 'x64' ? 0x01000007 : 0x0100000c;
       if (data.length < 32 || data.readUInt32LE(0) !== 0xfeedfacf) {

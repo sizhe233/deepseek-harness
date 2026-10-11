@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "state": "in-progress candidate integration; not accepted, merged, or deployed",
+  "previousIntegrationReport": "workbench/upstream-compatibility.json",
+  "forkCandidateBase": "bb34b9aaef1fc8aa46721cbac7b59ae3b2c82c83",
+  "targetUpstream": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+  "targetRelease": "dsh-v0.2.1-alpha.2",
+  "mergePolicy": "Preserve both parents and fork customizations; no force push, protection changes, public release, or installation.",
+  "previousUpstream": "5badb15009ae1756c3afe0ae0cef1faafc290ccc",
+  "preservedContracts": [
+    "Fork V5 writer and immutable V0-V4 predecessors; no downgrade to official V4",
+    "Opaque native compaction, cross-provider replay sanitization and provider error body retention with pi-ai 1.0.2",
+    "Managed document/package ownership and exact approval receipts",
+    "Working directory execution separated from original Session permission root",
+    "Cancellation rechecked after awaited working-directory resolution",
+    "Provider-controlled path spelling for parent traversal and symbolic links",
+    "Official workflow job conditions retained under official-repository guards, including new manual/reusable release workflows",
+    "E2B provider packages and native private-storage remain present",
+    "Retained E2B and private-storage packages have explicit non-default product roles; all five fork-only packages share the alpha.2 release version"
+  ],
+  "localEvidence": {
+    "hostTypecheck": "passed",
+    "hostBundles": "passed using direct Node/tsx loader equivalents; standard build required in CI",
+    "clientTypecheck": "passed after Host-generated remote declarations",
+    "focusedTests": [
+      {
+        "scope": "LLM, selected Client and file tools",
+        "passed": 906,
+        "skipped": 3
+      },
+      {
+        "scope": "JSONL current/historical catalog and V5 checkpoints",
+        "passed": 276,
+        "skipped": 1,
+        "skipReason": "Intentional non-zstd parameter of compressed-frame test"
+      },
+      {
+        "scope": "Host, terminal, Bash/pwsh consumers",
+        "passed": 288
+      },
+      {
+        "scope": "working-directory owner/admission",
+        "passed": 26
+      },
+      {
+        "scope": "selected managed/official package manager cases",
+        "passed": 28,
+        "filteredOut": 95
+      },
+      {
+        "scope": "workbench exact packaging, recipes, workflow guards and runtime seam contracts",
+        "passed": 391,
+        "skipped": 0
+      },
+      {
+        "scope": "workflow, repository reference and V3/V4/current corpus policies",
+        "passed": 94
+      },
+      {
+        "scope": "real Web product/preview and worker isolation",
+        "passed": 44
+      },
+      {
+        "scope": "explicit optional fork product roles and exact vendor-rescope product identifiers",
+        "passed": 61,
+        "skipped": 0
+      }
+    ],
+    "negativeControl": "Removing the added post-directory abort guard caused the deterministic terminal-allocation regression to fail; exact source restored before positive rerun.",
+    "documentation": "944 bilingual pairs,1869 Markdown links,type-equivalence,and documentation typecheck passed; complete aggregate still pending",
+    "clientBundles": "passed",
+    "desktopBundle": "passed",
+    "webBuild": "passed with apps/web-owned Vite 6.4.3 (429 modules); root Vite 8 invocation is not the shipping build",
+    "hygiene": "All 19 owning hygiene leaves passed after correcting retained package versions, explicit optional roles, and exactly two upstream preset identifiers; standard aggregate remains required in CI",
+    "frozenInstall": "pnpm 11.28.5 frozen-lock installation and all 1749 supply-chain policy entries passed; lockfile unchanged by the five retained-package version corrections",
+    "selectedPackageSmoke": "18 local packages repacked at alpha.2; every packed lib file and concrete workspace dependency/peer range verified, including migration dependents; not immutable candidate acceptance",
+    "fullTypedLint": "passed on the final hygiene-corrected integration source; one existing unused-disable warning"
+  },
+  "privateCompatibility": {
+    "state": "Private integration consumer archive and cold restoration fixes are in local validation; exact alpha.2 artifact rebind and installed-graph matrix pending"
+  },
+  "requiredRemainingGates": [
+    "Complete exact-candidate standard build, lint, documentation, unit and coverage CI",
+    "Native Linux, macOS and Windows candidate artifacts and acceptance",
+    "Private exact-candidate Host/Client/UI, plugin and crash/reopen compatibility matrix",
+    "Independent POSIX C safety review is pending; compilation and unit tests do not satisfy it",
+    "Independent Settings/ConfigEditor safety review is pending; functional tests do not satisfy it"
+  ],
+  "productionApproved": false,
+  "evidenceDate": "2026-10-11"
+}

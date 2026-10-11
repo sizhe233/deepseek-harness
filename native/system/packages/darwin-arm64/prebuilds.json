@@ -1,6 +1,17 @@
 {
   "platform": "darwin-arm64",
   "binaries": [
-    { "tool": "flock", "kind": "node-api", "napi": 8, "path": "bin/system.node" }
+    {
+      "tool": "flock",
+      "kind": "node-api",
+      "napi": 8,
+      "path": "bin/system.node"
+    },
+    {
+      "tool": "private-storage",
+      "kind": "node-api",
+      "napi": 8,
+      "path": "bin/private-storage.node"
+    }
   ]
 }

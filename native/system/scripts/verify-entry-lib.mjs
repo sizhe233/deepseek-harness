@@ -25,4 +25,9 @@ for (const file of exportedFiles) {
     process.exit(1);
   }
 }
+for (const file of manifest.files ?? []) {
+  if (typeof file === 'string' && /^src\/[a-z0-9-]+\.c$/.test(file) && !fs.existsSync(path.join(packageDir, file))) {
+    throw new Error(`verify-entry-lib: ${manifest.name} lacks declared auditable native source ${file}`);
+  }
+}
 console.log(`verify-entry-lib: ${manifest.name} built lib/ present.`);

@@ -17,10 +17,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import { startConnection } from './connection.ts'
+import { DEFAULT_MAX_INSTRUCTION_BYTES, startConnection } from './connection.ts'
 import { RECONNECT_DEFAULTS, resolveReconnectPolicy } from './reconnect-policy.ts'
 import type { ReconnectConfig } from './reconnect-policy.ts'
-import { McpConfigurationGateway } from './configuration.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
 
@@ -33,6 +32,9 @@ export type {
   McpConfigurationEntry, McpConfigurationPatch, McpConfigurationSnapshot, McpFiberPhase,
   McpReconnectPatch, McpReconnectView, McpSecretKey, McpSecretPatch, McpTransport,
 } from './types.ts'
+import { registerServerContext } from './server-context.ts'
+export { createMcpToolDefinition } from './tools.ts'
+export type { McpToolDefinitionOptions } from './tools.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-client'
@@ -40,7 +42,7 @@ export const name = 'mcp-client'
 /** Services required by this plugin. */
 export const inject = ['tools']
 
-/** Default timeout for individual MCP tool calls (ms). */
+/** Default timeout for individual MCP tool calls and resource requests (ms). */
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
 
 /** Valid `serverName`, kept below the public tool-name budget. */
@@ -73,10 +75,12 @@ export interface StdioConfig {
   env: Record<string, string>
   /** Working directory for the child process. */
   cwd: string
-  /** Per-tool-call timeout in milliseconds. */
+  /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
+  /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
+  maxInstructionBytes?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
@@ -95,25 +99,27 @@ export interface StreamableHttpConfig {
   url: string
   /** Additional headers attached to MCP requests. */
   headers: Record<string, string>
-  /** Per-tool-call timeout in milliseconds. */
+  /** Timeout per tool call or resource request in milliseconds. */
   toolCallTimeoutMs: number
   /** Fail plugin activation when the initial connection or tool synchronization fails. */
   failOnStartupError: boolean
+  /** Maximum UTF-8 bytes of attributed server instructions (default 32768). */
+  maxInstructionBytes?: number
   /** Automatic reconnect policy after a lost connection; omission uses the defaults. */
   reconnect?: ReconnectConfig
 }
 
-/** Configuration for one stdio or Streamable HTTP MCP server. */
+/** Legacy control-plane spelling; supported profile launchers migrate it before loading. */
 export interface ConfigurationConfig {
-  /** Selects the host-side configuration gateway rather than an MCP bridge. */
+  /** Use the standalone `/configuration` entry for new compositions. */
   mode: 'configuration'
 }
 
-/** Configuration accepted by the bridge module. */
-export type Config = StdioConfig | StreamableHttpConfig
-
-/** Full apply-time input, including the private Web configuration gateway row. */
+/** Bridge input plus the legacy control row used by profile migration. */
 export type ApplyConfig = Config | ConfigurationConfig
+
+/** Configuration for one stdio or Streamable HTTP MCP server. */
+export type Config = StdioConfig | StreamableHttpConfig
 
 /** Bridge-only configuration accepted by the connection and transport layers. */
 export type BridgeConfig = StdioConfig | StreamableHttpConfig
@@ -131,35 +137,42 @@ const Reconnect: z<ReconnectConfig> = z.object({
   maxAttempts: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(RECONNECT_DEFAULTS.maxAttempts),
 })
 
-// The schema also accepts the private configuration-gateway mode below. Keep
-// the public `Config` result typed as the bridge config so existing consumers
-// do not have to narrow an internal Loader row they never construct.
-export const Config = z.union([
-  z.object({
-    transport: z.const('stdio'),
-    serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
-    command: z.string().required(),
-    args: z.array(String).default([]),
-    env: z.dict(String).default({}),
-    cwd: z.string().default(''),
-    toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
-    failOnStartupError: z.boolean().default(false),
-    reconnect: Reconnect,
-  }),
-  z.object({
-    transport: z.const('streamable-http'),
-    serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
-    url: z.string().required(),
-    headers: z.dict(String).default({}),
-    toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
-    failOnStartupError: z.boolean().default(false),
-    reconnect: Reconnect,
-  }),
-  // The discriminator itself must be required. Schemastery's object union is
-  // intentionally permissive for unknown keys, so an optional `mode` branch
-  // would accept malformed bridge configs after the transport branches fail.
+const StdioSchema = z.object({
+  transport: z.const('stdio'),
+  serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
+  command: z.string().required(),
+  args: z.array(String).default([]),
+  env: z.dict(String).default({}),
+  cwd: z.string().default(''),
+  toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+  failOnStartupError: z.boolean().default(false),
+  maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+  reconnect: Reconnect,
+})
+
+const StreamableHttpSchema = z.object({
+  transport: z.const('streamable-http'),
+  serverName: z.string().required().pattern(SERVER_NAME_PATTERN),
+  url: z.string().required(),
+  headers: z.dict(String).default({}),
+  toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
+  failOnStartupError: z.boolean().default(false),
+  maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
+  reconnect: Reconnect,
+})
+
+/** Validate bridge transports for consumers that cannot accept legacy control rows. */
+export const BridgeConfig: z<StdioConfigInput | StreamableHttpConfigInput, BridgeConfig> = z.union([
+  StdioSchema,
+  StreamableHttpSchema,
+])
+
+/** Runtime validation for bridge transports and the legacy control-plane spelling. */
+export const Config: z<ConfigInput, ApplyConfig> = z.union([
+  StdioSchema,
+  StreamableHttpSchema,
   z.object({ mode: z.const('configuration').required() }),
-]) as unknown as z<ConfigInput, Config>
+])
 
 // ---- Plugin apply ----
 
@@ -173,8 +186,7 @@ export const Config = z.union([
  */
 export async function apply(ctx: Context, config: ApplyConfig): Promise<void> {
   if ('mode' in config) {
-    new McpConfigurationGateway(ctx)
-    return
+    throw new Error('MCP configuration mode requires profile migration; use @deepseek-ai/dsh-mcp-client/configuration and remove config.mode')
   }
   const bridgeConfig = config
   // Fail loud at load: reconnect misconfiguration (including programmatic
@@ -204,10 +216,17 @@ export async function apply(ctx: Context, config: ApplyConfig): Promise<void> {
   // loop, and the live tool registrations; disposal stops reconnection,
   // quiesces in-flight work, and unregisters the current generation.
   const connection = startConnection(ctx, bridgeConfig, reconnect)
-
-  ctx.effect(() => {
-    return () => connection.dispose()
-  }, 'mcp-client.connection')
+  registerServerContext(ctx, bridgeConfig.serverName, connection)
+  let stopping: Promise<void> | undefined
+  const dispose = (): Promise<void> => stopping ??= connection.dispose()
+  // Cordis announces unload before awaiting an unfinished apply(). Closing
+  // the transport here releases startup requests that are still awaiting a reply.
+  // oxlint-disable-next-line typescript/no-misused-promises -- Cordis contains observer failures; the effect also awaits this promise.
+  ctx.on('internal/plugin', (fiber) => {
+    if (fiber !== ctx.fiber || fiber.uid !== null) return
+    return dispose()
+  }, { global: true })
+  ctx.effect(() => dispose, 'mcp-client.connection')
 
   // Block plugin activation on the initial connection + tool discovery so
   // Cordis consumers observe the tools immediately after the fiber activates.

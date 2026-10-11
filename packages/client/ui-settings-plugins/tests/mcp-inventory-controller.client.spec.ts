@@ -145,3 +145,78 @@ describe('mcp inventory controller', () => {
     controller.dispose()
   })
 })
+
+
+describe('MCP inventory mutation lifecycle', () => {
+  it('rejects unavailable writers, unready reads, and read-only snapshots', async () => {
+    const update = vi.fn<() => Promise<Snapshot>>().mockResolvedValue(snapshot())
+    const unavailable = new McpInventoryController(undefined, update)
+    await expect(unavailable.inject().updateMcp('entry', {})).rejects.toThrow('not ready')
+    unavailable.dispose()
+    await expect(unavailable.inject().updateMcp('entry', {})).rejects.toThrow('unavailable')
+    const noWriter = new McpInventoryController(undefined)
+    await expect(noWriter.inject().updateMcp('entry', {})).rejects.toThrow('read-only')
+    noWriter.dispose()
+    const readOnly = new McpInventoryController(async () => ({ ...snapshot(), writable: false }), update)
+    await vi.waitFor(() => { expect(state(readOnly).status).toBe('ready') })
+    await expect(readOnly.inject().updateMcp('entry', {})).rejects.toThrow('read-only')
+    expect(update).not.toHaveBeenCalled()
+    readOnly.dispose()
+  })
+
+  it('permits a save against the retained writable revision while a refresh is in flight', async () => {
+    const read = deferred<Snapshot>()
+    const list = vi.fn<() => Promise<Snapshot>>().mockResolvedValueOnce(snapshot()).mockReturnValueOnce(read.promise)
+    const update = vi.fn<(...args: [string, McpConfigurationPatch, number]) => Promise<Snapshot>>()
+      .mockResolvedValue({ ...snapshot(), revision: 1 })
+    const controller = new McpInventoryController(list, update)
+    await vi.waitFor(() => { expect(state(controller).status).toBe('ready') })
+    controller.refresh()
+    await controller.inject().updateMcp('entry', { enabled: false })
+    expect(update).toHaveBeenCalledWith('entry', { enabled: false }, 0)
+    expect(state(controller).revision).toBe(1)
+    controller.dispose()
+    read.resolve(snapshot())
+    await read.promise
+    expect(state(controller).revision).toBe(1)
+  })
+
+  it('contains an in-flight write and rejects queued writes after disposal', async () => {
+    const writing = deferred<Snapshot>()
+    const update = vi.fn<() => Promise<Snapshot>>().mockReturnValue(writing.promise)
+    const controller = new McpInventoryController(async () => snapshot(), update)
+    await vi.waitFor(() => { expect(state(controller).status).toBe('ready') })
+    const first = controller.inject().updateMcp('first', { enabled: false })
+    await vi.waitFor(() => { expect(update).toHaveBeenCalledOnce() })
+    const second = controller.inject().updateMcp('second', { enabled: false })
+    const rejected = expect(second).rejects.toThrow('unavailable')
+    controller.dispose()
+    writing.resolve({ ...snapshot(), revision: 1 })
+    await first
+    await rejected
+    expect(update).toHaveBeenCalledOnce()
+    expect(state(controller).revision).toBe(0)
+  })
+
+  it('allows later writes after a failed mutation without advancing the failed revision', async () => {
+    const update = vi.fn<(...args: [string, McpConfigurationPatch, number]) => Promise<Snapshot>>()
+      .mockRejectedValueOnce(new Error('rejected write'))
+      .mockResolvedValueOnce({ ...snapshot(), revision: 1 })
+    const controller = new McpInventoryController(async () => snapshot(), update)
+    await vi.waitFor(() => { expect(state(controller).status).toBe('ready') })
+    await expect(controller.inject().updateMcp('first', {})).rejects.toThrow('rejected write')
+    await controller.inject().updateMcp('second', {})
+    expect(update).toHaveBeenLastCalledWith('second', {}, 0)
+    expect(state(controller).revision).toBe(1)
+    controller.dispose()
+  })
+
+  it('ignores a pending read failure after disposal', async () => {
+    const reading = deferred<Snapshot>()
+    const controller = new McpInventoryController(() => reading.promise)
+    controller.dispose()
+    reading.reject(new Error('late transport failure'))
+    await Promise.resolve()
+    expect(state(controller).status).toBe('loading')
+  })
+})

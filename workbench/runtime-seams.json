@@ -4,14 +4,16 @@
     {
       "name": "dsh-api-session-controller",
       "path": "packages/api/session-controller/lib/index.js",
-      "beforeSha256": "16ecb48f33996efe72868f1603223214430634c5ac4c3e8fe9060bf240e990ff",
-      "afterSha256": "15f4f4485e5770aaf81f8e4b71728dff9117db6daf9d73e491247a4db853e69d"
+      "beforeSha256": "d2a460ebb593c46eff54758470092bed50be249e9d0dde10275d216c088a6e8b",
+      "afterSha256": "99cbebcc2023b31c4b9d5b6abcf03db1f409409f6887a001acd183704f7279ac"
     },
     {
       "name": "dsh-agent-loop",
       "path": "packages/core/agent-loop/lib/index.js",
-      "beforeSha256": "257eb83c00a05ee068e9f4ba80ca71ab94e3a1275d24b7a0cf5038ff23dd0fd8",
-      "afterSha256": "43a7ed4fb0f01e45bd9c043684990119a9ab72e8c9cde8a1f45354090e39fa71"
+      "beforeSha256": "cf57e3ecd487ac5c2553455aaa5cef2c6fb41e6bd61be5aa455675d1d7193033",
+      "afterSha256": "941c1c0b145df130bf184df201c2d005033f7bb88c8140c48a87aa8f01e2db70"
     }
-  ]
+  ],
+  "upstreamCommit": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+  "packageVersion": "0.2.1-alpha.2"
 }

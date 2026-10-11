@@ -1,0 +1,14 @@
+# Disabled fixture exercises the real configuration Remote without opening a transport.
+- insert:
+    - id: mcp-settings-fixture
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: true
+      config:
+        transport: stdio
+        serverName: settings-fixture
+        command: node
+        args: []
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false
+        reconnect:
+          enabled: false

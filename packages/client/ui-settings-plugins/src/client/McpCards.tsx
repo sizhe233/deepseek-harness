@@ -2,13 +2,13 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  IconChevronDownOutline14, IconPlusOutline16, IconTrashOutline16,
+  IconChevronDownOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   McpConfigurationEntry, McpConfigurationPatch, McpSecretKey, McpTransport,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PluginsSettingsLocaleKey } from './locales.ts'
-import css from './PluginCard.module.css'
+import css from './McpCards.module.css'
 
 /** Props for the grouped MCP card list. */
 export interface McpCardsProps {
@@ -82,8 +82,8 @@ function phaseLabel(
   }
 }
 
-function secretDrafts(keys: readonly McpSecretKey[] | undefined, prefix: string): SecretDraft[] {
-  return (keys ?? []).map((item, index) => ({
+function secretDrafts(keys: readonly McpSecretKey[], prefix: string): SecretDraft[] {
+  return keys.map((item, index) => ({
     id: `${prefix}-${index}-${item.key}`,
     key: item.key,
     value: '',
@@ -170,12 +170,12 @@ function validateDraft(draft: McpDraft, t: McpCardsProps['t']): string | undefin
 
 function secretPatch(
   rows: readonly SecretDraft[],
-  original: readonly McpSecretKey[] | undefined,
+  original: readonly McpSecretKey[],
 ): { set?: Record<string, string>; unset?: string[] } | undefined {
   const set: Record<string, string> = {}
   const unset: string[] = []
   const currentOriginal = new Set(rows.flatMap(row => row.originalKey === undefined ? [] : [row.originalKey]))
-  for (const item of original ?? []) {
+  for (const item of original) {
     if (!currentOriginal.has(item.key)) unset.push(item.key)
   }
   for (const row of rows) {
@@ -286,13 +286,13 @@ function SecretEditor(props: SecretEditorProps): ReactNode {
               disabled={props.disabled}
               onClick={() => { props.onRemove(index) }}
             >
-              <IconTrashOutline16 size={14} aria-hidden="true" />
+              <IconTrashOutlineRegular size={14} aria-hidden="true" />
             </button>
           </div>
         ))}
       </div>
       <button type="button" className={css.mcpAddButton} disabled={props.disabled} onClick={props.onAdd}>
-        <IconPlusOutline16 size={14} aria-hidden="true" />
+        <IconPlusOutlineRegular size={14} aria-hidden="true" />
         {props.t('mcpAddSecret')}
       </button>
     </fieldset>
@@ -616,7 +616,7 @@ export function McpCards({ entries, t, writable = false, updateMcp }: McpCardsPr
           <span className={css.description}>{t('mcpDescription')}</span>
         </span>
         <span className={css.mcpCount}>{configured}</span>
-        <IconChevronDownOutline14 className={groupOpen ? css.chevronOpen : css.chevron} aria-hidden="true" />
+        <IconChevronDownOutlineRegular size={14} className={groupOpen ? css.chevronOpen : css.chevron} aria-hidden="true" />
       </button>
       {groupOpen ? (
         <div className={css.mcpGroupBody} id={groupDetailsId}>
@@ -650,7 +650,7 @@ export function McpCards({ entries, t, writable = false, updateMcp }: McpCardsPr
                       <span className={css.mcpDot} data-phase={entry.fiberPhase ?? 'unobserved'} aria-hidden="true" />
                       {status}
                     </span>
-                    <IconChevronDownOutline14 className={open ? css.chevronOpen : css.chevron} aria-hidden="true" />
+                    <IconChevronDownOutlineRegular size={14} className={open ? css.chevronOpen : css.chevron} aria-hidden="true" />
                   </button>
                   {open ? <McpEditor entry={entry} t={t} writable={writable} updateMcp={updateMcp} /> : null}
                   {!open && entry.fiberPhase !== 'active' ? <span className={css.mcpPhaseHint}>{phase}</span> : null}

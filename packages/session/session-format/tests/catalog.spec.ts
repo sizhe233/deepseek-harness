@@ -366,3 +366,34 @@ describe('Session format catalog', () => {
     expect(restore.finish().events).toEqual([event])
   })
 })
+
+
+describe('pure codec-owned row admission', () => {
+  it.each([0, 1])('keeps an absent V%i admission hook a no-op without consuming the row', (version) => {
+    const reader = catalog().createRestore({ ...oldHeader, version }, { recovery: 'strict', validation: 'current' })
+    reader.admitRow?.(event)
+    reader.decodeRow(event)
+    expect(reader.finish().events).toEqual([event])
+  })
+
+  it.each([0, 1])('forwards V%i admission without changing current or migrating decoder state', (version) => {
+    const admitted = vi.fn((row: unknown) => { if (row === null) throw new Error('owned structural refusal') })
+    const owned = (value: number): SessionFormatCodec & SessionFormatCurrentEncoder => {
+      const base = codec(value)
+      return { ...base, createDecoder(headerValue, recovery) {
+        return { ...base.createDecoder(headerValue, recovery), admitRow: admitted }
+      } }
+    }
+    const current = owned(1)
+    const configured = createSessionFormatCatalog({ currentVersion: 1, codecs: [owned(0), current], currentEncoder: current,
+      migrations: [edge()], restoreCurrent: artifact => artifact, restoreTransformedCurrent: artifact => artifact,
+      restoreCurrentHeader: header => header,
+    })
+    const reader = configured.createRestore({ ...oldHeader, version }, { recovery: 'strict', validation: 'current' })
+    expect(() => reader.admitRow?.(null)).toThrow('owned structural refusal')
+    reader.admitRow?.(event)
+    expect(admitted).toHaveBeenCalledTimes(2)
+    reader.decodeRow(event)
+    expect(reader.finish().events).toEqual([event])
+  })
+})

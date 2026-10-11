@@ -1,0 +1,11 @@
+{
+  "platform": "win32-x64",
+  "binaries": [
+    {
+      "tool": "windows-private-owner",
+      "kind": "node-api",
+      "napi": 8,
+      "path": "bin/windows-private-owner.node"
+    }
+  ]
+}

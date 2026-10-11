@@ -9,10 +9,13 @@ import type {
   ProcessSnapshot,
 } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import type { BoundProcessOwner } from '@deepseek-ai/dsh-subprocess-local/src/managed-owner.ts'
-import type { SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessTerminalActivity, SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
 
 class FakePty {
   pid = 123
+  readonly pause = vi.fn()
+  readonly resume = vi.fn()
+  readonly resize = vi.fn()
   readonly writes: string[] = []
   readonly kills: string[] = []
   autoExitOnKill = true
@@ -81,10 +84,12 @@ class FakeInspector implements ProcessInspector {
   readCurrentAlive: (identity: ProcessIdentity) => boolean = identity => this.readAlive(identity)
   /** Counts process-table captures so read-amplification cases can pin them. */
   captures = 0
+  complete = true
 
   snapshot(): ProcessSnapshot {
     this.captures += 1
     return {
+      complete: this.complete,
       tree: () => this.readTree(),
       session: () => this.readSession(),
       alive: identity => this.readAlive(identity),
@@ -114,6 +119,59 @@ function makeHandle(pty: FakePty, inspector: ProcessInspector, graceMs: number):
 }
 
 describe('LocalTerminalHandle', () => {
+  it('retains ownership after shell exit when /proc cannot be enumerated', async () => {
+    const pty = new FakePty()
+    let readable = false
+    const inspector = createProcessInspector('linux', 'x64', {
+      readDir: () => { if (!readable) throw new Error('EACCES'); return [] },
+    } as unknown as ProcessInspectorInternals)
+    const released = vi.fn()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'linux', undefined, undefined, undefined, released, true)
+    pty.emitExit()
+    await expect(handle.inspectActivity()).resolves.toMatchObject({ state: 'unknown' })
+    await expect(handle.terminate()).rejects.toThrow('/proc directory is unreadable')
+    expect(released).not.toHaveBeenCalled()
+    readable = true
+    await expect(handle.inspectActivity()).resolves.toMatchObject({ state: 'idle' })
+    await handle.terminate()
+    expect(released).toHaveBeenCalledOnce()
+  })
+
+  it('pauses native output until the consumer drains and resumes before termination', async () => {
+    const pty = new FakePty()
+    const handle = makeHandle(pty, new FakeInspector(), 10)
+    const chunk = 'x'.repeat(handle.output.readableHighWaterMark + handle.output.writableHighWaterMark)
+    pty.emitData(chunk)
+    expect(pty.pause).toHaveBeenCalledOnce()
+    const chunks: Buffer[] = []
+    handle.output.on('data', (data: Buffer) => { chunks.push(data) })
+    await vi.waitFor(() => { expect(pty.resume).toHaveBeenCalledOnce() })
+    expect(Buffer.concat(chunks).toString()).toBe(chunk)
+    handle.output.pause()
+    pty.emitData(chunk)
+    expect(pty.pause).toHaveBeenCalledTimes(2)
+    await handle.terminate()
+    handle.output.emit('drain')
+    expect(pty.resume).toHaveBeenCalledTimes(2)
+    handle.output.destroy()
+  })
+
+  it('does not resume native output when a pending drain follows the PTY exit', async () => {
+    const pty = new FakePty()
+    const handle = makeHandle(pty, new FakeInspector(), 10)
+    try {
+      pty.emitData('x'.repeat(handle.output.readableHighWaterMark + handle.output.writableHighWaterMark))
+      expect(pty.pause).toHaveBeenCalledOnce()
+      pty.emitExit(0)
+      await expect(handle.done).resolves.toEqual({ exitCode: 0, signal: null })
+      handle.output.emit('drain')
+      expect(pty.resume).not.toHaveBeenCalled()
+    } finally {
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
   it('terminates a managed range with TERM when it stops within the grace period', async () => {
     vi.useFakeTimers()
     const pty = new FakePty()
@@ -419,6 +477,8 @@ describe('LocalTerminalHandle', () => {
 
     pty.emitData('hello €')
     await handle.write('input\r')
+    await handle.resize(100, 30)
+    expect(pty.resize).toHaveBeenCalledWith(100, 30)
     expect(pty.writes).toEqual(['input\r'])
     expect(await handle.inspectForeground()).toEqual({ processGroupId: 456, inputWaiting: true })
     expect(inspector.stdinChecks).toEqual([[456, 123]])
@@ -427,6 +487,7 @@ describe('LocalTerminalHandle', () => {
 
     pty.emitExit(7, 9)
     pty.emitExit(0)
+    await expect(handle.resize(80, 24)).rejects.toThrow('terminal process has exited')
     expect(await handle.done).toEqual({ exitCode: null, signal: 'SIGKILL' })
     await handle.terminate()
     expect(Buffer.concat(chunks).toString('utf8')).toBe('hello €')
@@ -662,6 +723,140 @@ describe('LocalTerminalHandle', () => {
 describe('LocalTerminalHandle on Windows', () => {
   const win32 = 'win32' as NodeJS.Platform
 
+  it('captures a delayed ConPTY PID before forwarding output and retains its exact identity', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    const outputCaptures: number[] = []
+    handle.output.on('data', () => { outputCaptures.push(inspector.captures) })
+    try {
+      expect(handle.pid).toBe(0)
+      await expect(handle.inspectForeground()).resolves.toBeUndefined()
+      await expect(handle.inspectActivity()).resolves.toMatchObject({ state: 'unknown' })
+      expect(inspector.captures).toBe(0)
+
+      pty.pid = 123
+      inspector.alive.add(123)
+      pty.emitData('ready')
+      expect(outputCaptures).toEqual([1])
+      expect(handle.pid).toBe(123)
+      inspector.root = { pid: 123, started: 'recycled' }
+      inspector.readAlive = identity => identity.started === 'recycled'
+      inspector.members = [{ pid: 124, started: 'unrelated' }]
+      inspector.alive.add(124)
+      handle.terminateForHostExit()
+      expect(inspector.processes).toEqual([])
+      expect(pty.kills).toEqual([])
+    } finally {
+      pty.emitExit()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('captures a connected silent ConPTY PID on inspection and terminates its descendants', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    try {
+      pty.pid = 123
+      inspector.alive.add(123)
+      inspector.alive.add(124)
+      inspector.members = [{ pid: 124, started: 'child' }]
+      await expect(handle.inspectForeground()).resolves.toMatchObject({ processGroupId: 456 })
+      await handle.terminate()
+      await expect(handle.done).resolves.toEqual({ exitCode: null, signal: null })
+      expect(inspector.processes).toEqual([[124, 'SIGTERM'], [123, 'SIGTERM']])
+      expect(pty.kills).toEqual([])
+    } finally {
+      pty.emitExit()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('keeps early termination pending and kills a ConPTY PID published during its grace period', async () => {
+    vi.useFakeTimers()
+    const pty = new FakePty()
+    pty.pid = 0
+    pty.autoExitOnKill = false
+    const inspector = new FakeInspector()
+    const released = vi.fn()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32, undefined, undefined, undefined, released)
+    const terminating = handle.terminate()
+    try {
+      expect(handle.terminate()).toBe(terminating)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(pty.kills).toEqual(['SIGHUP'])
+      expect(released).not.toHaveBeenCalled()
+      pty.pid = 123
+      inspector.alive.add(123)
+      inspector.alive.add(124)
+      inspector.members = [{ pid: 124, started: 'late-child' }]
+      await vi.advanceTimersByTimeAsync(10)
+      await terminating
+      expect(inspector.processes).toEqual([[123, 'SIGKILL'], [124, 'SIGTERM']])
+      expect(inspector.alive.size).toBe(0)
+      expect(released).toHaveBeenCalledOnce()
+      await expect(handle.done).resolves.toEqual({ exitCode: null, signal: null })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      pty.emitExit()
+      await vi.runAllTimersAsync()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('does not capture a delayed PID after the PTY exit event', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    try {
+      pty.emitExit(1)
+      pty.pid = 123
+      inspector.root = { pid: 123, started: 'unrelated' }
+      inspector.alive.add(123)
+      expect(handle.pid).toBe(123)
+      expect(inspector.captures).toBe(0)
+      await handle.terminate()
+      expect(inspector.processes).toEqual([])
+      expect(pty.kills).toEqual([])
+      await expect(handle.done).resolves.toEqual({ exitCode: 1, signal: null })
+    } finally {
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
+  it('does not retry a failed identity capture after ConPTY publishes its PID', async () => {
+    const pty = new FakePty()
+    pty.pid = 0
+    const inspector = new FakeInspector()
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
+    try {
+      pty.pid = 123
+      inspector.readTree = () => { throw new Error('process table unavailable') }
+      expect(() => { pty.emitData('ready') }).not.toThrow()
+      expect(inspector.captures).toBe(1)
+      inspector.readTree = () => [{ pid: 123, started: 'recycled' }, { pid: 124, started: 'unrelated' }]
+      inspector.alive.add(123)
+      inspector.alive.add(124)
+      expect(handle.pid).toBe(123)
+      expect(inspector.captures).toBe(1)
+      await handle.terminate()
+      expect(inspector.processes).toEqual([])
+      expect(pty.kills).toEqual(['SIGHUP'])
+    } finally {
+      pty.emitExit()
+      await handle.terminate()
+      handle.output.destroy()
+    }
+  })
+
   it('delivers SIGINT as a Ctrl-C input write without inspector signalling', async () => {
     const pty = new FakePty()
     const inspector = new FakeInspector()
@@ -832,4 +1027,114 @@ describe('process-table read amplification', () => {
     expect(await tableReadsForOnePoll(2)).toBe(1)
     expect(await tableReadsForOnePoll(10)).toBe(1)
   })
+})
+
+it('requires matching shell identity, complete process observations, and an idle foreground before reporting idle', async () => {
+  const pty = new FakePty()
+  const inspector = new FakeInspector()
+  inspector.pgid = pty.pid
+  const activity = { inspect: vi.fn((): SubprocessTerminalActivity => ({ state: 'idle', revision: 1 })), invalidate: vi.fn(), dispose: vi.fn() }
+  const handle = new LocalTerminalHandle(pty.asPty(), inspector, 20, 'darwin', undefined, undefined, activity)
+  try {
+    const idle = await handle.inspectActivity()
+    expect(idle.state).toBe('idle')
+    expect(await handle.inspectActivity()).toEqual(idle)
+    await handle.write('partial')
+    expect(activity.invalidate).toHaveBeenCalledOnce()
+    inspector.complete = false
+    expect((await handle.inspectActivity()).state).toBe('unknown')
+    inspector.complete = true
+    inspector.pgid = undefined
+    expect((await handle.inspectActivity()).state).toBe('unknown')
+    inspector.pgid = 456
+    expect((await handle.inspectActivity()).state).toBe('busy')
+    inspector.pgid = pty.pid
+    inspector.root = { pid: 123, started: 'reused' }
+    expect((await handle.inspectActivity()).state).toBe('unknown')
+    inspector.root = { pid: 123, started: 'shell' }
+    inspector.members = [{ pid: 789, started: 'background' }]
+    inspector.alive.add(789)
+    expect((await handle.inspectActivity()).state).toBe('busy')
+    inspector.alive.clear()
+    inspector.members = []
+    inspector.readTree = () => { throw new Error('process table unavailable') }
+    expect((await handle.inspectActivity()).state).toBe('unknown')
+    inspector.readTree = () => [inspector.root!]
+  } finally { await handle.terminate() }
+  expect(activity.dispose).toHaveBeenCalledOnce()
+  expect((await handle.inspectActivity()).state).toBe('idle')
+})
+
+it('keeps unverified root identities unknown without leaking a failed PTY allocation', async () => {
+  const pty = new FakePty()
+  const inspector = new FakeInspector()
+  inspector.pgid = pty.pid
+  const read = inspector.readTree
+  inspector.readTree = () => { throw new Error('identity unavailable during allocation') }
+  const activity = { inspect: () => ({ state: 'idle' as const, revision: 1 }), invalidate() {}, dispose() {} }
+  const handle = new LocalTerminalHandle(pty.asPty(), inspector, 20, 'darwin', undefined, undefined, activity)
+  inspector.readTree = read
+  try { expect((await handle.inspectActivity()).state).toBe('unknown') }
+  finally { await handle.terminate() }
+})
+
+it.each(['darwin', 'linux'] as const)('retains root-exited work and respects %s session observability', async (platform) => {
+  const pty = new FakePty()
+  const inspector = new FakeInspector()
+  const handle = new LocalTerminalHandle(pty.asPty(), inspector, 20, platform)
+  expect(handle.running).toBe(true)
+  pty.emitExit()
+  expect(handle.running).toBe(false)
+  inspector.root = undefined
+  try {
+    inspector.complete = false
+    expect((await handle.inspectActivity()).state).toBe('unknown')
+    inspector.complete = true
+    const child = { pid: 789, started: 'orphan' }
+    inspector.sessionMembers = [child]
+    inspector.alive.add(789)
+    expect((await handle.inspectActivity()).state).toBe(platform === 'linux' ? 'busy' : 'unknown')
+    inspector.alive.clear()
+    inspector.sessionMembers = []
+    expect((await handle.inspectActivity()).state).toBe(platform === 'linux' ? 'idle' : 'unknown')
+    expect(pty.kills).toEqual([])
+  } finally { await handle.terminate() }
+})
+
+it.each([false, true])('waits for a root-exited native range, with failed observation=%s remaining unknown', async (fails) => {
+  const pty = new FakePty()
+  const inspector = new FakeInspector()
+  inspector.pgid = pty.pid
+  const empty = Promise.withResolvers<undefined>()
+  const owner: BoundProcessOwner = {
+    signal: () => { empty.resolve(undefined); pty.emitExit() },
+    waitForExit: vi.fn().mockReturnValueOnce(empty.promise).mockResolvedValue(undefined),
+    terminateForHostExit() {},
+  }
+  const handle = new LocalTerminalHandle(pty.asPty(), inspector, 20, 'linux', owner, undefined, undefined, undefined, true)
+  pty.emitExit()
+  inspector.root = undefined
+  try {
+    expect((await handle.inspectActivity()).state).toBe('unknown')
+    if (fails) empty.reject(new Error('native range unavailable'))
+    else empty.resolve(undefined)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect((await handle.inspectActivity()).state).toBe(fails ? 'unknown' : 'idle')
+  } finally { await handle.terminate() }
+})
+
+it.each([null, undefined, 0, 1, 2])('checks native range task count %s before trusting a prompt with no visible children', async (tasks) => {
+  const pty = new FakePty()
+  const inspector = new FakeInspector()
+  inspector.pgid = pty.pid
+  const owner: BoundProcessOwner = {
+    signal: () => { pty.emitExit() }, waitForExit: async () => {}, terminateForHostExit() {},
+    ...tasks === null ? {} : { inspectTaskCount: () => tasks },
+  }
+  const activity = { inspect: () => ({ state: 'idle' as const, revision: 1 }), invalidate() {}, dispose() {} }
+  const handle = new LocalTerminalHandle(pty.asPty(), inspector, 20, 'linux', owner, undefined, activity)
+  try {
+    expect((await handle.inspectActivity()).state).toBe(tasks === 1 ? 'idle' : tasks === 2 ? 'busy' : 'unknown')
+  } finally { await handle.terminate() }
 })

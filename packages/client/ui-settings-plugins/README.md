@@ -1,5 +1,5 @@
 ---
-description: "Plugins settings section for the dsh web client: feature-owned tabs, the configurable host-plane plugin cards, and the settings.plugin.item extension point."
+description: "Built-in plugins settings section for the dsh web client: the Settings navigation entry and the tab chrome that feature-owned tabs register into."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use the **Plugins** settings section to configure the plugins exposed by the current deployment and to open feature-specific plugin pages. The **Plugin configuration** tab presents one expandable card for each supported plugin, shows which values the user overrode, and lets the user reset them to deployment defaults. Cards keep edits local until save. If the configuration changed after the card loaded, the save is rejected instead of overwriting the newer values.
+Use the **Built-in plugins** settings section to inspect the plugins this deployment ships. The section is a shell: it owns the navigation entry and the tab row, and exposes `settings.plugins.tab` for feature-owned pages. This package contributes an editable MCP tab when the Host provides its configuration Remote; the read-only inventory contributes another tab. Configuring a built-in plugin happens on the sidebar's Plugins page, where each official plugin's own companion package registers its page.
 
 ## Table of Contents
 
@@ -25,25 +25,15 @@ Use the **Plugins** settings section to configure the plugins exposed by the cur
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent model selection (`subagent-model-selection`), and the DeepSeek search provider (`web-search-deepseek`).
+Open **Built-in plugins** in Settings. [ui-settings-plugin-inventory](../ui-settings-plugin-inventory/README.md) contributes the inventory tab. The MCP tab edits configured bridge entries when `remote.mcpConfiguration` is available. One registered tab is shown as the page itself; multiple contributions show a tab row. A deployment whose composition contributes no tab shows the section's empty line.
 
-### What appears here
+To contribute a tab, register into `settings.plugins.tab` with an `id`, an `order`, and a localized `label`; the section renders the entries in order and mounts a tab on its first selection. Feature copy stays in the registering plugin's dictionary.
 
-The tab reads which settings namespaces the Host serves and dispatches one slot key per namespace, so what renders is the intersection of two ledgers: the namespaces a live Host plugin registered, and the cards registered under those keys. A served namespace no card claims renders nothing, and a card whose namespace this deployment does not serve is never dispatched. The empty line waits for the Host's first answer, so an unanswered read never reads as "this deployment configures no plugin".
+### MCP configuration
 
-### Editing and saving
+Expand the MCP group and select an entry to edit its transport, server name, command and arguments or HTTP endpoint, tool-call timeout, enabled state, and reconnect policy. **Save** sends only changed fields and reloads that connection; **Discard** restores the last Host projection. A failed save retains the draft. Existing environment-variable and request-header values are write-only: a blank value keeps the stored value, and removing its row clears it. Read-only deployments disable edits.
 
-A card stages what the user types and writes it only when they save. Each control renders staged text, so what is on screen is exactly what a save would store; **Discard** drops the drafts, and a card holding unsaved edits says so on its header even while collapsed. A successful save collapses the card after the read-back confirms the writes; a failed save keeps the card open, reports the failure, and retains the drafts for correction. A reset stages the composed default rather than writing immediately, and a draft the field does not accept blocks the save instead of being dropped. The Host is the only authority on whether a value was accepted.
-
-The Subagent card stages its permission switch and exact model checkboxes together. Enabling requires at least one selected adapter route. Saving submits `enabled` and `allowedModels` in one mutation fenced by the revision where that draft began; a newer Host revision marks the draft failed instead of restoring a revoked route. Disabling retains the selected routes for later reuse. Available models are grouped by provider, while saved routes absent from the current catalog appear last and remain removable. Adapter names and model descriptions remain live directory metadata and are not stored, and the card refreshes them after adapter changes, settings commits, and reconnects.
-
-### MCP connections
-
-The grouped MCP card follows the ordinary plugin cards. Expand a server to edit its stdio or HTTP configuration, timeout and reconnect policy. Saving uses a revision-fenced Host update and reloads only that entry; stale drafts are rejected. Environment and header values are write-only: an unchanged blank value keeps the existing secret, and removal must be explicit. Add or remove server entries through the existing configuration-file action.
-
-### Secret-role fields
-
-A search-provider key control starts blank, reports only whether one is configured, and writes through the credentials domain rather than the settings section; a blank draft writes nothing and keeps the stored key.
+The controller retains the last loaded entries while reconnecting and exposes a retry action after a failed read. Updates run serially with the current configuration revision; the Host decides whether to accept them.
 
 -----
 
@@ -53,15 +43,7 @@ A search-provider key control starts blank, reports only whether one is configur
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The section is one extension point and one dispatch rule: feature plugins own their cards; the tab pairs served namespaces with registered cards by slot key.
-
-### The tab extension point
-
-The section declares `settings.plugins.tab`, a root list slot whose labels become ordered tabs; a tab stays mounted after its first selection so local drafts and read-only snapshots survive tab switches. The package registers its own `configurable` contribution, which declares the nested `settings.plugin.item` slot — keyed on the settings namespace a card edits. A plugin that ships a browser half registers its own card under its own namespace and owns every part of it: chrome, controls, and copy. Tabs follow the contribution's `order`; cards follow registration order.
-
-### The write path
-
-Saving writes staged fields through the client settings scope, which fences each write or ordered mutation with the namespace revision the draft read, so a form that has drifted from the document is refused rather than overwriting a concurrent change. A field's presence in the raw user layer — not its value — is what marks it overridden; a reset clears that field so it re-inherits the composition layer. Secret-role fields never ride a response; the card re-reads on the forwarded `credentials/reference-updated` event for the reference it watches.
+The section declares `settings.plugins.tab`, a root list slot whose labels become ordered tabs; a lone contribution renders as the page itself, and a tab stays mounted after its first selection so search and the inventory snapshot survive switching. The section's `inject` projects the slot's ledger into ordered rows whose labels follow the active locale, cached until the ledger version or the locale revision moves. The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for.
 
 </details>
 
@@ -70,13 +52,10 @@ Saving writes staged fields through the client settings scope, which fences each
 <a id="further-exploration"></a>
 ## Further Exploration
 
-These pages cover the settings base, the inventory tab, and the durable seams behind the cards.
-
-- [ui-settings](../ui-settings/README.md) — the domain base declaring `settings.plugins.tab` and the settings scope.
-- [ui-settings-plugin-inventory](../ui-settings-plugin-inventory/README.md) — the read-only Plugin list tab in the same section.
-- [settings](../../settings/README.md) — the durable user-settings seam and its file provider.
-- [credentials](../../credentials/README.md) — the credential-reference seam secret fields write through.
-- [ui-settings-general](../ui-settings-general/README.md) — the settings shell hosting this section.
+- [ui-settings-plugin-inventory](../ui-settings-plugin-inventory/README.md) — the read-only inventory tab.
+- [ui-settings](../ui-settings/README.md) — the domain base declaring `settings.section`.
+- [ui-plugin-manager](../ui-plugin-manager/README.md) — the Plugins page where official plugins are configured.
+- [ui-settings-shell](../ui-settings-shell/README.md), [ui-settings-agent-loop](../ui-settings-agent-loop/README.md), [ui-settings-subagent](../ui-settings-subagent/README.md), [ui-settings-web-search](../ui-settings-web-search/README.md) — the official configuration pages, one companion package each.
 
 -----
 
@@ -93,13 +72,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-
-These limits define which plugins appear and how fresh the list is; they are current package constraints.
-
-- **Only host-plane plugins appear** — a plugin an agent preset mounts carries its configuration inline in that preset's `agent.cordis.yml` and cannot register a settings namespace at all, so this section lists nothing for it. Editing those values remains the preset editor's job.
-- **A card still needs a browser bundle** — the browser half must be a `dsh.client` package built in the client module system's lazy-CJS factory format, and the `clientBundle` preset that emits it lives in `../../../packages/client/tsdown.client.ts` rather than a published package, so a plugin outside this repository has to reproduce that build itself.
-- **The served namespaces re-read on two signals only** — the wire announces settings-document commits and connection resets, not registrations, so a namespace whose owner registers after the tab's read joins the list on the next document commit or reconnect.
-- **The shell card follows the composed executor** — the POSIX and PowerShell executor families share the `bash` namespace because a host composes exactly one of them, so the served schema differs by platform (PowerShell adds `pwshPath`) even though the card edits the same two fields on both.
+- **Existing entries only** — the MCP editor updates configured bridge entries; adding or deleting Loader entries remains a profile-configuration operation. Deployments without the MCP configuration Remote omit that tab.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -110,5 +83,3 @@ These limits define which plugins appear and how fresh the list is; they are cur
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. This is a browser-side settings surface whose node half owns no event stream or mutable runtime data; the layering and write refusals are Host contracts covered by the owning plugins and the api-proxy.

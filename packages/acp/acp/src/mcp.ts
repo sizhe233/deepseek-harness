@@ -46,7 +46,7 @@ function resolveMcpConfigs(servers: readonly McpServer[], sessionCwd: string): M
         throw new AcpMcpConfigError(`mcpServers[${index}].command must be an absolute path`)
       }
       const env = entriesToRecord(server.env, `mcpServers[${index}].env`, 'environment')
-      const config = validateClientConfig(index, () => McpClient.Config({
+      const config = validateClientConfig(index, () => McpClient.BridgeConfig({
         transport: 'stdio',
         serverName,
         command: server.command,
@@ -60,7 +60,7 @@ function resolveMcpConfigs(servers: readonly McpServer[], sessionCwd: string): M
     if (server.type === 'http') {
       assertHttpUrl(server.url, `mcpServers[${index}].url`)
       const headers = entriesToRecord(server.headers, `mcpServers[${index}].headers`, 'header')
-      const config = validateClientConfig(index, () => McpClient.Config({
+      const config = validateClientConfig(index, () => McpClient.BridgeConfig({
         transport: 'streamable-http',
         serverName,
         url: server.url,

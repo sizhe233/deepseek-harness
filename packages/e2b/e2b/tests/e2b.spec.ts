@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Sandbox as SandboxType } from 'e2b'
 import E2BRuntime, {
   e2bControlEnvs,
   FileType,
@@ -26,7 +25,12 @@ vi.mock('e2b', async (importOriginal) => {
 })
 
 interface SandboxFixture {
-  sandbox: SandboxType
+  sandbox: {
+    sandboxId: string
+    files: { makeDir: ReturnType<typeof vi.fn>; getInfo: ReturnType<typeof vi.fn> }
+    commands: { run: Mock<RunCommand> }
+    kill: ReturnType<typeof vi.fn>
+  }
   makeDir: ReturnType<typeof vi.fn>
   getInfo: ReturnType<typeof vi.fn>
   run: Mock<RunCommand>
@@ -48,7 +52,7 @@ function fakeSandbox(id = 'sandbox-1'): SandboxFixture {
     files: { makeDir, getInfo },
     commands: { run },
     kill,
-  } as unknown as SandboxType
+  }
   return { sandbox, makeDir, getInfo, run, kill }
 }
 
@@ -100,7 +104,7 @@ describe('E2BRuntime', () => {
 
   it('rejects handle acquisition when disposal starts during setup', async () => {
     const fixture = fakeSandbox()
-    const opening = Promise.withResolvers<SandboxType>()
+    const opening = Promise.withResolvers<SandboxFixture['sandbox']>()
     sdk.create.mockReturnValue(opening.promise)
     const ctx = new Context()
     const fiber = await ctx.plugin(E2BRuntime, { apiKey: 'test-key' })

@@ -14,6 +14,12 @@ export interface SettingsDocumentState {
   opening: boolean
   /** Last metadata/native-open diagnostic; UI exposes only localized copy. */
   error: string | null
+  /** Native copy waiting for the user to save and explicitly import it. */
+  draftId?: string
+  /** Whether a saved-copy import is running. */
+  importing?: boolean
+  /** Select the localized save-conflict diagnostic. */
+  importError?: boolean
 }
 
 /** Derives local-document availability from the shared mirror and invokes the pathless Host-owned open operation. */
@@ -56,20 +62,45 @@ export class SettingsDocumentStore {
    */
   async open(): Promise<void> {
     const current = this.store.getSnapshot()
-    if (current.status !== 'ready' || current.opening) return
+    if (current.status !== 'ready' || current.opening || current.importing) return
     this.store.update((state) => {
       state.opening = true
       state.error = null
+      state.importError = false
     })
     try {
       const result = await this.ctx.remote.settings.openSettingsDocument()
       if (!result.ok) {
         const { message } = result.error
         this.store.update((state) => { state.error = message })
-      }
+      } else this.store.update((state) => {
+        if (result.value.draft === undefined) delete state.draftId
+        else state.draftId = result.value.draft.id
+      })
     } finally {
       this.store.update((state) => { state.opening = false })
     }
+  }
+
+  /** Import a saved editing copy; a stale base stays visible for explicit review.
+   * @returns After the native import and Loader reconciliation settle.
+   */
+  async importSaved(): Promise<void> {
+    const current = this.store.getSnapshot()
+    if (current.draftId === undefined || current.opening || current.importing) return
+    this.store.update((state) => { state.importing = true; state.error = null; state.importError = false })
+    try {
+      const result = await this.ctx.remote.settings.importSettingsDocumentDraft(current.draftId)
+      this.store.update((state) => {
+        if (result.ok) delete state.draftId
+        else { state.error = result.error.message; state.importError = true }
+      })
+    } catch (error) {
+      this.store.update((state) => {
+        state.error = error instanceof Error ? error.message : 'Settings draft import did not complete'
+        state.importError = true
+      })
+    } finally { this.store.update((state) => { state.importing = false }) }
   }
 
   /** Stop following the mirror. */

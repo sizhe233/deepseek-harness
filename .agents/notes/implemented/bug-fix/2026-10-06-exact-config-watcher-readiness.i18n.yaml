@@ -1,6 +1,19 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-10-06-exact-config-watcher-readiness.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-06-exact-config-watcher-readiness.md
-2026-10-06-exact-config-watcher-readiness.md: ee327bac577c8cdba6ccf3b164d1bfff84cff91d
-2026-10-06-exact-config-watcher-readiness.zh.md: dc5d41211fdc41fbde03573f67a3d6aca44ebf45
+/agent-note-exact-config-watchers-preserve-native-readiness-outside-macos:
+  en: 887770b56f45e1e7
+  zh: 0893e69634e1a262
+/agent-note-exact-config-watchers-preserve-native-readiness-outside-macos/problem:
+  en: 9418ba985d13a60c
+  zh: d497b868f3fc4620
+/agent-note-exact-config-watchers-preserve-native-readiness-outside-macos/decision:
+  en: 68729214c8fc7770
+  zh: fbefd3c8066ab9bd
+/agent-note-exact-config-watchers-preserve-native-readiness-outside-macos/alternatives-considered:
+  en: 5625d76bd8485d32
+  zh: 5d3e717005341ec4
+/agent-note-exact-config-watchers-preserve-native-readiness-outside-macos/consequences:
+  en: e23be8f6f53a7111
+  zh: 134ee479a0a7a45a

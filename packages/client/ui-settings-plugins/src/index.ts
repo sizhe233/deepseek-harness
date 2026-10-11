@@ -1,11 +1,4 @@
-/**
- * Plugins settings surface, node half. The empty apply exists so the plugin
- * appears in the host cordis.yml / Loader; the browser half owns the section
- * and its configurable tab through exports["./client"], discovered from the
- * package.json dsh.client declaration. Every section this page edits is owned
- * by the Host plugin that registered it, so this package registers no
- * namespace of its own.
- */
+/** Host Loader entry for the Built-in plugins section and editable MCP tab. */
 
-/** Host plugin body — no host-side behavior for this surface plugin. */
+/** Host plugin body; browser configuration uses the feature-owned Host Remotes. */
 export function apply(): void {}

@@ -1,66 +1,26 @@
 #!/usr/bin/env node
-/**
- * Command-line entry for dsh.
- * @module @deepseek-ai/dsh/bin
- */
+/** Application-free installed command-line entry for dsh. */
 
 /* v8 ignore file -- built-bin acceptance exercises this self-executing dispatch. */
 
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
-import { parseDshArgs } from './args.ts'
+import { admitCarrierLaunch, prepareCarrierLaunch } from './carrier.ts'
+import { failRuntimeCarrier } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+import type { RunCliOptions } from './cli-options.ts'
 
-// Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
-// one directory under apps/cli, so the checked-in manifest resolves with the
-// same relative hop from either artifact.
-function readVersion(): string {
-  const manifest = JSON.parse(
-    readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
-  ) as { version?: unknown }
-  return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
-}
+export type { RunCliOptions } from './cli-options.ts'
 
 /**
  * Run the public dsh command-line interface.
- * @returns a promise that settles when the selected command mode finishes.
+ * @param options - Package runtime and Desktop profile access supplied by the installation.
+ * @returns completion of the selected command mode.
  */
-export async function runCli(): Promise<void> {
-  const invocation = parseDshArgs(process.argv.slice(2), readVersion())
-
-  switch (invocation.mode) {
-    case 'profile': {
-      const { runProfile } = await import('./profile-boot.ts')
-      await runProfile({
-        environment: loadLayeredEnv('dsh'),
-        profile: invocation.profile,
-        fromDefaultProfile: invocation.fromDefaultProfile,
-        patchFiles: invocation.patches,
-        args: invocation.args,
-      })
-      break
-    }
-    case 'plugin': {
-      const { runPlugin } = await import('./plugin.ts')
-      process.exit(runPlugin(invocation.profile, invocation.args))
-      break
-    }
-    case 'dump-config': {
-      const { runDumpConfig } = await import('./dump-config.ts')
-      runDumpConfig(
-        invocation.profile,
-        invocation.defaultOnly,
-        invocation.patches,
-        invocation.fromDefaultProfile,
-      )
-      break
-    }
-    default:
-      invocation satisfies never
-      throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)
-  }
+export async function runCli(options: RunCliOptions = {}): Promise<void> {
+  const launch = await admitCarrierLaunch(prepareCarrierLaunch({ carrier: 'cli', entryUrl: import.meta.url,
+    manageDesktopProfile: options.manageDesktopProfile }))
+  try {
+    const { runCli: runCommand } = await import('./cli-main.ts')
+    await runCommand(launch, options)
+  } catch (error) { await failRuntimeCarrier(launch.admission, error) }
 }
 
-if (import.meta.main) {
-  await runCli()
-}
+if (import.meta.main) await runCli()

@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { packageManagerInvocation } from './package-manager.mjs';
 import { entryDirs, packageDirs, platformDirs, readJson, root } from './repo.mjs';
 
 const args = process.argv.slice(2);
@@ -48,7 +49,8 @@ function tarballPath(manifest) {
 }
 
 function run(command, commandArgs, options = {}) {
-  const result = spawnSync(command, commandArgs, {
+  const invocation = ['npm', 'pnpm'].includes(command) ? packageManagerInvocation(command, commandArgs) : { command, args: commandArgs };
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: options.cwd || root,
     stdio: 'inherit',
     env: { ...process.env, ...options.env },
@@ -60,7 +62,8 @@ function run(command, commandArgs, options = {}) {
 }
 
 function runCapture(command, commandArgs) {
-  const result = spawnSync(command, commandArgs, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const invocation = ['npm', 'pnpm'].includes(command) ? packageManagerInvocation(command, commandArgs) : { command, args: commandArgs };
+  const result = spawnSync(invocation.command, invocation.args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (result.error) throw result.error;
   if (result.status !== 0) {
     process.stderr.write(result.stderr);
@@ -163,11 +166,13 @@ const driver = path.join(tempRoot, 'driver.mjs');
 fs.writeFileSync(driver, `
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { packageManagerInvocation } from './package-manager.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { grantArgs, launcherPath, probe } from '@deepseek-ai/node-addon-system/landlock-run';
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock';
+import { loadWindowsPrivateOwner, inspectWindowsPrivateOwnerRuntime } from '@deepseek-ai/node-addon-system/windows-private-owner';
 
 await assert.rejects(import('@deepseek-ai/node-addon-system'), {
   code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
@@ -209,6 +214,15 @@ if (process.platform === 'linux') {
   console.log('non-linux host: fallback resolution and unusable probe verified');
 }
 
+if (process.platform === 'win32') {
+  const owner = loadWindowsPrivateOwner();
+  assert.equal(inspectWindowsPrivateOwnerRuntime().platformPackage.version, '0.1.3');
+  const before = owner.statistics();
+  assert.ok(owner.tokenUser().byteLength > 0);
+  const after = owner.statistics();
+  for (const name of ['openFiles','openTokens','localAllocBlocks','heapBlocks','pendingContexts','unconfirmedReleases']) assert.equal(after[name], before[name]);
+  console.log('installed Windows native owner loaded and transient token ownership released');
+}
 if (process.platform === 'linux' || process.platform === 'darwin') {
   const lockRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'native-system-flock-'));
   const handles = [];

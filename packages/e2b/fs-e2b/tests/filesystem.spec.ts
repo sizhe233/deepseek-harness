@@ -300,7 +300,7 @@ class FakeRemote {
         return { exitCode: 0, stdout: '', stderr: '' }
       },
     },
-  } as unknown as Sandbox
+  } as Sandbox
 }
 
 async function setup(remote = new FakeRemote()): Promise<{ ctx: Context; fs: E2BFileSystem; remote: FakeRemote }> {
@@ -309,7 +309,7 @@ async function setup(remote = new FakeRemote()): Promise<{ ctx: Context; fs: E2B
     cwd: '/workspace',
     runtimeRoot: '/workspace/.dsh-e2b',
     getSandbox: async () => remote.sandbox,
-  } as unknown as E2BRuntime
+  } as E2BRuntime
   ctx.provide('e2b', runtime)
   await ctx.plugin(E2BFileSystem)
   return { ctx, fs: ctx.fs as E2BFileSystem, remote }

@@ -8,10 +8,8 @@ application files. Changes to framework-level dependencies fall back to
 `loader.exit()`, letting the host process restart.
 
 Module watches canonicalize their existing base directory before opening
-Chokidar. Exact config watches likewise canonicalize the deepest existing
-ancestor, then restore any missing suffix. Callbacks and diagnostics retain the
-requested absolute filename, while the native backend receives one filesystem
-spelling even when Windows supplied an 8.3 alias.
+Chokidar, so the native backend receives one filesystem spelling even when
+Windows supplied an 8.3 alias.
 
 Exact config registrations use polling on macOS and native watching elsewhere unless `usePolling` is requested. Their polling interval is 50 ms. Registration awaits Chokidar's initial scan; when polling is enabled, Node's asynchronous initial polling baseline can still miss an immediate change. The registration disposer closes its watcher and drains refreshes already delivered to HMR.
 

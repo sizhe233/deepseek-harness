@@ -1,6 +1,8 @@
 /** Worker entry for current-generation physical and logical verification. */
 
-import { parentPort, workerData } from 'node:worker_threads'
+import { runtimeWorkerData } from '@deepseek-ai/dsh-app-boot/runtime-admission'
+
+import { parentPort } from 'node:worker_threads'
 import { verifyJsonlCurrentGeneration } from './generation.ts'
 import type { JsonlExpectedPrefix } from './generation.ts'
 import type { JsonlCompression } from './format.ts'
@@ -33,7 +35,7 @@ function parseRequest(value: unknown): VerificationRequest {
 if (parentPort === null) throw new Error('migration verifier requires a parent port')
 const port = parentPort
 
-const request = parseRequest(workerData)
+const request = parseRequest(runtimeWorkerData())
 
 async function verify(): Promise<void> {
   try {

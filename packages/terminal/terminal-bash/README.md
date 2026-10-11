@@ -25,6 +25,8 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
+A terminal without an explicit initial directory starts in the owner's current Session directory. Its sandbox permission root remains governed by Session policy.
+
 Mount this backend when a composition needs persistent shell sessions — state such as cwd, exported variables, functions, or running interactive children must survive across tool calls. It is the default `shell` type: a composition that mounts `@deepseek-ai/dsh-terminal` without it has no sessions to open.
 
 ### When to choose it
@@ -33,9 +35,10 @@ Choose this backend when work needs an interactive shell or REPL whose state per
 
 ### Composition
 
-Mount the terminal service, a subprocess provider, the sandbox and policy services, this backend, and a tool package:
+In a composition that already provides `agents`, `tools`, `fs`, `sessionProjections`, and `systemPrompt`, mount the [working-directory service](../../session/working-directory/README.md), terminal service, subprocess provider, sandbox and policy services, this backend, and a tool package:
 
 ```yaml
+- name: '@deepseek-ai/dsh-working-directory'
 - name: '@deepseek-ai/dsh-terminal'
 - name: '@deepseek-ai/dsh-subprocess-local'
 - name: '@deepseek-ai/dsh-sandbox-local'
@@ -44,7 +47,9 @@ Mount the terminal service, a subprocess provider, the sandbox and policy servic
 - name: '@deepseek-ai/dsh-tool-terminal'
 ```
 
-`danger-full-access` starts the shell directly. Confined modes require a same-world `ctx.sandbox` provider: without one, the spawn fails before the shell starts.
+The example uses the [experimental terminal tools](../../experimental/tool-terminal/README.md) for interactive input. For stateful command execution, select [persistent Bash](../../shell/tool-bash-persistent/README.md), or [persistent pwsh](../../shell/tool-pwsh-persistent/README.md) with this backend's `shellDialect: pwsh`.
+
+`danger-full-access` starts the shell directly. Confined modes require a same-world `ctx.sandbox` provider: without one, the spawn fails before the shell starts. Confinement preparation and directory inspection receive the opening signal; cancellation prevents terminal allocation even if either operation returns later.
 
 ### Configuration
 
@@ -57,11 +62,11 @@ Mount the terminal service, a subprocess provider, the sandbox and policy servic
 | `timeoutMs` | `30000` | Absolute bound on one send wait |
 | `disposeGraceMs` | `3000` | Grace before teardown escalates to `SIGKILL` |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-terminal-bash) is the exhaustive source for every field, including the readiness timings (`pollIntervalMs`, `exactProbeAfterMs`, `idleSilenceMs`, `handoffGraceMs`), terminal size (`rows`, `cols`), and scrollback bounds (`scrollbackLines`, `scrollbackMaxBytes`).
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-terminal-bash) is the exhaustive source for every field, including the readiness timings (`pollIntervalMs`, `exactProbeAfterMs`, `idleSilenceMs`, `handoffGraceMs`, `promptTailGraceMs`), terminal size (`rows`, `cols`), and scrollback bounds (`scrollbackLines`, `scrollbackMaxBytes`).
 
 ### Shell dialects and readiness
 
-Both dialects expose the same readiness contract, so consumers are dialect-agnostic. A send settles when the shell is ready again: after the controlled prompt is verified, after the foreground process group provably waits on stdin (Linux), after output silence (`inferred_idle`), or at the absolute `timeoutMs`. An `inferred_idle` or `timeout` result does not prove the foreground command exited. A send’s `viewport` stops collecting at settlement; use session reads to observe later output in the bounded scrollback.
+Both dialects expose the same readiness contract, so consumers are dialect-agnostic. A send settles when the shell is ready again: after the controlled prompt is verified, after the foreground process group provably waits on stdin (Linux), after output silence (`inferred_idle`), or at the absolute `timeoutMs`. A prompt marker whose printable tail has not arrived yet holds the send on the exact path for `promptTailGraceMs` beyond `idleSilenceMs + handoffGraceMs`, because the marker and its tail are written by the same prompt render. An `inferred_idle` or `timeout` result does not prove the foreground command exited. A send’s `viewport` stops collecting at settlement; use session reads to observe later output in the bounded scrollback.
 
 ### Sandboxing and safe operation
 
@@ -83,7 +88,9 @@ This section explains the design behind the backend and points at the code that 
 
 ### Design concept
 
-One backend serves both dialects: bash and pwsh share the same session machinery — sanitizer, bounded buffers, readiness polling, cancellation, and teardown — and differ only in argv, environment, and prompt installation. Bash receives a private marker through `PS1` plus `PROMPT_COMMAND`. Default pwsh argv executes the prompt function and UTF-8 encoding setup through `-NoExit -Command` before entering the line editor. Explicit nonempty `shellArgs` remain unchanged and receive setup once through stdin. Both paths publish startup only after the private marker and exact printable prompt are verified; stdin waits and echoed setup text cannot publish the shell. A zero-scrollback `@xterm/headless` instance consumes raw PTY data and returns terminal-protocol replies through the same handle, while the line sanitizer remains the only output projection.
+One backend serves both dialects: bash and pwsh share the same session machinery — sanitizer, bounded buffers, readiness polling, cancellation, and teardown — and differ only in argv, environment, and prompt installation. Bash receives a private marker through `PS1` plus `PROMPT_COMMAND`. Default pwsh argv executes the prompt function and UTF-8 encoding setup through `-NoExit -Command` before entering the line editor. Explicit nonempty `shellArgs` remain unchanged and receive setup once through stdin. This bootstrap uses keypad Enter on POSIX to avoid canonical CR conversion and ordinary CR on Windows, selected from the execution provider’s terminal environment. Pwsh setup initializes an already-loaded PSReadLine before installing the prompt, so its lazy accessibility-check subprocess runs before readiness is published; no module is imported or option changed. The prompt primes console input without consuming a key before emitting its marker, so queued input retains its Enter key. Both paths publish startup only after the private marker and exact printable prompt are verified; stdin waits and echoed setup text cannot publish the shell. A zero-scrollback `@xterm/headless` instance consumes raw PTY data and returns terminal-protocol replies through the same handle, while the line sanitizer remains the only output projection.
+
+Scrollback and unread send output retain independently owned strings with incremental byte and newline counts, so sanitized slices cannot retain discarded control sequences. Appending and evicting text takes amortized time proportional to incoming text; reads assemble the retained chunks. Retention preserves code-point boundaries and counts the empty line after a trailing newline. The [historical retention decision](../../../.agents/notes/archived/bug-fix/2026-09-11-incremental-terminal-retention.md) records the complexity and measurement rationale.
 
 ### Source map
 
@@ -117,7 +124,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 - [Terminal subsystem reference](../../../docs/subsystems/terminal.md) — the service contract this backend implements and the generated `ctx.terminals` surface.
 - [terminal service](../terminal/README.md) — backend registration, owner fencing, and cleanup semantics.
-- [tool-terminal tools](../tool-terminal/README.md) — the model-facing tools that operate sessions.
+- [tool-terminal tools](../../experimental/tool-terminal/README.md) — the model-facing tools that operate sessions.
 - [Subprocess seam](../../../docs/subsystems/subprocess.md) — the terminal primitive that owns PTY allocation and process-tree cleanup.
 - [Persistent PTY Agent Note](../../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md) — the capability design and deferred boundaries.
 - [Persistent pwsh Agent Note](../../../.agents/notes/archived/architecture/2026-08-11-pwsh-persistent-pty.md) — the Windows substrate and the pwsh dialect.
@@ -178,5 +185,3 @@ These limits define where the backend is a poor fit or needs special operational
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Readiness, terminal buffers, and process-tree state are private per-session implementation state, and the backend publishes no independent lifecycle stream or snapshot.

@@ -30,4 +30,4 @@ Chat delegates ordinary files to the native Sidebar and permits the existing pre
 
 The deployment owns a small source fork and immutable compiled patches. Its coordinator switches runtime, Profile, sessions, configuration and derived caches together. Rollback retains new V3 data separately because the predecessor cannot read it.
 
-Focused model, migration and RPC suites, the GUI suite and the recorded Web suite exercise the changed boundaries. The private Workbench acceptance verifies all 1036 copied sessions and minimal real CPA/OpenCode requests. Performance measurements compare cold session opening separately from provider inference latency.
+Historical acceptance covered model requests, migration, RPC, GUI behavior and recorded Web flows for that runtime generation. Those results do not establish acceptance of a newer candidate. Each candidate follows the [public fork acceptance process](../../../../workbench/README.md#acceptance-and-release); private deployment evidence remains outside this repository. Performance measurements separate cold Session opening from provider inference latency.

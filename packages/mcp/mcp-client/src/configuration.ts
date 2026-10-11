@@ -1,11 +1,10 @@
 /** Host-side configuration control for the generic MCP Loader entries. */
 
 import { Context } from '@deepseek-ai/cordis'
-import type { FiberState } from '@deepseek-ai/cordis'
+import type { FiberState, Volatile } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SettingsForms, SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import s from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { RECONNECT_DEFAULTS, resolveReconnectPolicy } from './reconnect-policy.ts'
@@ -18,7 +17,7 @@ import type {
 export const MCP_CLIENT_MODULE = '@deepseek-ai/dsh-mcp-client'
 
 /** Settings namespace used for UI-owned MCP overrides. */
-export const MCP_CONFIGURATION_NAMESPACE = 'mcp-client' as SettingsNamespace
+export const MCP_CONFIGURATION_NAMESPACE = 'mcp-configuration' as SettingsNamespace
 
 // Cordis exposes these states as a const enum across the package boundary.
 const FIBER_STATE = {
@@ -49,6 +48,23 @@ interface StoredMcpOverrides {
   entries: Record<string, StoredMcpOverride>
 }
 
+interface EntryConfiguration {
+  config: Record<string, unknown>
+  disabled: Entry['options']['disabled']
+}
+
+/** Raw configuration accepted by the standalone MCP control-plane entry. */
+export interface McpConfigurationInput {
+  /** Saved sparse overrides keyed by full Loader entry ids. */
+  entries?: Record<string, StoredMcpOverride>
+}
+
+/** Live override map supplied by the Loader's volatile configuration. */
+export interface McpConfigurationConfig {
+  /** Read before reconciling one bridge or accepting an editor mutation. */
+  entries: Volatile<Record<string, StoredMcpOverride>>
+}
+
 const ReconnectPatchSchema = s.object({
   enabled: s.boolean(),
   initialDelayMs: s.number(),
@@ -56,7 +72,8 @@ const ReconnectPatchSchema = s.object({
   maxAttempts: s.number(),
 })
 
-// Secret values are stored locally by the settings provider, but structural
+// Single-branch unions preserve omitted collections instead of materializing
+// empty overrides. Secret values persist in the profile, but structural
 // redaction removes them from settings.describe before that surface reaches a
 // browser. The MCP Remote below exposes only key names and configured flags.
 const StoredOverrideSchema: s<StoredMcpOverride> = s.object({
@@ -64,27 +81,23 @@ const StoredOverrideSchema: s<StoredMcpOverride> = s.object({
   transport: s.union(['stdio', 'streamable-http'] as const),
   serverName: s.string(),
   command: s.string(),
-  args: s.array(String),
+  args: s.union([s.array(String)]),
   cwd: s.string(),
   url: s.string(),
   toolCallTimeoutMs: s.number(),
   failOnStartupError: s.boolean(),
-  reconnect: ReconnectPatchSchema,
-  env: s.dict(s.string().role('secret')),
-  envUnset: s.array(String),
-  headers: s.dict(s.string().role('secret')),
-  headersUnset: s.array(String),
+  reconnect: s.union([ReconnectPatchSchema]),
+  env: s.union([s.dict(s.string().role('secret'))]),
+  envUnset: s.union([s.array(String)]),
+  headers: s.union([s.dict(s.string().role('secret'))]),
+  headersUnset: s.union([s.array(String)]),
 })
 
-/** Internal settings document; it is never rendered as a user-facing card. */
-export const McpOverridesSchema: s<StoredMcpOverrides> = s.object({
-  entries: s.dict(StoredOverrideSchema).default({}),
+/** Volatile profile configuration; the custom MCP editor owns its presentation. */
+export const McpOverridesSchema: s<McpConfigurationInput, McpConfigurationConfig> = s.object({
+  entries: s.dict(StoredOverrideSchema).default({}).volatile(),
 })
 
-const PATCH_FIELDS = new Set([
-  'enabled', 'transport', 'serverName', 'command', 'args', 'cwd', 'url',
-  'toolCallTimeoutMs', 'failOnStartupError', 'reconnect', 'env', 'headers', 'reset',
-])
 const RESET_FIELDS = new Set([
   'enabled', 'transport', 'serverName', 'command', 'args', 'cwd', 'url',
   'toolCallTimeoutMs', 'failOnStartupError', 'reconnect', 'env', 'headers',
@@ -144,10 +157,9 @@ function objectKeys(value: unknown): McpSecretKey[] {
     .map(([key, entry]) => ({ key, configured: typeof entry !== 'string' || entry.length > 0 }))
 }
 
-/** The control-plane Loader row uses this module too, but is not an MCP server. */
+/** Only bridge entries belong to the editable inventory; the gateway has its own module. */
 function isMcpBridgeEntry(entry: Entry): boolean {
-  if (entry.options.name !== MCP_CLIENT_MODULE || entry.options.group) return false
-  return record(entry.options.config).mode !== 'configuration'
+  return entry.options.name === MCP_CLIENT_MODULE && !entry.options.group
 }
 
 function phaseOf(entry: Entry): McpFiberPhase {
@@ -160,6 +172,13 @@ function phaseOf(entry: Entry): McpFiberPhase {
     case 5: return 'unloading'
     default: return null
   }
+}
+
+async function settleEntry(entry: Entry): Promise<void> {
+  // A disposed failed fiber retains its startup error. Await disposal itself
+  // when disabling, rather than rethrowing an error from the old connection.
+  if (entry.disabled) await entry.fiber?.dispose()
+  else await entry.fiber?.await()
 }
 
 function configOf(entry: Entry): Record<string, unknown> {
@@ -233,9 +252,6 @@ function patchRecord(value: unknown, method: string): McpConfigurationPatch {
     reset: z.array(z.string()).max(32).optional(),
   }).strict().safeParse(value)
   if (!parsed.success) throw failure('mcp/bad-request', `invalid MCP configuration patch (${method})`)
-  for (const key of Object.keys(parsed.data)) {
-    if (!PATCH_FIELDS.has(key)) throw failure('mcp/bad-request', `unsupported MCP configuration field "${key}"`)
-  }
   for (const key of parsed.data.reset ?? []) {
     if (!RESET_FIELDS.has(key)) throw failure('mcp/bad-request', `unsupported MCP reset field "${key}"`)
   }
@@ -368,19 +384,23 @@ function validateCandidate(config: Record<string, unknown>, entryId: string): vo
 /** Host Remote that edits existing MCP entries and reconfigures them live. */
 export class McpConfigurationGateway extends TypertRemoteService {
   static inject = ['loader']
+  static Config = McpOverridesSchema
 
-  private settings: SettingsProvider | undefined
+  private settings: SettingsForms | undefined
+  private readonly entryId: string | undefined
   private overrides: StoredMcpOverrides = { entries: {} }
   private revision = 0
   private disposed = false
   private tail: Promise<void> = Promise.resolve()
-  private readonly baselines = new Map<string, Record<string, unknown>>()
-  private readonly applied = new Map<string, { config: Record<string, unknown>; disabled: boolean | undefined }>()
+  private readonly baselines = new Map<string, EntryConfiguration>()
+  private readonly applied = new Map<string, EntryConfiguration>()
   private readonly waitingForStart = new Set<string>()
   private readonly ownUpdates = new WeakSet<object>()
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: McpConfigurationConfig) {
     super(ctx, 'mcpConfiguration')
+    this.entryId = ctx.fiber.entry?.options.id
+    this.overrides = { entries: clone(config.entries.get()) as StoredMcpOverrides['entries'] }
     const readOverride = (entryId: string) => this.overrides.entries[entryId]
     const ownUpdates = this.ownUpdates
     ctx.on('internal/config', function (_config, next) {
@@ -394,35 +414,15 @@ export class McpConfigurationGateway extends TypertRemoteService {
       // that a competing profile refresh cannot restore stale live values.
       return override === undefined ? resolved : mergeConfig(record(resolved), override)
     }, { global: true })
-    ctx.inject(['settings'], (settingsCtx: Context) => {
-      const settings = settingsCtx.settings
-      const scope = settings.register(MCP_CONFIGURATION_NAMESPACE, McpOverridesSchema, { base: { entries: {} } })
-      this.settings = settings
-      const syncOverrides = (): void => {
-        if (this.disposed) return
-        // A raw settings edit can change only override presence while leaving
-        // the resolved value equal to the composition base; scope.watch does
-        // not fire in that case, so read the raw user layer on the document
-        // invalidation as well. Never treat resolved schema defaults as user
-        // overrides: optional arrays resolve to [] and would erase inherited
-        // command arguments after an unrelated settings update.
-        const descriptor = settings.describe()
-          .find(candidate => String(candidate.ns) === String(MCP_CONFIGURATION_NAMESPACE))
-        const user = record(descriptor?.user)
-        this.overrides = clone({ entries: record(user.entries) as StoredMcpOverrides['entries'] })
-        this.revision = this.currentRevision()
-        void this.enqueue(() => this.reconcile())
-      }
-      scope.watch(syncOverrides)
-      const offDocument = settingsCtx.on('settings/document-updated', (ns) => {
-        if (String(ns) === String(MCP_CONFIGURATION_NAMESPACE)) syncOverrides()
-      })
-      settingsCtx.effect(() => () => { offDocument() }, 'mcp-configuration.settings-document')
-      settingsCtx.effect(() => async () => {
-        this.settings = undefined
-        await this.tail
-      }, 'mcp-configuration.settings')
-      syncOverrides()
+    const syncOverrides = (): void => {
+      this.overrides = { entries: clone(config.entries.get()) as StoredMcpOverrides['entries'] }
+      void this.enqueue(() => this.reconcile())
+    }
+    ctx.on('loader/volatile-update', syncOverrides)
+    ctx.inject(['settings'], (settingsCtx) => {
+      this.settings = settingsCtx.settings
+      settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
+      settingsCtx.effect(() => () => { this.settings = undefined }, 'mcp-configuration.settings')
     })
     ctx.effect(() => {
       const offEntry = ctx.on('loader/entry-init', () => { void this.enqueue(() => this.reconcile()) })
@@ -441,7 +441,8 @@ export class McpConfigurationGateway extends TypertRemoteService {
       })
       return () => { offEntry(); offConfig(); offStatus() }
     }, 'mcp-configuration.loader-events')
-    ctx.effect(() => () => { this.disposed = true }, 'mcp-configuration.lifecycle')
+    ctx.effect(() => async () => { this.disposed = true; await this.tail }, 'mcp-configuration.lifecycle')
+    void this.enqueue(() => this.reconcile())
   }
 
   /**
@@ -466,7 +467,7 @@ export class McpConfigurationGateway extends TypertRemoteService {
     return this.enqueue(async () => {
       const patch = patchRecord(patchInput, 'mcpConfiguration.update')
       const settings = this.settings
-      if (settings === undefined || !settings.writable) throw failure('mcp/read-only', 'MCP configuration is read-only in this deployment')
+      if (settings === undefined || this.entryId === undefined || !settings.writable) throw failure('mcp/read-only', 'MCP configuration is read-only in this deployment')
       const actualRevision = this.currentRevision()
       if (expectedRevision !== actualRevision) {
         throw failure('mcp/conflict', 'MCP configuration changed elsewhere; refresh before saving', { entryId })
@@ -484,7 +485,7 @@ export class McpConfigurationGateway extends TypertRemoteService {
       // profile expression with `true` after a failed settings write.
       const previousDisabled = entry.options.disabled
       const previousEntries = clone(this.overrides.entries)
-      this.captureBaseline(entry)
+      const baseline = this.captureBaseline(entry)
       const previousOverride = this.overrides.entries[entryId]
       const nextOverride = mergeOverride(previousOverride, patch)
       const nextEntries = clone(this.overrides.entries)
@@ -494,24 +495,34 @@ export class McpConfigurationGateway extends TypertRemoteService {
       // while the raw baseline is retained for Loader write-back.
       validateCandidate(mergeConfig(configOf(entry), nextOverride), entryId)
 
-      await this.applyEntry(entry, nextOverride)
-      this.overrides = { entries: nextEntries }
+      // Disabling cannot fail activation. Commit its override before teardown,
+      // so ConfigEditor's pre-write reload sees any existing failed fiber as
+      // unchanged instead of recreating it from the inherited enabled row.
+      const deferDisable = nextOverride.enabled === false
       try {
+        if (!deferDisable) await this.applyEntry(entry, nextOverride, baseline)
+        this.overrides = { entries: nextEntries }
         await this.persist(nextEntries, actualRevision)
       } catch {
         this.overrides = { entries: previousEntries }
+        if (deferDisable) throw failure('mcp/write-failed', 'MCP configuration was not saved; the previous connection was kept', { entryId })
         try {
           await entry.update({
             config: previousConfig,
-            ...previousDisabled === undefined ? {} : { disabled: previousDisabled },
+            disabled: previousDisabled ?? null,
           })
+          await settleEntry(entry)
           this.applied.delete(entry.id)
         } catch (rollbackError) {
           this.applied.delete(entry.id)
           this.ctx.logger.error('mcp-configuration: runtime rollback failed for %s', entryId, rollbackError)
+          throw failure('mcp/write-failed', 'MCP configuration was not saved and the previous connection could not be restored; refresh before retrying', { entryId })
         }
         throw failure('mcp/write-failed', 'MCP configuration was not saved; the previous connection was restored', { entryId })
       }
+      // Profile persistence can reapply the inherited bridge rows before the
+      // volatile control map commits. Settle those overrides before replying.
+      await this.reconcile()
       this.revision = this.currentRevision()
       return this.snapshot()
     })
@@ -528,7 +539,7 @@ export class McpConfigurationGateway extends TypertRemoteService {
 
   private currentRevision(): number {
     const descriptor = this.settings?.describe({ redactSecrets: true })
-      .find(candidate => String(candidate.ns) === String(MCP_CONFIGURATION_NAMESPACE))
+      .find(candidate => candidate.ns === this.entryId)
     return descriptor?.revision ?? this.revision
   }
 
@@ -536,7 +547,7 @@ export class McpConfigurationGateway extends TypertRemoteService {
     const revision = this.currentRevision()
     this.revision = revision
     return {
-      writable: this.settings?.writable === true,
+      writable: this.entryId !== undefined && this.settings?.writable === true,
       revision,
       entries: [...this.ctx.loader.entries()]
         .filter(isMcpBridgeEntry)
@@ -544,12 +555,16 @@ export class McpConfigurationGateway extends TypertRemoteService {
     }
   }
 
-  private captureBaseline(entry: Entry): void {
+  private captureBaseline(entry: Entry): EntryConfiguration {
     const current = record(entry.options.config)
     const previous = this.applied.get(entry.id)
-    if (previous === undefined || !equal(current, previous.config)) {
-      this.baselines.set(entry.id, clone(current))
+    let baseline = this.baselines.get(entry.id)
+    if (baseline === undefined || previous === undefined || !equal(current, previous.config)
+      || !equal(entry.options.disabled ?? null, previous.disabled ?? null)) {
+      baseline = { config: clone(current), disabled: clone(entry.options.disabled) }
+      this.baselines.set(entry.id, baseline)
     }
+    return baseline
   }
 
   private async reconcile(): Promise<void> {
@@ -568,33 +583,37 @@ export class McpConfigurationGateway extends TypertRemoteService {
       }
       this.waitingForStart.delete(entry.id)
       const override = this.overrides.entries[entry.id]
-      this.captureBaseline(entry)
+      const baseline = this.captureBaseline(entry)
+      // The initial Loader activation may already have consumed the saved override.
+      // A failed connection retries only after its effective configuration changes.
+      if (entry.fiber?.state === FIBER_STATE.FAILED
+        && (override?.enabled === undefined || entry.disabled === !override.enabled)
+        && equal(configOf(entry), mergeConfig(configOf(entry), override))) continue
       try {
-        await this.applyEntry(entry, override)
+        await this.applyEntry(entry, override, baseline)
       } catch (error) {
         this.ctx.logger.warn('mcp-configuration: override could not be applied for %s', entry.id, error)
       }
     }
   }
 
-  private async applyEntry(entry: Entry, override: StoredMcpOverride | undefined): Promise<void> {
-    const base = this.baselines.get(entry.id) ?? record(entry.options.config)
-    const candidate = mergeConfig(base, override)
+  private async applyEntry(entry: Entry, override: StoredMcpOverride | undefined, base: EntryConfiguration): Promise<void> {
+    const candidate = mergeConfig(base.config, override)
     validateCandidate(mergeConfig(configOf(entry), override), entry.id)
-    const desiredDisabled = override?.enabled === undefined ? undefined : !override.enabled
-    const currentDisabled = entry.disabled
+    const desiredDisabled = override?.enabled === undefined ? base.disabled : !override.enabled
     const previous = this.applied.get(entry.id)
-    if (previous !== undefined && equal(previous.config, candidate) && previous.disabled === desiredDisabled
+    if (previous !== undefined && equal(previous.config, candidate) && equal(previous.disabled ?? null, desiredDisabled ?? null)
       && equal(record(entry.options.config), candidate)
-      && (desiredDisabled === undefined || currentDisabled === desiredDisabled)) return
-    const options: { config: Record<string, unknown>; disabled?: boolean } = { config: candidate }
-    if (desiredDisabled !== undefined) options.disabled = desiredDisabled
+      && equal(entry.options.disabled ?? null, desiredDisabled ?? null)) return
+    const options = { config: candidate, disabled: desiredDisabled ?? null }
     const priorConfig = record(entry.options.config)
     const restoringStoredOverride = equal(override, this.overrides.entries[entry.id])
     this.ownUpdates.add(candidate)
     if (restoringStoredOverride) this.ownUpdates.add(priorConfig)
-    try { await entry.update(options) }
-    finally {
+    try {
+      await entry.update(options)
+      await settleEntry(entry)
+    } finally {
       this.ownUpdates.delete(candidate)
       if (restoringStoredOverride) this.ownUpdates.delete(priorConfig)
     }
@@ -603,10 +622,10 @@ export class McpConfigurationGateway extends TypertRemoteService {
 
   private async persist(entries: Record<string, StoredMcpOverride>, expectedRevision: number): Promise<void> {
     const settings = this.settings
-    if (settings === undefined) throw new Error('settings unavailable')
+    if (settings === undefined || this.entryId === undefined) throw new Error('settings unavailable')
     await settings.mutate(
-      MCP_CONFIGURATION_NAMESPACE,
-      [{ op: 'set', path: ['entries'], value: entries as unknown as JsonValue }],
+      this.entryId,
+      [{ op: 'set', path: ['entries'], value: entries }],
       expectedRevision,
     )
   }
